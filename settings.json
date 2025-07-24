@@ -1,0 +1,52 @@
+{
+  "openai": {
+    "api_key_env_var": "OPENAI_API_KEY",
+    "model": "gpt-4.1-nano",
+    "max_tokens_per_chunk": 4000,
+    "temperature": 0.1
+  },
+  "token_management": {
+    "enable_caching": true,
+    "cache_expiry_days": 7
+  },
+  "analysis": {
+    "chunk_strategy": "logical",
+    "min_chunk_size": 100,
+    "enable_fallback": true,
+    "languages_priority": ["python", "javascript", "java"]
+  },
+  "file_scanner": {
+    "max_file_size": 10485760,
+    "excluded_directories": [
+      ".git", ".svn", ".hg",
+      "node_modules", "venv", ".venv",
+      "__pycache__", ".pytest_cache",
+      "target", "build", "dist",
+      ".idea", ".vscode",
+      "logs", "tmp", "temp"
+    ],
+    "supported_extensions": {
+      ".py": "python",
+      ".js": "javascript",
+      ".ts": "typescript", 
+      ".jsx": "javascript",
+      ".tsx": "typescript",
+      ".java": "java",
+      ".cpp": "cpp",
+      ".cc": "cpp",
+      ".cxx": "cpp",
+      ".h": "cpp",
+      ".hpp": "cpp",
+      ".cs": "csharp",
+      ".go": "go",
+      ".rs": "rust",
+      ".php": "php",
+      ".rb": "ruby"
+    }
+  },
+  "output": {
+    "default_output_dir": "./docs",
+    "file_template": "minimal_file.md",
+    "index_template": "index_template.md"
+  }
+}
