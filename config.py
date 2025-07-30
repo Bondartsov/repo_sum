@@ -22,7 +22,6 @@ except ImportError:
 class OpenAIConfig:
     """Конфигурация OpenAI API"""
     api_key_env_var: str = "OPENAI_API_KEY"
-    model: str = "gpt-4.1-nano"
     max_tokens_per_chunk: int = 4000
     temperature: float = 0.1
 
@@ -30,6 +29,11 @@ class OpenAIConfig:
     def api_key(self) -> Optional[str]:
         """Получает API ключ из переменных окружения"""
         return os.getenv(self.api_key_env_var)
+
+    @property
+    def model(self) -> str:
+        """Получает имя модели из переменных окружения"""
+        return os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
 
 
 @dataclass

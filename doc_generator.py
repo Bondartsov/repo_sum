@@ -97,6 +97,20 @@ class MarkdownGenerator:
             ""
         ]
 
+        # Добавляем импорты, если есть
+        if getattr(parsed_file, "imports", None):
+            parts += ["## Импорты", ""]
+            for imp in parsed_file.imports:
+                parts.append(f"- {imp}")
+            parts.append("")
+
+        # Добавляем глобальные комментарии, если есть
+        if getattr(parsed_file, "global_comments", None):
+            parts += ["## Комментарии", ""]
+            for comment in parsed_file.global_comments:
+                parts.append(f"> {comment}")
+            parts.append("")
+
         if gpt_result and gpt_result.summary:
             parts += ["## Анализ кода", "", gpt_result.summary, ""]
 
@@ -143,6 +157,12 @@ class DocumentationGenerator:
     def __init__(self) -> None:
         self.md = MarkdownGenerator()
         self.logger = logging.getLogger(self.__class__.__name__)
+
+    def generate_markdown(self, parsed_file):
+        """
+        Совместимость с тестами: генерирует markdown-документ по ParsedFile (без GPT).
+        """
+        return self.md._generate_file_content(parsed_file, gpt_result=None)
 
     def generate_complete_documentation(
         self,

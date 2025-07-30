@@ -134,19 +134,31 @@ class ParserRegistry:
             self.parsers.append(PythonParser())
         except ImportError as e:
             logging.warning(f"Не удалось загрузить Python парсер: {e}")
-        
+
         try:
             from .cpp_parser import CppParser
             self.parsers.append(CppParser())
         except ImportError as e:
             logging.warning(f"Не удалось загрузить C++ парсер: {e}")
-        
-        # Здесь можно добавить другие парсеры когда они будут реализованы
-        # try:
-        #     from .javascript_parser import JavaScriptParser
-        #     self.parsers.append(JavaScriptParser())
-        # except ImportError:
-        #     pass
+
+        # --- Новые парсеры ---
+        try:
+            from .csharp_parser import CSharpParser  # Парсер для C#
+            self.parsers.append(CSharpParser())
+        except ImportError as e:
+            logging.warning(f"Не удалось загрузить C# парсер: {e}")
+
+        try:
+            from .typescript_parser import TypeScriptParser  # Парсер для TypeScript
+            self.parsers.append(TypeScriptParser())
+        except ImportError as e:
+            logging.warning(f"Не удалось загрузить TypeScript парсер: {e}")
+
+        try:
+            from .javascript_parser import JavaScriptParser  # Парсер для JavaScript
+            self.parsers.append(JavaScriptParser())
+        except ImportError as e:
+            logging.warning(f"Не удалось загрузить JavaScript парсер: {e}")
         
     def get_parser(self, file_path: str) -> Optional[BaseParser]:
         """Возвращает подходящий парсер для файла"""

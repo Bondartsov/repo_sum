@@ -14,6 +14,40 @@ from utils import ParsedFile, CodeChunk, count_lines_in_text
 class CodeChunker:
     """Разбивает код на логические части для анализа GPT"""
     
+    def chunk_code(self, file_info, code):
+        """
+        Совместимость с тестами: разбивает код на чанки по FileInfo и строке кода.
+        """
+        from utils import ParsedFile, CodeChunk, ParsedElement, count_lines_in_text, get_language_from_extension
+        # Простейший парсер: находит функции по def и создает ParsedElement
+        import re
+        elements = []
+        lines = code.splitlines()
+        for i, line in enumerate(lines, 1):
+            if line.strip().startswith("def "):
+                name = re.findall(r"def\s+(\w+)", line)
+                if name:
+                    elements.append(ParsedElement(
+                        name=name[0],
+                        type="function",
+                        line_number=i,
+                        signature=line.strip(),
+                        docstring=None
+                    ))
+        parsed_file = ParsedFile(
+            file_info=file_info,
+            elements=elements,
+            imports=[],
+            classes=[],
+            functions=[el.name for el in elements],
+            comments=[],
+            total_lines=len(lines),
+            code_lines=len([l for l in lines if l.strip()]),
+            comment_lines=0,
+            blank_lines=len([l for l in lines if not l.strip()])
+        )
+        return self.chunk_parsed_file(parsed_file, code)
+    
     def __init__(self):
         self.config = get_config()
         self.max_tokens_per_chunk = self.config.openai.max_tokens_per_chunk
@@ -22,44 +56,42 @@ class CodeChunker:
         
         # Инициализируем токенизатор для подсчета токенов
         try:
-            self.token_encoder = tiktoken.encoding_for_model(self.config.openai.model)
+            # Явно используем cl100k_base для gpt-4.1-nano и подобных моделей
+            if "gpt-4.1-nano" in self.config.openai.model or "gpt-4o" in self.config.openai.model:
+                self.token_encoder = tiktoken.get_encoding("cl100k_base")
+            else:
+                self.token_encoder = tiktoken.encoding_for_model(self.config.openai.model)
         except Exception as e:
             self.logger.warning(f"Не удалось инициализировать токенизатор: {e}")
             self.token_encoder = tiktoken.get_encoding("cl100k_base")  # fallback
         
-    def chunk_parsed_file(self, parsed_file: ParsedFile) -> List[CodeChunk]:
-        """Основной метод разбивки файла на части"""
+    def chunk_parsed_file(self, parsed_file: ParsedFile, source_code: str = None) -> List[CodeChunk]:
+        """Основной метод разбивки файла на части. Если source_code передан — использовать его, иначе читать с диска."""
         chunks = []
-        
         try:
-            # Читаем содержимое файла
-            with open(parsed_file.file_info.path, 'r', encoding=parsed_file.file_info.encoding) as f:
-                source_code = f.read()
-            
+            # Используем переданный source_code, если он есть
+            if source_code is None:
+                with open(parsed_file.file_info.path, 'r', encoding=parsed_file.file_info.encoding) as f:
+                    source_code = f.read()
             # 1. Создаем чанк для импортов и заголовка файла
             header_chunk = self._create_header_chunk(parsed_file, source_code)
             if header_chunk:
                 chunks.append(header_chunk)
-            
             # 2. Создаем отдельные чанки для классов
             for element in parsed_file.elements:
                 if element.type == 'class':
                     class_chunk = self._create_class_chunk(element, parsed_file, source_code)
                     if class_chunk:
                         chunks.append(class_chunk)
-            
             # 3. Группируем функции в чанки
             function_chunks = self._group_functions_into_chunks(parsed_file, source_code)
             chunks.extend(function_chunks)
-            
             # 4. Создаем чанк для глобальных переменных и констант
             variables_chunk = self._create_variables_chunk(parsed_file, source_code)
             if variables_chunk:
                 chunks.append(variables_chunk)
-            
             self.logger.debug(f"Создано {len(chunks)} чанков для {parsed_file.file_info.path}")
             return chunks
-            
         except Exception as e:
             self.logger.error(f"Ошибка при разбивке файла {parsed_file.file_info.path}: {e}")
             # Возвращаем хотя бы один чанк с основной информацией

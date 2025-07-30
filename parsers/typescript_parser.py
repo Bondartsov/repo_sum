@@ -1,5 +1,5 @@
 """
-Парсер для C++ файлов (.cpp, .hpp, .h, .cc, .cxx).
+Парсер для TypeScript файлов (.ts, .tsx).
 """
 
 import re
@@ -7,37 +7,36 @@ from typing import List
 from .base_parser import BaseParser
 from utils import FileInfo, ParsedFile, ParsedElement
 
-
-class CppParser(BaseParser):
-    """Парсер для C++ файлов"""
-    
+class TypeScriptParser(BaseParser):
+    """
+    Парсер для TypeScript файлов. Извлекает классы, функции, импорты и комментарии.
+    """
     def __init__(self):
         super().__init__()
-        self.supported_extensions = ['.cpp', '.hpp', '.h', '.cc', '.cxx']
-        
-        # Регулярные выражения для комментариев в C++
+        # Поддерживаемые расширения для TypeScript
+        self.supported_extensions = ['.ts', '.tsx']
+        # Регулярные выражения для комментариев в TypeScript
         self.comment_patterns = [
             r'//\s*(.*?)$',  # Однострочные комментарии
             r'/\*\s*(.*?)\s*\*/',  # Многострочные комментарии
         ]
-    
+
     def can_parse(self, file_path: str) -> bool:
-        """Проверяет, может ли парсер обработать данный файл"""
+        """
+        Проверяет, может ли парсер обработать данный файл по расширению.
+        """
         return any(file_path.lower().endswith(ext) for ext in self.supported_extensions)
-    
+
     def parse_file(self, file_info: FileInfo) -> ParsedFile:
-        """Основной метод парсинга C++ файла"""
+        """
+        Основной метод парсинга TypeScript файла.
+        """
         source_code = self._read_file_content(file_info)
-        
-        # Извлекаем различные элементы
         imports = self.extract_imports(source_code)
         classes = self.extract_classes(source_code)
         functions = self.extract_functions(source_code)
         comments = self.extract_comments(source_code)
-        
-        # Объединяем все элементы
         all_elements = classes + functions
-        
         return ParsedFile(
             file_info=file_info,
             elements=all_elements,
@@ -45,37 +44,32 @@ class CppParser(BaseParser):
             global_comments=comments,
             parse_errors=[]
         )
-    
+
     def extract_imports(self, source_code: str) -> List[str]:
-        """Извлекает #include директивы из C++ кода"""
-        includes = []
-        
-        # Регулярное выражение для #include
-        include_pattern = r'#include\s*[<"](.*?)[>"]'
-        matches = re.finditer(include_pattern, source_code)
-        
+        """
+        Извлекает import-выражения из TypeScript кода.
+        """
+        imports = []
+        # Ищем строки вида: import ... from '...';
+        pattern = r'import\s+.*?from\s+["\"](.*?)["\"];'
+        matches = re.finditer(pattern, source_code)
         for match in matches:
-            include_name = match.group(1).strip()
-            if include_name:
-                includes.append(include_name)
-        
-        return includes
-    
+            import_name = match.group(1).strip()
+            if import_name:
+                imports.append(import_name)
+        return imports
+
     def extract_classes(self, source_code: str) -> List[ParsedElement]:
-        """Извлекает классы из C++ кода"""
+        """
+        Извлекает классы из TypeScript кода.
+        """
         classes = []
-        
-        # Регулярное выражение для классов и структур
-        class_pattern = r'(?:class|struct)\s+(\w+)(?:\s*:\s*[^{]*)?'
+        class_pattern = r'class\s+(\w+)(?:\s+extends\s+\w+)?\s*\{'
         matches = re.finditer(class_pattern, source_code, re.MULTILINE)
-        
         for match in matches:
             class_name = match.group(1)
             line_num = self._get_line_number(source_code, match)
-            
-            # Пытаемся найти комментарий над классом
             docstring = self._find_preceding_comment(source_code, match.start())
-            
             classes.append(ParsedElement(
                 name=class_name,
                 type="class",
@@ -83,45 +77,36 @@ class CppParser(BaseParser):
                 docstring=docstring,
                 signature=match.group(0)
             ))
-        
         return classes
-    
+
     def extract_functions(self, source_code: str) -> List[ParsedElement]:
-        """Извлекает функции из C++ кода"""
+        """
+        Извлекает функции и методы из TypeScript кода.
+        """
         functions = []
-        
-        # Регулярное выражение для функций (упрощенное)
-        # Ищем паттерн: тип имя_функции(параметры) {
-        function_pattern = r'(?:[\w:]+(?:\s*\*|\s*&)?)\s+(\w+)\s*\([^)]*\)(?:\s*const)?\s*(?:{|;)'
+        # Ищем function funcName(...) или funcName = (...) =>
+        function_pattern = r'(?:function\s+)?(\w+)\s*\([^)]*\)\s*\{'
         matches = re.finditer(function_pattern, source_code, re.MULTILINE)
-        
         for match in matches:
             func_name = match.group(1)
             line_num = self._get_line_number(source_code, match)
-            
-            # Исключаем ключевые слова C++
-            if func_name.lower() in ['if', 'for', 'while', 'switch', 'return', 'class', 'struct']:
-                continue
-            
-            # Пытаемся найти комментарий над функцией
             docstring = self._find_preceding_comment(source_code, match.start())
-            
+            signature = match.group(0).replace('{', '').strip()
             functions.append(ParsedElement(
                 name=func_name,
                 type="function",
                 line_number=line_num,
                 docstring=docstring,
-                signature=match.group(0).replace('{', '').replace(';', '').strip()
+                signature=signature
             ))
-        
         return functions
-    
+
     def _find_preceding_comment(self, source_code: str, position: int) -> str:
-        """Ищет комментарий перед указанной позицией"""
+        """
+        Ищет комментарий непосредственно перед указанной позицией (для классов/методов).
+        """
         lines_before = source_code[:position].splitlines()
         comment_lines = []
-        
-        # Ищем комментарии, идущие непосредственно перед элементом
         for line in reversed(lines_before[-5:]):  # Проверяем последние 5 строк
             line = line.strip()
             if line.startswith('//'):
@@ -133,5 +118,4 @@ class CppParser(BaseParser):
                 continue  # Пропускаем пустые строки
             else:
                 break  # Если встретили не комментарий, прерываем
-        
         return ' '.join(comment_lines) if comment_lines else ""
