@@ -218,6 +218,6 @@ def reload_config(config_path: str = "settings.json", require_api_key: bool = Tr
     global _config
     logger.debug(f"reload_config: старый _config id={id(_config)}")
     _config = Config.load_from_file(config_path)
-    logger.debug(f"reload_config: загружен новый _config id={id(_config)}, api_key={_config.openai.api_key}")
+    logger.debug(f"reload_config: загружен новый _config id={id(_config)}, api_key_length={len(_config.openai.api_key) if _config.openai.api_key else 0}")
     _config.validate(require_api_key=require_api_key)
     return _config
