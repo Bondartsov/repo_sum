@@ -96,6 +96,12 @@ class OutputConfig:
 
 
 @dataclass
+class PromptsConfig:
+    """Конфигурация промптов"""
+    code_analysis_prompt_file: str = "prompts/code_analysis_prompt.md"
+
+
+@dataclass
 class Config:
     """Основной класс конфигурации"""
     openai: OpenAIConfig
@@ -103,6 +109,7 @@ class Config:
     analysis: AnalysisConfig
     file_scanner: FileScannerConfig
     output: OutputConfig
+    prompts: PromptsConfig
 
     @classmethod
     def load_from_file(cls, config_path: str = "settings.json") -> "Config":
@@ -120,7 +127,8 @@ class Config:
             token_management=TokenManagementConfig(**data.get("token_management", {})),
             analysis=AnalysisConfig(**data.get("analysis", {})),
             file_scanner=FileScannerConfig(**data.get("file_scanner", {})),
-            output=OutputConfig(**data.get("output", {}))
+            output=OutputConfig(**data.get("output", {})),
+            prompts=PromptsConfig(**data.get("prompts", {}))
         )
 
     def validate(self, require_api_key: bool = True) -> bool:
@@ -176,6 +184,15 @@ class Config:
         # Валидация вывода
         if not self.output.default_output_dir.strip():
             errors.append("default_output_dir не может быть пустым")
+        
+        # Валидация промптов
+        if not self.prompts.code_analysis_prompt_file.strip():
+            errors.append("code_analysis_prompt_file не может быть пустым")
+        
+        # Проверяем существование файла промпта
+        prompt_path = Path(self.prompts.code_analysis_prompt_file)
+        if not prompt_path.exists():
+            errors.append(f"Файл промпта не найден: {self.prompts.code_analysis_prompt_file}")
         
         if errors:
             raise ValueError("Ошибки конфигурации:\n" + "\n".join(f"- {error}" for error in errors))

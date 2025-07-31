@@ -50,5 +50,8 @@
     "default_output_dir": "./docs",
     "file_template": "minimal_file.md",
     "index_template": "index_template.md"
+  },
+  "prompts": {
+    "code_analysis_prompt_file": "prompts/code_analysis_prompt.md"
   }
 }
