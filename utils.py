@@ -132,6 +132,16 @@ def ensure_directory_exists(path: str) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
 
 
+def create_error_parsed_file(file_info: FileInfo, error: Exception) -> ParsedFile:
+    """Создает объект ParsedFile для файла с ошибкой парсинга"""
+    return ParsedFile(file_info, [], [], [], [str(error)])
+
+
+def create_error_gpt_result(error: Exception) -> GPTAnalysisResult:
+    """Создает объект GPTAnalysisResult для случая ошибки анализа"""
+    return GPTAnalysisResult("", [], {}, f"Ошибка анализа: {error}")
+
+
 def clean_filename(filename: str) -> str:
     """Очистить имя файла от недопустимых символов"""
     import re

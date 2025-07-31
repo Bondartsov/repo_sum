@@ -21,7 +21,7 @@ from parsers.base_parser import ParserRegistry
 from code_chunker import CodeChunker
 from openai_integration import OpenAIManager
 from doc_generator import DocumentationGenerator
-from utils import setup_logging, FileInfo, ParsedFile, GPTAnalysisRequest, GPTAnalysisResult, ensure_directory_exists
+from utils import setup_logging, FileInfo, ParsedFile, GPTAnalysisRequest, GPTAnalysisResult, ensure_directory_exists, create_error_parsed_file, create_error_gpt_result
 
 
 class RepositoryAnalyzer:
@@ -82,8 +82,9 @@ class RepositoryAnalyzer:
         return result
     
     async def _analyze_files_with_progress(self, files: List[FileInfo]) -> List[Tuple[ParsedFile, GPTAnalysisResult]]:
-        """Анализирует файлы с отображением прогресса"""
+        """Анализирует файлы с отображением прогресса, используя батчевую обработку"""
         analyzed_files = []
+        batch_size = self._get_optimal_batch_size(len(files))
         
         with Progress(
             SpinnerColumn(),
@@ -96,42 +97,83 @@ class RepositoryAnalyzer:
             
             task = progress.add_task("Анализ файлов...", total=len(files))
             
-            for file_info in files:
-                try:
-                    # Обновляем описание задачи
-                    progress.update(task, description=f"Анализ: {Path(file_info.path).name}")
-                    
-                    # Анализируем файл
-                    parsed_file, gpt_result = await self._analyze_single_file(file_info)
-                    analyzed_files.append((parsed_file, gpt_result))
-                    
-                    progress.advance(task)
-                    
-                except Exception as e:
-                    self.logger.error(f"Ошибка при анализе {file_info.path}: {e}")
-                    # Создаем пустой результат для файла с ошибкой
-                    empty_parsed = ParsedFile(file_info, [], [], [], [str(e)])
-                    empty_gpt = GPTAnalysisResult("", [], {}, f"Ошибка анализа: {e}")
-                    analyzed_files.append((empty_parsed, empty_gpt))
-                    progress.advance(task)
+            # Обрабатываем файлы батчами
+            for i in range(0, len(files), batch_size):
+                batch = files[i:i + batch_size]
+                
+                # Обновляем описание для текущего батча
+                batch_names = [Path(f.path).name for f in batch[:2]]  # Показываем первые 2 файла
+                if len(batch) > 2:
+                    batch_names.append(f"и еще {len(batch) - 2}")
+                progress.update(task, description=f"Батч: {', '.join(batch_names)}")
+                
+                # Анализируем батч асинхронно
+                batch_results = await self._analyze_files_batch(batch)
+                analyzed_files.extend(batch_results)
+                
+                # Обновляем прогресс на количество обработанных файлов
+                progress.advance(task, len(batch))
         
         return analyzed_files
     
-    async def _analyze_files_simple(self, files: List[FileInfo]) -> List[Tuple[ParsedFile, GPTAnalysisResult]]:
-        """Простой анализ файлов без прогресс-бара"""
-        analyzed_files = []
+    def _get_optimal_batch_size(self, total_files: int) -> int:
+        """Определяет оптимальный размер батча в зависимости от количества файлов"""
+        if total_files <= 10:
+            return 2  # Маленькие проекты - небольшие батчи
+        elif total_files <= 50:
+            return 3  # Средние проекты
+        elif total_files <= 200:
+            return 5  # Большие проекты
+        else:
+            return 8  # Очень большие проекты
+    
+    async def _analyze_files_batch(self, batch: List[FileInfo]) -> List[Tuple[ParsedFile, GPTAnalysisResult]]:
+        """Анализирует батч файлов параллельно"""
+        # Создаем задачи для параллельного выполнения
+        tasks = [self._analyze_single_file_safe(file_info) for file_info in batch]
         
-        for i, file_info in enumerate(files, 1):
-            self.console.print(f"[dim]Анализ {i}/{len(files)}: {Path(file_info.path).name}[/dim]")
+        # Выполняем все задачи параллельно
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        analyzed_files = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                # Обрабатываем исключение
+                self.logger.error(f"Ошибка при анализе {batch[i].path}: {result}")
+                error_parsed = create_error_parsed_file(batch[i], result)
+                error_gpt = create_error_gpt_result(result) 
+                analyzed_files.append((error_parsed, error_gpt))
+            else:
+                analyzed_files.append(result)
+        
+        return analyzed_files
+    
+    async def _analyze_single_file_safe(self, file_info: FileInfo) -> Tuple[ParsedFile, GPTAnalysisResult]:
+        """Безопасно анализирует один файл с обработкой исключений"""
+        try:
+            return await self._analyze_single_file(file_info)
+        except Exception as e:
+            # Логируем ошибку, но не прерываем выполнение
+            self.logger.error(f"Ошибка при анализе {file_info.path}: {e}")
+            error_parsed = create_error_parsed_file(file_info, e)
+            error_gpt = create_error_gpt_result(e)
+            return (error_parsed, error_gpt)
+    
+    async def _analyze_files_simple(self, files: List[FileInfo]) -> List[Tuple[ParsedFile, GPTAnalysisResult]]:
+        """Простой анализ файлов без прогресс-бара, тоже с батчевой обработкой"""
+        analyzed_files = []
+        batch_size = self._get_optimal_batch_size(len(files))
+        
+        for i in range(0, len(files), batch_size):
+            batch = files[i:i + batch_size]
+            batch_start = i + 1
+            batch_end = min(i + batch_size, len(files))
             
-            try:
-                parsed_file, gpt_result = await self._analyze_single_file(file_info)
-                analyzed_files.append((parsed_file, gpt_result))
-            except Exception as e:
-                self.logger.error(f"Ошибка при анализе {file_info.path}: {e}")
-                empty_parsed = ParsedFile(file_info, [], [], [], [str(e)])
-                empty_gpt = GPTAnalysisResult("", [], {}, f"Ошибка анализа: {e}")
-                analyzed_files.append((empty_parsed, empty_gpt))
+            self.console.print(f"[dim]Анализ файлов {batch_start}-{batch_end}/{len(files)}[/dim]")
+            
+            # Используем ту же батчевую логику
+            batch_results = await self._analyze_files_batch(batch)
+            analyzed_files.extend(batch_results)
         
         return analyzed_files
     

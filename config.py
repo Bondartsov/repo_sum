@@ -23,7 +23,10 @@ class OpenAIConfig:
     """Конфигурация OpenAI API"""
     api_key_env_var: str = "OPENAI_API_KEY"
     max_tokens_per_chunk: int = 4000
+    max_response_tokens: int = 5000
     temperature: float = 0.1
+    retry_attempts: int = 3
+    retry_delay: float = 1.0
 
     @property
     def api_key(self) -> Optional[str]:
@@ -122,8 +125,61 @@ class Config:
 
     def validate(self, require_api_key: bool = True) -> bool:
         """Валидирует конфигурацию"""
+        errors = []
+        
+        # Валидация OpenAI конфигурации
         if require_api_key and not self.openai.api_key:
-            raise ValueError(f"OpenAI API ключ не найден в переменной окружения {self.openai.api_key_env_var}")
+            errors.append(f"OpenAI API ключ не найден в переменной окружения {self.openai.api_key_env_var}")
+        
+        if self.openai.max_tokens_per_chunk <= 0:
+            errors.append("max_tokens_per_chunk должно быть положительным числом")
+        
+        if self.openai.max_response_tokens <= 0:
+            errors.append("max_response_tokens должно быть положительным числом")
+        
+        if not 0 <= self.openai.temperature <= 2:
+            errors.append("temperature должна быть в диапазоне 0-2")
+        
+        if self.openai.retry_attempts < 0:
+            errors.append("retry_attempts должно быть неотрицательным числом")
+        
+        if self.openai.retry_delay < 0:
+            errors.append("retry_delay должно быть неотрицательным числом")
+        
+        # Валидация управления токенами
+        if self.token_management.cache_expiry_days <= 0:
+            errors.append("cache_expiry_days должно быть положительным числом")
+        
+        # Валидация анализа
+        if self.analysis.chunk_strategy not in ["logical", "size", "lines"]:
+            errors.append("chunk_strategy должна быть одной из: logical, size, lines")
+        
+        if self.analysis.min_chunk_size <= 0:
+            errors.append("min_chunk_size должно быть положительным числом")
+        
+        # Валидация сканера файлов
+        if self.file_scanner.max_file_size <= 0:
+            errors.append("max_file_size должно быть положительным числом")
+        
+        if not self.file_scanner.supported_extensions:
+            errors.append("supported_extensions не может быть пустым")
+        
+        # Проверяем что все расширения начинаются с точки
+        for ext in self.file_scanner.supported_extensions.keys():
+            if not ext.startswith('.'):
+                errors.append(f"Расширение файла должно начинаться с точки: {ext}")
+        
+        # Валидация исключенных директорий
+        if not isinstance(self.file_scanner.excluded_directories, list):
+            errors.append("excluded_directories должно быть списком")
+        
+        # Валидация вывода
+        if not self.output.default_output_dir.strip():
+            errors.append("default_output_dir не может быть пустым")
+        
+        if errors:
+            raise ValueError("Ошибки конфигурации:\n" + "\n".join(f"- {error}" for error in errors))
+        
         return True
 
 

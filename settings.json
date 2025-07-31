@@ -1,9 +1,11 @@
 {
   "openai": {
     "api_key_env_var": "OPENAI_API_KEY",
-    
     "max_tokens_per_chunk": 4000,
-    "temperature": 0.1
+    "max_response_tokens": 5000,
+    "temperature": 0.1,
+    "retry_attempts": 3,
+    "retry_delay": 1.0
   },
   "token_management": {
     "enable_caching": true,

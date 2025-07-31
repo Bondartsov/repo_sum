@@ -76,7 +76,7 @@ Audit Report: {filename}
 {code_content}
 """
 
-MAX_RESPONSE_TOKENS = 5000  # раньше было 1000
+# Константа перенесена в конфигурацию OpenAIConfig.max_response_tokens
 
 
 class GPTCache:
@@ -260,7 +260,7 @@ class OpenAIManager:
                 {"role": "user", "content": prompt},
             ],
             temperature=self.temperature,
-            max_tokens=MAX_RESPONSE_TOKENS,
+            max_tokens=self.config.openai.max_response_tokens,
         )
         return response.choices[0].message.content
 

@@ -13,7 +13,7 @@ import zipfile
 import tempfile
 import shutil
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 import logging
 import json
 
@@ -39,6 +39,72 @@ setup_logging("DEBUG")
 logger = logging.getLogger(__name__)
 
 
+def validate_uploaded_file(uploaded_file) -> Tuple[bool, str]:
+    """Валидирует загруженный файл на безопасность и корректность"""
+    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+    ALLOWED_EXTENSIONS = {'.zip'}
+    
+    # Проверка размера
+    if uploaded_file.size > MAX_FILE_SIZE:
+        return False, f"Файл слишком большой: {uploaded_file.size / (1024*1024):.1f}MB. Максимум: {MAX_FILE_SIZE / (1024*1024):.0f}MB"
+    
+    # Проверка расширения
+    file_ext = Path(uploaded_file.name).suffix.lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        return False, f"Неподдерживаемый тип файла: {file_ext}. Разрешены: {', '.join(ALLOWED_EXTENSIONS)}"
+    
+    return True, "OK"
+
+
+def safe_extract_zip(zip_path: Path, extract_to: Path) -> Tuple[bool, str, Optional[str]]:
+    """Безопасно извлекает ZIP архив с проверками на path traversal"""
+    MAX_EXTRACTED_SIZE = 500 * 1024 * 1024  # 500MB
+    MAX_FILES = 10000
+    
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            # Проверяем содержимое архива
+            file_count = 0
+            total_size = 0
+            
+            for zip_info in zip_ref.infolist():
+                file_count += 1
+                total_size += zip_info.file_size
+                
+                # Проверка количества файлов
+                if file_count > MAX_FILES:
+                    return False, f"Слишком много файлов в архиве: {file_count}. Максимум: {MAX_FILES}", None
+                
+                # Проверка общего размера
+                if total_size > MAX_EXTRACTED_SIZE:
+                    return False, f"Архив слишком большой: {total_size / (1024*1024):.1f}MB. Максимум: {MAX_EXTRACTED_SIZE / (1024*1024):.0f}MB", None
+                
+                # Проверка на path traversal
+                if '..' in zip_info.filename or zip_info.filename.startswith('/'):
+                    return False, f"Потенциально опасный путь в архиве: {zip_info.filename}", None
+                
+                # Проверка на системные файлы
+                if any(dangerous in zip_info.filename.lower() for dangerous in ['.exe', '.bat', '.sh', '.cmd']):
+                    logger.warning(f"Подозрительный файл в архиве: {zip_info.filename}")
+            
+            # Извлекаем архив
+            zip_ref.extractall(extract_to)
+            
+            # Находим корневую папку
+            extracted_dirs = [d for d in extract_to.iterdir() if d.is_dir()]
+            if extracted_dirs:
+                repo_path = str(extracted_dirs[0])
+            else:
+                repo_path = str(extract_to)
+            
+            return True, "OK", repo_path
+            
+    except zipfile.BadZipFile:
+        return False, "Поврежденный ZIP архив", None
+    except Exception as e:
+        return False, f"Ошибка извлечения архива: {e}", None
+
+
 class WebRepositoryAnalyzer:
     """Адаптер основного анализатора для веб-интерфейса"""
     
@@ -52,7 +118,7 @@ class WebRepositoryAnalyzer:
         self.doc_generator = DocumentationGenerator()
         
     def initialize_with_api_key(self, api_key: str) -> bool:
-        logger.debug(f"initialize_with_api_key: аргумент api_key={api_key!r}, os.getenv до установки={os.getenv('OPENAI_API_KEY')}, config.openai.api_key до reload={self.config.openai.api_key}")
+        logger.debug(f"initialize_with_api_key: api_key length={len(api_key) if api_key else 0}, env_key_set={bool(os.getenv('OPENAI_API_KEY'))}")
         """Инициализирует компоненты с API ключом"""
         try:
             # Проверяем что API ключ не пустой
@@ -62,7 +128,7 @@ class WebRepositoryAnalyzer:
             
             # Устанавливаем переменную окружения
             os.environ['OPENAI_API_KEY'] = api_key.strip()
-            logger.debug(f"initialize_with_api_key: os.getenv после установки={os.getenv('OPENAI_API_KEY')}")
+            logger.debug("initialize_with_api_key: API key set in environment")
             
             # Перезагружаем конфигурацию
             reload_config()
@@ -291,31 +357,29 @@ def main():
             )
             
             if uploaded_file is not None:
-                # Создаем временную директорию
-                temp_dir = tempfile.mkdtemp()
-                zip_path = Path(temp_dir) / uploaded_file.name
-                
-                # Сохраняем загруженный файл
-                with open(zip_path, 'wb') as f:
-                    f.write(uploaded_file.getbuffer())
-                
-                # Распаковываем архив
-                try:
-                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                        zip_ref.extractall(temp_dir)
-                    
-                    # Находим корневую папку (обычно первая папка в архиве)
-                    extracted_dirs = [d for d in Path(temp_dir).iterdir() if d.is_dir()]
-                    if extracted_dirs:
-                        repo_path = str(extracted_dirs[0])
-                        st.success(f"✅ Архив распакован: {uploaded_file.name}")
-                    else:
-                        repo_path = temp_dir
-                        st.success(f"✅ Файлы извлечены в: {temp_dir}")
-                        
-                except Exception as e:
-                    st.error(f"❌ Ошибка распаковки архива: {e}")
+                # Валидируем загруженный файл
+                is_valid, error_msg = validate_uploaded_file(uploaded_file)
+                if not is_valid:
+                    st.error(f"❌ {error_msg}")
                     repo_path = None
+                else:
+                    # Создаем временную директорию
+                    temp_dir = tempfile.mkdtemp()
+                    zip_path = Path(temp_dir) / uploaded_file.name
+                    
+                    # Сохраняем загруженный файл
+                    with open(zip_path, 'wb') as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    # Безопасно извлекаем архив
+                    success, message, extracted_path = safe_extract_zip(zip_path, Path(temp_dir))
+                    
+                    if success:
+                        repo_path = extracted_path
+                        st.success(f"✅ Архив безопасно распакован: {uploaded_file.name}")
+                    else:
+                        st.error(f"❌ {message}")
+                        repo_path = None
         
         # Предварительный просмотр файлов
         if repo_path:
