@@ -1,0 +1,12 @@
+Это тестовый код! 
+
+def install_requirements():
+    """Устанавливает зависимости"""
+    requirements_file = Path(__file__).parent / "requirements.txt"
+    if requirements_file.exists():
+        print("📦 Устанавливаю зависимости...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(requirements_file)])
+    else:
+        print("❌ Файл requirements.txt не найден")
+        return False
+    return True
