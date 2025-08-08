@@ -24,7 +24,16 @@ from parsers.base_parser import ParserRegistry
 from code_chunker import CodeChunker
 from openai_integration import OpenAIManager
 from doc_generator import DocumentationGenerator
-from utils import setup_logging, FileInfo, ParsedFile, GPTAnalysisRequest, GPTAnalysisResult, ensure_directory_exists
+from utils import (
+    setup_logging,
+    FileInfo,
+    ParsedFile,
+    GPTAnalysisRequest,
+    GPTAnalysisResult,
+    ensure_directory_exists,
+    create_error_parsed_file,
+    create_error_gpt_result,
+)
 
 # Настройка страницы
 st.set_page_config(
@@ -182,10 +191,11 @@ class WebRepositoryAnalyzer:
                     
                 except Exception as e:
                     logger.error(f"Ошибка при анализе {file_info.path}: {e}")
-                    # Создаем пустой результат для файла с ошибкой
-                    empty_parsed = ParsedFile(file_info, [], [], [], [str(e)])
-                    empty_gpt = GPTAnalysisResult("", [], {}, f"Ошибка анализа: {e}")
-                    analyzed_files.append((empty_parsed, empty_gpt))
+                    # Единообразно формируем результаты ошибок
+                    analyzed_files.append((
+                        create_error_parsed_file(file_info, e),
+                        create_error_gpt_result(e)
+                    ))
             
             # Генерируем документацию
             if progress_callback:

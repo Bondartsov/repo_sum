@@ -21,7 +21,11 @@ from parsers.base_parser import ParserRegistry
 from code_chunker import CodeChunker
 from openai_integration import OpenAIManager
 from doc_generator import DocumentationGenerator
-from utils import setup_logging, FileInfo, ParsedFile, GPTAnalysisRequest, GPTAnalysisResult, ensure_directory_exists, create_error_parsed_file, create_error_gpt_result
+from utils import (
+    setup_logging, FileInfo, ParsedFile, GPTAnalysisRequest, GPTAnalysisResult,
+    ensure_directory_exists, create_error_parsed_file, create_error_gpt_result,
+    compute_file_hash, read_index, write_index
+)
 
 
 class RepositoryAnalyzer:
@@ -39,7 +43,7 @@ class RepositoryAnalyzer:
         self.openai_manager = OpenAIManager()
         self.doc_generator = DocumentationGenerator()
         
-    async def analyze_repository(self, repo_path: str, output_path: str, show_progress: bool = True) -> dict:
+    async def analyze_repository(self, repo_path: str, output_path: str, show_progress: bool = True, incremental: bool = True) -> dict:
         """Основной метод анализа репозитория"""
         self.logger.info(f"Начинаем анализ репозитория: {repo_path}")
         self.logger.info(f"Результат будет сохранен в: {output_path}")
@@ -49,7 +53,40 @@ class RepositoryAnalyzer:
         
         # Сканируем файлы
         self.console.print("[bold blue]Сканирование файлов...[/bold blue]")
-        files_to_analyze = list(self.file_scanner.scan_repository(repo_path))
+        all_files = list(self.file_scanner.scan_repository(repo_path))
+
+        # Инкрементальный режим: отбираем только изменённые файлы
+        files_to_analyze = all_files
+        index_path = str(Path(repo_path) / ".repo_sum" / "index.json")
+        if incremental:
+            try:
+                index = read_index(index_path)
+                changed: List[FileInfo] = []
+                for fi in all_files:
+                    try:
+                        h = compute_file_hash(fi.path)
+                    except Exception:
+                        # если не удаётся прочитать файл — считаем изменённым
+                        changed.append(fi)
+                        continue
+                    prev = index.get(fi.path, {})
+                    if prev.get("hash") != h:
+                        changed.append(fi)
+                if changed:
+                    files_to_analyze = changed
+                else:
+                    self.console.print("[green]Нет изменений — отчёты актуальны[/green]")
+                    return {
+                        'total_files': 0,
+                        'successful': 0,
+                        'failed': 0,
+                        'output_directory': str(Path(output_path) / f"SUMMARY_REPORT_{Path(repo_path).name}"),
+                        'index_file': str(Path(output_path) / f"SUMMARY_REPORT_{Path(repo_path).name}" / "README.md"),
+                        'success': True
+                    }
+            except Exception as e:
+                self.logger.warning(f"Инкрементальный анализ отключен из-за ошибки индекса: {e}")
+                files_to_analyze = all_files
         
         if not files_to_analyze:
             self.console.print("[bold red]Не найдено файлов для анализа![/bold red]")
@@ -71,6 +108,20 @@ class RepositoryAnalyzer:
         result = self.doc_generator.generate_complete_documentation(
             analyzed_files, output_path, repo_path
         )
+
+        # Обновляем индекс для успешно обработанных файлов
+        try:
+            index = read_index(index_path)
+            now = __import__('datetime').datetime.utcnow().isoformat()
+            for parsed_file, _ in analyzed_files:
+                try:
+                    h = compute_file_hash(parsed_file.file_info.path)
+                    index[parsed_file.file_info.path] = {"hash": h, "analyzed_at": now}
+                except Exception:
+                    continue
+            write_index(index_path, index)
+        except Exception as e:
+            self.logger.warning(f"Не удалось обновить индекс изменений: {e}")
         
         # Показываем финальную статистику
         self._show_final_statistics(result)
@@ -306,19 +357,21 @@ def cli(ctx, config, verbose, quiet):
 @click.argument('repo_path', type=click.Path(exists=True))
 @click.option('--output', '-o', default='./docs', help='Директория для сохранения документации')
 @click.option('--no-progress', is_flag=True, help='Отключить прогресс-бар')
-def analyze(repo_path, output, no_progress):
+@click.option('--incremental/--no-incremental', default=True, help='Инкрементальный анализ только изменённых файлов')
+def analyze(repo_path, output, no_progress, incremental):
     """Анализирует репозиторий и создает MD документацию."""
     analyzer = RepositoryAnalyzer()
     
     try:
         result = asyncio.run(analyzer.analyze_repository(
-            repo_path, output, show_progress=not no_progress
+            repo_path, output, show_progress=not no_progress, incremental=incremental
         ))
         
         if result.get('success', True):
             console = Console()
             console.print(f"[bold green]Анализ завершен успешно![/bold green]")
-            console.print(f"Документация сохранена в: [cyan]{output}[/cyan]")
+            saved_dir = result.get('output_directory', output)
+            console.print(f"Документация сохранена в: [cyan]{saved_dir}[/cyan]")
             if result.get('index_file'):
                 console.print(f"Главный файл: [cyan]{result['index_file']}[/cyan]")
         else:
