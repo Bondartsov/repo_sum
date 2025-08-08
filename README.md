@@ -79,8 +79,8 @@ streamlit run web_ui.py
 ### CLI команды
 
 ```bash
-# Анализ репозитория
-python main.py analyze /path/to/repository -o ./documentation
+# Анализ репозитория (инкрементальный)
+python main.py analyze /path/to/repository -o ./documentation --incremental
 
 # Статистика без анализа
 python main.py stats /path/to/repository
@@ -110,7 +110,13 @@ python main.py token-stats
   "analysis": {
     "chunk_strategy": "logical",
     "min_chunk_size": 100,
-    "languages_priority": ["python", "javascript", "java"]
+    "languages_priority": ["python", "javascript", "java"],
+    "enable_advanced_scoring": false,
+    "sanitize_enabled": false,
+    "sanitize_patterns": [
+      "(?i)api_key\\s*[:=]\\s*['\"][^'\"]+['\"]",
+      "(?i)password\\s*[:=]\\s*['\"][^'\"]+['\"]"
+    ]
   },
   "file_scanner": {
     "max_file_size": 10485760,
@@ -120,6 +126,13 @@ python main.py token-stats
       ".js": "javascript",
       ".ts": "typescript"
     }
+  },
+  "output": {
+    "default_output_dir": "./docs",
+    "file_template": "minimal_file.md",
+    "index_template": "index_template.md",
+    "format": "markdown",
+    "templates_dir": "report_templates"
   },
   "prompts": {
     "code_analysis_prompt_file": "prompts/code_analysis_prompt.md"
@@ -191,6 +204,14 @@ SUMMARY_REPORT_<repo_name>/
    ```
 
 3. **Перезапустите приложение** для применения изменений
+
+## ⚡ Инкрементальный анализ
+
+При включённом `--incremental` анализируются только изменённые файлы относительно индекса `./.repo_sum/index.json`. Индекс обновляется после успешной генерации отчётов.
+
+## 🔒 Санитайзинг секретов
+
+Включите `analysis.sanitize_enabled` и задайте `analysis.sanitize_patterns` (regex), чтобы маскировать чувствительные данные перед отправкой к LLM.
 
 ## 🌍 Развёртывание
 

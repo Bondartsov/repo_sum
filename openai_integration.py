@@ -23,6 +23,7 @@ from utils import (
     GPTAnalysisRequest,
     GPTAnalysisResult,
     OpenAIError,
+    sanitize_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,10 @@ class OpenAIManager:
             # Подготавливаем код
             combined_code = self._combine_chunks(request.chunks)
             
+            # Санитайзинг при необходимости
+            if self.config.analysis.sanitize_enabled:
+                combined_code = sanitize_text(combined_code, self.config.analysis.sanitize_patterns)
+
             # Формируем промпт
             prompt = self._build_analysis_prompt(request, combined_code)
             
@@ -219,19 +224,37 @@ class OpenAIManager:
         )
 
     async def _call_openai_api(self, prompt: str) -> str:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Ты эксперт по анализу кода. Предоставляй краткие и точные описания.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=self.temperature,
-            max_tokens=self.config.openai.max_response_tokens,
-        )
-        return response.choices[0].message.content
+        # Ретраи на случай временных ошибок сети/квот
+        attempts = max(1, int(self.config.openai.retry_attempts))
+        delay = max(0.0, float(self.config.openai.retry_delay))
+        last_exc: Optional[Exception] = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "Ты эксперт по анализу кода. Предоставляй краткие и точные описания.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=self.temperature,
+                    max_tokens=self.config.openai.max_response_tokens,
+                )
+                return response.choices[0].message.content
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "Ошибка вызова OpenAI (попытка %s/%s): %s", attempt, attempts, exc
+                )
+                if attempt < attempts:
+                    await asyncio.sleep(delay)
+
+        # Если все попытки исчерпаны — пробрасываем ошибку выше
+        assert last_exc is not None
+        raise last_exc
 
     def _parse_gpt_response(self, text: str, chunks: List[CodeChunk]) -> GPTAnalysisResult:
         """

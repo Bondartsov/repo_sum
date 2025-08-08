@@ -113,62 +113,45 @@ class FileScanner:
         return False
     
     def _is_library_file(self, file_path: Path) -> bool:
-        """Проверяет, является ли файл библиотечным/сторонним"""
+        """Проверяет, является ли файл библиотечным/сторонним.
+        Более консервативный фильтр, чтобы не исключать пользовательский код по случайным совпадениям.
+        """
+        path_parts = [p.lower() for p in file_path.parts]
         path_str = str(file_path).lower()
-        
-        # Популярные библиотеки и фреймворки
-        library_indicators = [
+
+        # 1) Явные директории стороннего кода
+        vendor_dirs = {
             'third_party', 'third-party', 'thirdparty',
-            'external', 'vendor', 'vendors', 'lib', 'libs',
-            'spdlog', 'nlohmann', 'json', 'fmt', 'boost',
-            'opencv', 'eigen', 'protobuf', 'grpc',
-            'asyncpp', 'uvpp', 'coasync', 'uv',
-            'qt', 'wxwidgets', 'gtkmm', 'fltk',
-            'catch2', 'gtest', 'googletest',
-            'cmake', 'build', 'generated',
-            'node_modules', 'bower_components',
-            'include/std', 'include/bits',
-            'include/sys', 'include/linux'
-        ]
-        
-        # Проверяем наличие индикаторов в пути
-        for indicator in library_indicators:
-            if indicator in path_str:
+            'external', 'vendor', 'vendors',
+            'node_modules', 'bower_components'
+        }
+        if any(part in vendor_dirs for part in path_parts):
+            return True
+
+        # 2) Служебные каталоги сборки/генерации
+        build_dirs = {'cmake-build-debug', 'cmake-build-release', 'build', 'dist', 'generated'}
+        if any(part in build_dirs for part in path_parts):
+            return True
+
+        # 3) Специфичные include‑пути системных заголовков
+        # Проверяем только паттерны include/...
+        if 'include' in path_parts:
+            joined = '/'.join(path_parts)
+            if any(seg in joined for seg in ('include/std', 'include/bits', 'include/sys', 'include/linux')):
                 return True
-        
-        # Проверяем специфичные паттерны файлов
+
+        # 4) Генерированные/автосгенерированные файлы по названию
         file_name = file_path.name.lower()
-        
-        # Генерированные файлы
-        generated_patterns = [
+        generated_patterns = (
             '.pb.', '.proto.', '_pb2.', '_pb2_grpc.',
             '.generated.', '.gen.', 'generated_',
             '.moc.', '.ui.', '.qrc.',
             'moc_', 'ui_', 'qrc_'
-        ]
-        
-        for pattern in generated_patterns:
-            if pattern in file_name:
-                return True
-        
-        # Утилиты форматирования и дебагирования
-        utility_patterns = [
-            'format', 'formatter', 'pretty', 'debug',
-            'trace', 'log', 'sink', 'registry',
-            'detail/', 'details/', 'internal/',
-            'impl/', 'implementation/'
-        ]
-        
-        for pattern in utility_patterns:
-            if pattern in path_str:
-                return True
-        
-        # Проверяем глубину вложенности include папок (часто указывает на библиотеки)
-        if 'include' in path_str:
-            include_depth = path_str.count('include')
-            if include_depth > 2:  # Слишком глубоко вложенные include
-                return True
-        
+        )
+        if any(pat in file_name for pat in generated_patterns):
+            return True
+
+        # 5) Не отфильтровываем по общим словам ("json", "log", "lib" и т.п.) — слишком много ложных срабатываний
         return False
     
     def _create_file_info(self, file_path: Path) -> Optional[FileInfo]:

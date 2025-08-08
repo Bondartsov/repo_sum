@@ -5,6 +5,10 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
+import hashlib
+import json
+import re
+from datetime import datetime
 
 
 @dataclass
@@ -132,14 +136,89 @@ def ensure_directory_exists(path: str) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
 
 
+def compute_file_hash(path: str, block_size: int = 1 << 20) -> str:
+    """SHA256 хэш содержимого файла, блочно, для больших файлов."""
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        while True:
+            chunk = f.read(block_size)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def read_index(index_path: str) -> Dict[str, Dict[str, str]]:
+    """Читает/инициализирует индекс изменённых файлов.
+    Структура: { file_path: {"hash": str, "analyzed_at": iso } }
+    """
+    p = Path(index_path)
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+
+
+def write_index(index_path: str, data: Dict[str, Dict[str, str]]) -> None:
+    Path(index_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(index_path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def sanitize_text(text: str, patterns: List[str]) -> str:
+    """Маскирует секреты/PII по списку regex-паттернов."""
+    if not patterns:
+        return text
+    masked = text
+    for pat in patterns:
+        try:
+            masked = re.sub(pat, "[REDACTED]", masked, flags=re.MULTILINE)
+        except re.error:
+            # игнорируем некорректный паттерн
+            continue
+    return masked
+
+
+class MetricsRecorder:
+    """Сбор простых метрик сессии анализа."""
+    def __init__(self) -> None:
+        self.data: Dict[str, float] = {
+            'total_requests': 0,
+            'total_tokens': 0,
+        }
+        self.started_at: str = datetime.utcnow().isoformat()
+
+    def add_request(self, tokens: int) -> None:
+        self.data['total_requests'] += 1
+        self.data['total_tokens'] += max(0, tokens)
+
+    def snapshot(self) -> Dict[str, float]:
+        return dict(self.data)
+
+
 def create_error_parsed_file(file_info: FileInfo, error: Exception) -> ParsedFile:
-    """Создает объект ParsedFile для файла с ошибкой парсинга"""
-    return ParsedFile(file_info, [], [], [], [str(error)])
+    """Создает объект ParsedFile для файла с ошибкой парсинга
+    Возвращает структуру с корректным заполнением поля parse_errors.
+    """
+    return ParsedFile(
+        file_info=file_info,
+        parse_errors=[str(error)]
+    )
 
 
 def create_error_gpt_result(error: Exception) -> GPTAnalysisResult:
-    """Создает объект GPTAnalysisResult для случая ошибки анализа"""
-    return GPTAnalysisResult("", [], {}, f"Ошибка анализа: {error}")
+    """Создает объект GPTAnalysisResult для случая ошибки анализа
+    Поле error заполняется сообщением, full_text остаётся пустым,
+    чтобы генератор Markdown использовал fallback‑разметку.
+    """
+    return GPTAnalysisResult(
+        summary="Ошибка анализа",
+        key_components=[],
+        analysis_per_chunk={},
+        full_text="",
+        error=f"Ошибка анализа: {error}"
+    )
 
 
 def clean_filename(filename: str) -> str:

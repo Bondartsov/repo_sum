@@ -174,7 +174,10 @@ class DocumentationGenerator:
         Создать SUMMARY_REPORT_<repo> с вложенными подпапками.
         """
         repo_name = Path(repo_path).name
-        summary_root = Path(repo_path) / f"SUMMARY_REPORT_{repo_name}"
+        # ВАЖНО: использовать директорию вывода, переданную вызывающим кодом,
+        # а не путь репозитория. Это соответствует флагу CLI --output и
+        # позволяет веб‑интерфейсу явно управлять местом сохранения.
+        summary_root = Path(output_dir) / f"SUMMARY_REPORT_{repo_name}"
         ensure_directory_exists(str(summary_root))
 
         generated: List[Dict] = []

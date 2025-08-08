@@ -53,6 +53,10 @@ class AnalysisConfig:
     min_chunk_size: int = 100
     enable_fallback: bool = True
     languages_priority: List[str] = field(default_factory=lambda: ["python", "javascript", "java"])
+    # Новые опции расширенного анализа
+    enable_advanced_scoring: bool = False  # приоритизация чанков по «важности»
+    sanitize_enabled: bool = False         # санитайзинг секретов перед отправкой в LLM
+    sanitize_patterns: List[str] = field(default_factory=list)  # регулярные выражения для вырезания
 
 
 @dataclass
@@ -93,6 +97,8 @@ class OutputConfig:
     default_output_dir: str = "./docs"
     file_template: str = "minimal_file.md"
     index_template: str = "index_template.md"
+    format: str = "markdown"  # markdown|html
+    templates_dir: str = "report_templates"
 
 
 @dataclass
