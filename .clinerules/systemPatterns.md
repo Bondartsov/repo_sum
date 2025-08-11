@@ -6,17 +6,23 @@
 **Применение**: Разделение системы на независимые, взаимозаменяемые модули
 **Реализация**:
 ```python
-# Каждый модуль имеет четкую ответственность
+# Core система
 main.py          # Координация и CLI
 file_scanner.py  # Сканирование файлов
 openai_integration.py # API взаимодействие
 doc_generator.py # Генерация документации
+
+# 🔥 RAG система (новый модуль)
+embedder.py      # CPU-оптимизированный эмбеддер
+vector_store.py  # Qdrant интеграция
+query_engine.py  # Гибридный поиск
 ```
 
 **Преимущества**:
 - Простота тестирования каждого компонента
 - Легкое добавление новой функциональности
 - Независимые обновления модулей
+- Изоляция RAG компонентов от основной системы
 
 ### 2. Plugin Architecture для парсеров
 **Применение**: Расширяемая система парсеров языков программирования
@@ -121,6 +127,59 @@ def get_batch_size(file_count: int) -> int:
 - TTL (Time To Live) для автоочистки
 - Инвалидация при изменении файла
 
+### 4. Search Result Caching (TTL) — RAG
+**Применение**: Кэширование результатов поисковых запросов (dense/hybrid) для популярных запросов.
+**Реализация**:
+- LRU/TTL через `cachetools`; ключ — нормализованный текст запроса + флаги (`use_hybrid`, `top_k`, фильтры).
+- Инвалидация по TTL и принудительная инвалидация при переиндексации.
+```python
+from cachetools import TTLCache
+search_cache = TTLCache(maxsize=1000, ttl=300)
+
+def cached_search(key, compute):
+    if key in search_cache:
+        return search_cache[key]
+    res = compute()
+    search_cache[key] = res
+    return res
+```
+
+### 5. Reciprocal Rank Fusion (RRF) Pattern
+**Применение**: Фьюжн dense и sparse выдач для повышения точности.
+**Реализация**:
+```python
+from collections import defaultdict
+
+def rrf(lists, k=60):
+    fused = defaultdict(float)
+    for lst in lists:  # lst: [(id, score), ...] в порядке ранга
+        for rank, (pid, _) in enumerate(lst, start=1):
+            fused[pid] += 1.0 / (k + rank)
+    return sorted(fused.items(), key=lambda x: x[1], reverse=True)
+```
+
+### 6. MMR Re-ranking Pattern
+**Применение**: Диверсификация результатов и борьба с дубликатами.
+**Реализация**:
+```python
+import numpy as np
+
+def mmr(query_vec, cand_vecs, lambda_=0.7, top_k=10):
+    selected, remaining = [], list(range(len(cand_vecs)))
+    sims = lambda a,b: float(np.dot(a,b) / (np.linalg.norm(a)*np.linalg.norm(b) + 1e-9))
+    while remaining and len(selected) < top_k:
+        best, best_score = None, -1e9
+        for i in remaining:
+            rel = sims(query_vec, cand_vecs[i])
+            div = 0.0 if not selected else max(sims(cand_vecs[i], cand_vecs[j]) for j in selected)
+            score = lambda_*rel - (1-lambda_)*div
+            if score > best_score:
+                best, best_score = i, score
+        selected.append(best)
+        remaining.remove(best)
+    return selected
+```
+
 ## 🔒 Паттерны безопасности
 
 ### 1. Sanitization Pattern
@@ -199,6 +258,32 @@ for i, batch in enumerate(batches):
     progress_bar.progress((i + 1) / len(batches))
 ```
 
+### 4. Adaptive Batch Encoding Pattern
+**Применение**: Адаптивный размер батча эмбеддингов с учётом свободной RAM и длины очереди.
+**Реализация**:
+```python
+import psutil
+
+def calc_batch_size(q_len, cfg):
+    avail = psutil.virtual_memory().available
+    # Сервер с большим RAM → стремимся к верхней границе
+    if avail > 8 * 1024**3:
+        return min(cfg.batch_size_max, max(16, q_len))
+    # Дефолтная эвристика
+    return max(cfg.batch_size_min, min(cfg.batch_size_max, max(cfg.batch_size_min, q_len // 2)))
+```
+
+### 5. Parallelism Threads Configuration Pattern
+**Применение**: Управление потоками для CPU‑производительности.
+**Реализация**:
+```python
+import os, torch
+def configure_threads(par):
+    torch.set_num_threads(par.torch_num_threads)
+    os.environ["OMP_NUM_THREADS"] = str(par.omp_num_threads)
+    os.environ["MKL_NUM_THREADS"] = str(par.mkl_num_threads)
+```
+
 ## 🔄 Паттерны интеграции
 
 ### 1. Adapter Pattern для UI
@@ -240,6 +325,15 @@ class ReportFactory:
             return HTMLReportGenerator()  # Планируется
 ```
 
+### 4. CLI Commands Pattern (RAG)
+**Применение**: Единый UX для индексации/поиска/анализа с контекстом.
+**Команды**:
+```bash
+python main.py index /path/to/repo
+python main.py search "find auth tokens" -k 10 --hybrid
+python main.py analyze-with-rag /path/to/repo -o ./docs
+```
+
 ## 📊 Паттерны мониторинга
 
 ### 1. Metrics Collection Pattern
@@ -266,6 +360,21 @@ logger.info("Analysis completed", extra={
     "duration_sec": metrics.total_time
 })
 ```
+
+### 3. Vector DB Monitoring Pattern (Qdrant)
+**Применение**: Мониторинг производительности и ошибок векторного поиска.
+**Реализация**:
+- Метрики: количество точек/сегментов, latency поиска, error rates.
+- Prometheus экспонирование гистограмм и счётчиков.
+```python
+from prometheus_client import Counter, Histogram
+qdrant_requests_total = Counter("qdrant_requests_total", "Qdrant requests", ["op"])
+qdrant_search_latency = Histogram("qdrant_search_latency_seconds", "Search latency")
+```
+
+### 4. Alerting Pattern
+**Применение**: Алерты на превышение латентности/ошибок.
+**Реализация**: Правила в Prometheus Alertmanager; пороги SLA по p95/p99.
 
 ## 🔧 Принципы качества кода
 

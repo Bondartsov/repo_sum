@@ -3,32 +3,121 @@
 ## 🏗️ Технологический стек
 
 ### Основные технологии:
-- **Python 3.8+**: Основной язык разработки
-- **OpenAI GPT API**: ИИ-анализ кода (gpt-4o-mini по умолчанию)
-- **Qdrant**: Векторная база данных для RAG системы
-- **CodeBERT/GraphCodeBERT**: Специализированные эмбединги для кода (бесплатно)
-- **Streamlit**: Веб-интерфейс для пользователей + Chat UI
+- **Python 3.9+**: Основной язык разработки (требование современных библиотек)
+- **OpenAI GPT API**: ИИ-анализ кода (upgraded to 1.99.6)
+- **Qdrant v1.15.1**: Enterprise-ready векторная база данных с квантованием
+- **Sentence-Transformers 5.1.0**: CPU-оптимизированные эмбединги с precision='int8'
+- **Streamlit**: Веб-интерфейс + RAG-enhanced Chat UI
 - **AST (Abstract Syntax Tree)**: Парсинг кода всех языков
-- **Pathlib**: Работа с файловой системой
-- **JSON**: Конфигурация и кэширование
+- **FastAPI**: REST API для enterprise интеграции
+- **Prometheus/Grafana**: Мониторинг и аналитика
+- **Docker**: Контейнеризация и deployment
 - **Markdown**: Формат выходной документации
 
-### Внешние зависимости:
-```
-# Core dependencies
-openai>=1.0.0          # OpenAI API клиент
-streamlit>=1.28.0      # Веб-интерфейс
-python-dotenv>=1.0.0   # Управление переменными окружения
-pytest>=7.4.0          # Тестирование
-pathspec>=0.11.0       # Git-style ignore паттерны
+### Обновленные зависимости (Enterprise-ready):
 
-# RAG System dependencies  
-qdrant-client>=1.8.0   # Qdrant векторная БД
-transformers>=4.35.0   # Hugging Face трансформеры
-torch>=2.0.0          # PyTorch для эмбедингов
-sentence-transformers>=2.2.0  # Sentence embeddings
-numpy>=1.24.0         # Векторные операции
-faiss-cpu>=1.7.4      # Опциональный fallback для векторного поиска
+#### 🔥 ВАЖНО: Два профиля развертывания (обновлено 11.08.2025)
+
+**FastEmbed-light профиль (РЕКОМЕНДУЕТСЯ для CPU):**
+```bash
+# Минимальные зависимости, ONNX Runtime, квантованные модели
+pip install qdrant-client[fastembed]>=1.15.1
+pip install openai>=1.99.6
+pip install streamlit>=1.46.0
+pip install psutil>=5.9.5
+pip install cachetools>=5.3.0
+# БЕЗ torch/torchvision - не нужны!
+```
+
+**SBERT-extended профиль (полный контроль):**
+```bash
+# Полный sentence-transformers стек с ONNX экспортом
+pip install sentence-transformers>=3.0.0  # актуальная ветка 2025
+pip install torch>=2.4.0+cpu              # актуальная CPU версия  
+pip install qdrant-client>=1.15.1
+pip install openai>=1.99.6
+pip install faiss-cpu>=1.7.4              # актуальная ветка
+pip install streamlit>=1.46.0
+pip install psutil>=5.9.5
+pip install cachetools>=5.3.0
+# Опционально для ONNX экспорта:
+# pip install onnxruntime>=1.16.0
+# pip install openvino>=2024.0.0
+```
+
+#### Детальные зависимости:
+```
+############################
+# Core dependencies (обновлено)
+############################
+openai>=1.99.6                    # Обновленный OpenAI API клиент  
+streamlit>=1.46.0                 # Веб-интерфейс
+python-dotenv>=1.0.0              # Управление переменными окружения
+click>=8.1.8                      # CLI framework
+rich>=14.0.0                      # CLI UI library
+
+############################  
+# RAG System (CPU-first подходы)
+############################
+# ВАРИАНТ A (рекомендуется): FastEmbed + ONNX
+qdrant-client[fastembed]>=1.15.1  # FastEmbed включен, квантованные ONNX модели
+
+# ВАРИАНТ B: Sentence-transformers с правильным квантованием
+sentence-transformers>=3.0.0      # НЕ quantize('int8') модели!
+                                   # ПРАВИЛЬНО: encode(..., precision='int8')
+torch>=2.4.0+cpu                  # Актуальная CPU версия (НЕ 2.0.0!)
+faiss-cpu>=1.7.4                  # Актуальная ветка 1.11.x
+
+# Общие зависимости
+numpy>=1.24.0                     # Векторные операции
+psutil>=5.9.5                     # RAM мониторинг и управление
+cachetools>=5.3.0                 # LRU/TTL кэширование
+
+############################
+# Production infrastructure  
+############################
+fastapi>=0.104.0                  # REST API сервер
+uvicorn>=0.24.0                    # ASGI сервер
+prometheus-client>=0.19.0          # Метрики
+pytest>=8.3.4                     # Тестирование
+pytest-asyncio>=1.1.0             # Асинхронные тесты
+
+############################
+# CPU Performance boosters
+############################
+# Для ONNX/OpenVINO экспорта (SBERT профиль):
+# onnxruntime>=1.16.0             # ONNX Runtime для максимальной производительности
+# openvino>=2024.0.0              # Intel OpenVINO для CPU оптимизации
+```
+
+#### ⚠️ Критические различия в подходах к квантованию:
+
+**НЕПРАВИЛЬНО (так НЕ работает в 2025):**
+```python  
+# Этого API НЕТ в sentence-transformers!
+model.quantize('int8')  # ❌ НЕ СУЩЕСТВУЕТ
+```
+
+**ПРАВИЛЬНО для sentence-transformers:**
+```python
+# Квантование ЭМБЕДДИНГОВ при encode()
+embeddings = model.encode(texts, 
+    normalize_embeddings=True,
+    precision='int8',  # или 'binary'
+    batch_size=32
+)
+
+# ИЛИ экспорт модели в ONNX/OpenVINO
+model.export_dynamic_quantized_onnx_model('model.onnx')
+model.export_static_quantized_openvino_model('model_openvino/')
+```
+
+**ПРАВИЛЬНО для FastEmbed (рекомендуется):**
+```python  
+# Уже квантованные ONNX модели из коробки
+from fastembed import TextEmbedding
+model = TextEmbedding("BAAI/bge-small-en-v1.5")  # автоматически ONNX+квантование
+embeddings = model.embed(texts)  # нормализация уже включена
 ```
 
 ## 🏛️ Архитектурные принципы
@@ -193,6 +282,61 @@ SUPPORTED_EXTENSIONS = {
 - Контекстно-зависимый поиск
 
 ## 🔧 Конфигурационная система
+
+### Новые dataclass-конфигурации (config.py)
+```python
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+@dataclass
+class EmbeddingConfig:
+    provider: str = "sentence-transformers"   # "sentence-transformers" | "fastembed"
+    model_name: str = "intfloat/e5-small-v2"
+    precision: str = "int8"                   # "int8" | "float32"
+    truncate_dim: int = 384                   # 256–384
+    batch_size_min: int = 8
+    batch_size_max: int = 128
+    normalize_embeddings: bool = True
+    device: str = "cpu"
+    warmup_enabled: bool = True
+    num_workers: int = 4
+
+@dataclass
+class VectorStoreConfig:
+    host: str = "localhost"
+    port: int = 6333
+    prefer_grpc: bool = True
+    collection_name: str = "code_chunks"
+    vector_size: int = 384
+    distance: str = "cosine"
+    hnsw_m: int = 24
+    hnsw_ef_construct: int = 128
+    search_hnsw_ef: int = 256
+    quantization_type: str = "SQ"             # "SQ" | "PQ"
+    enable_quantization: bool = True
+    replication_factor: int = 2
+    write_consistency_factor: int = 1
+    mmap: bool = True
+
+@dataclass
+class QueryEngineConfig:
+    max_results: int = 10
+    rrf_enabled: bool = True
+    use_hybrid: bool = True                   # dense + sparse
+    mmr_enabled: bool = True
+    mmr_lambda: float = 0.7
+    cache_ttl_seconds: int = 300
+    cache_max_entries: int = 1000
+    concurrent_users_target: int = 20
+    search_workers: int = 4
+    embed_workers: int = 4
+
+@dataclass
+class ParallelismConfig:
+    torch_num_threads: int = 4
+    omp_num_threads: int = 4
+    mkl_num_threads: int = 4
+```
 
 ### Структура settings.json:
 ```json
