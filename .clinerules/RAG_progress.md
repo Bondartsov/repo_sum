@@ -1,71 +1,91 @@
-# 🔥 ДЕТАЛЬНЫЙ ПЛАН РЕАЛИЗАЦИИ RAG СИСТЕМЫ
+# 🔥 PRODUCTION-READY ПЛАН RAG СИСТЕМЫ (АУДИТ 08.2025)
 
-Основываясь на загруженном контексте из Memory Bank и анализе текущего кода, представляю максимально глубоко проработанный план реализации революционной RAG системы.
+**ОБНОВЛЕНО**: Полностью переработанный план с учетом аудита актуальных библиотек, CPU-оптимизации и production-ready подходов.
 
 ## 🏗️ АРХИТЕКТУРНЫЙ ОБЗОР
 
-### Критические принципы дизайна:
-1. **Микро-сегментация кода** до уровня statement/expression с сохранением иерархии
-2. **Семантический поиск** через специализированные CodeBERT эмбединги
-3. **Интерактивный диалог** с живой кодовой базой через Streamlit chat UI
-4. **Инкрементальная индексация** для больших проектов
-5. **Контекстно-зависимый поиск** с пониманием связей между компонентами
+### Критические принципы дизайна (ОБНОВЛЕНО):
+1. **Адаптивная сегментация кода** с сохранением логической целостности (НЕ микро-сегментация)
+2. **CPU-first эмбединги** через современные модели (all-MiniLM, e5-small, BGE)
+3. **Гибридный поиск** (dense + sparse) для максимального качества на CPU
+4. **Инкрементальная индексация** с версионированием чанков
+5. **Production-ready управление памятью** и ресурсами
 
 ## 📋 ФАЗА 1: FOUNDATION (Неделя 1-1.5)
 
 ### 1.1 Настройка зависимостей и инфраструктуры
 
-**Новые зависимости в requirements.txt:**
+**Новые зависимости в requirements.txt (ОБНОВЛЕНО 08.2025):**
 ```python
-# RAG System Core
-qdrant-client>=1.8.0        # Векторная БД
-transformers>=4.35.0        # HuggingFace трансформеры  
-torch>=2.0.0               # PyTorch backend
-sentence-transformers>=2.2.0 # Sentence embeddings
-numpy>=1.24.0              # Векторные операции
+# RAG System Core - CPU-оптимизированные версии
+sentence-transformers>=5.1.0    # Современная версия с precision control
+torch>=2.7.0+cpu --index-url https://download.pytorch.org/whl/cpu
+qdrant-client>=1.10.0          # Актуальная версия с гибридным поиском
+numpy>=1.24.0                  # Векторные операции
+psutil>=5.9.5                  # RAM мониторинг и управление
+cachetools>=5.3.0              # LRU/TTL кэширование
 
-# Optional performance boosters
-faiss-cpu>=1.7.4           # Fallback векторный поиск
-accelerate>=0.25.0         # GPU acceleration для трансформеров
+# Альтернативные CPU-first эмбедеры
+fastembed>=0.3.0               # ONNX Runtime, quantized weights
+faiss-cpu>=1.7.4               # Fallback векторный поиск
 ```
 
-**Критические проверки совместимости:**
-- Torch версия совместима с CUDA/CPU
-- Transformers совместим с CodeBERT моделями
-- Qdrant client поддерживает нужные коллекции
+**Критические проверки совместимости (ИСПРАВЛЕНО):**
+- Sentence-transformers v5.x API совместимость с precision параметрами
+- Qdrant client поддерживает гибридный поиск и quantization
+- Torch CPU threads настроены правильно (OMP_NUM_THREADS, MKL_NUM_THREADS)
+- Удален torchvision (не нужен для текстовых моделей)
 
 ### 1.2 Расширение конфигурационной системы
 
-**config.py - новые dataclasses:**
+**config.py - новые dataclasses (CPU-оптимизированные):**
 ```python
 @dataclass
 class QdrantConfig:
     host: str = "localhost"
     port: int = 6333
     collection_name: str = "code_chunks"  
-    vector_size: int = 768
+    vector_size: int = 384  # 384d для CPU-efficient моделей
     distance_metric: str = "cosine"
     timeout: float = 10.0
     prefer_grpc: bool = True
+    # CPU-оптимизированные HNSW параметры
+    hnsw_m: int = 16              # Уменьшено для экономии RAM
+    hnsw_ef_construct: int = 64   # Оптимально для CPU
+    enable_quantization: bool = True  # INT8 квантование
 
 @dataclass  
 class EmbeddingsConfig:
-    model_name: str = "microsoft/codebert-base"
+    model_name: str = "intfloat/e5-small-v2"  # CPU-efficient 384d модель
     model_cache_dir: str = "./models_cache"
-    batch_size: int = 32
-    max_length: int = 512
+    batch_size: int = 16          # Уменьшено для CPU
+    max_length: int = 256         # Укорочено для производительности
     cache_embeddings: bool = True
-    device: str = "auto"  # auto/cpu/cuda
+    device: str = "cpu"           # CPU-first
+    precision: str = "int8"       # ST v5.x precision control
+    normalize_embeddings: bool = True  # Встроенная нормализация
+    enable_matryoshka: bool = True     # Truncate_dim для экономии
 
 @dataclass
 class ChunkingConfig:
-    strategy: str = "semantic_ast"
-    max_chunk_size: int = 200
-    min_chunk_size: int = 20
+    strategy: str = "adaptive_logical"  # НЕ микро-сегментация
+    max_chunk_size: int = 300          # Больше для сохранения контекста
+    min_chunk_size: int = 50           # Минимум для логической целостности
     overlap_tokens: int = 50
     preserve_hierarchy: bool = True
     include_docstrings: bool = True
     include_comments: bool = False
+    enable_auto_grouping: bool = True   # Автоматическое определение групп
+
+@dataclass
+class CPUOptimizationConfig:
+    max_ram_usage_mb: int = 2048       # Лимит RAM
+    enable_model_unloading: bool = True # Выгрузка после обработки
+    adaptive_batch_size: bool = True    # Адаптивный размер батча
+    cache_type: str = "lru_ttl"        # LRU/TTL кэш вместо dict
+    max_cache_size: int = 1000         # Максимум записей в кэше
+    cache_ttl_hours: int = 24          # TTL для кэша
+    num_cpu_threads: int = 4           # Контроль потоков CPU
 ```
 
 ### 1.3 Создание модуля rag/
@@ -113,85 +133,120 @@ class QdrantVectorStore:
 - Валидация векторных размерностей
 - Мониторинг использования памяти
 
-### 2.2 CodeEmbedder (rag/code_embedder.py)
+### 2.2 CPUEmbedder (rag/code_embedder.py) - ОБНОВЛЕНО 08.2025
 
-**Модели (приоритет):**
-1. **microsoft/codebert-base** (768d) - основная модель
-2. **microsoft/graphcodebert-base** (768d) - для граф структур
-3. **Salesforce/codet5p-220m** (512d) - компактная альтернатива
+**Модели (CPU-приоритет - ИСПРАВЛЕНО):**
+1. **intfloat/e5-small-v2** (384d) - CPU-эффективная модель
+2. **BAAI/bge-small-en-v1.5** (384d) - современная альтернатива MiniLM
+3. **sentence-transformers/all-MiniLM-L6-v2** (384d) - fallback опция
+4. **FastEmbed ONNX модели** - максимальная производительность на CPU
 
-**Ключевые возможности:**
-- Lazy loading моделей (загрузка по требованию)
-- Батчевая обработка с автоопределением размера батча
-- GPU/CPU автодетекция с fallback
-- Кэширование эмбедингов на диск
-- Нормализация векторов для cosine similarity
+**Ключевые возможности (ИСПРАВЛЕНО):**
+- Lazy loading с CPU-оптимизацией
+- Sentence Transformers v5.x с precision control
+- Адаптивный batch sizing по доступной RAM
+- LRU/TTL кэширование вместо простого dict
+- Встроенная нормализация через ST v5 API
 
-**Критические методы:**
+**Критические методы (ОБНОВЛЕНО):**
 ```python
-class CodeEmbedder:
-    def __init__(self, model_name: str, cache_dir: str)
-    async def load_model(self) -> None
-    async def embed_batch(self, texts: List[str]) -> np.ndarray
-    async def embed_single(self, text: str) -> np.ndarray
-    def clear_cache(self) -> int
+class CPUEmbedder:
+    def __init__(self, config: CPUOptimizationConfig)
+    async def ensure_model_loaded(self) -> None
+    async def embed_batch_cpu_safe(self, texts: List[str]) -> np.ndarray:
+        # ST v5.x с precision='int8' и normalize_embeddings=True
+        return self.model.encode(
+            texts, 
+            precision=self.config.precision,
+            normalize_embeddings=True,
+            batch_size=self.calculate_adaptive_batch_size()
+        )
+    def unload_model(self) -> None  # Для освобождения RAM
+    def calculate_adaptive_batch_size(self) -> int  # По доступной RAM
 ```
 
-### 2.3 SemanticChunker (rag/semantic_chunker.py)
+### 2.3 SemanticChunker (rag/semantic_chunker.py) - ИСПРАВЛЕНО
 
-**Микро-сегментация стратегии:**
-- **AST Node Level**: Разбиение по AST узлам (function_def, class_def, etc.)
-- **Statement Level**: Отдельные statements как чанки
-- **Expression Level**: Сложные выражения как отдельные единицы
-- **Block Level**: Логические блоки (if/for/while bodies)
+**Адаптивные стратегии сегментации (НЕ микро-сегментация):**
+- **Adaptive Logical**: Функции/классы как целостные блоки (50-300 строк)
+- **Smart Grouping**: Автоматическое определение групп (auth, db, api)
+- **Context Preservation**: Сохранение 10 строк контекста вокруг блока
+- **Hierarchy Aware**: Учет parent-child связей без разрушения логики
 
-**Метаданные для каждого чанка:**
+**Метаданные для каждого чанка (РАСШИРЕНО):**
 ```python
 @dataclass
-class CodeChunk:
+class VersionedCodeChunk:
     id: str                    # Уникальный ID
-    content: str              # Исходный код
+    content: str              # Исходный код (полный логический блок)
     file_path: str            # Путь к файлу
     language: str             # Язык программирования
-    chunk_type: ChunkType     # function/class/statement/expression
+    chunk_type: ChunkType     # function_complete/class_with_methods/config_section
     parent_id: Optional[str]  # ID родительского чанка
     line_start: int           # Начальная строка
     line_end: int            # Конечная строка
     tokens_count: int        # Количество токенов
     dependencies: List[str]   # Зависимости (imports, calls)
     context_window: str      # Окружающий контекст
+    
+    # Новые поля для CPU-оптимизации
+    content_hash: str = field(init=False)  # SHA-256 для версионирования
+    logical_group: Optional[str] = None    # auth/db/api автогруппировка
+    contains_auth_logic: bool = False      # Флаг для быстрой фильтрации
+    is_config_file: bool = False          # Поддержка .env, .yml файлов
+    version: int = 1                      # Версия чанка
+    last_modified: datetime = field(default_factory=datetime.now)
 ```
 
-**Сохранение иерархии:**
-- File → Class → Method → Statement → Expression
-- Перекрестные ссылки между связанными чанками
-- Индексирование по типам (functions, classes, variables)
+**Сохранение логической целостности (ИСПРАВЛЕНО):**
+- File → Class → Method (как ЕДИНЫЕ блоки, не разбитые)
+- Автоопределение групп через статический анализ
+- Версионирование чанков через content_hash
+- Адаптивное объединение мелких блоков (min_chunk_size=50)
 
 ## 📋 ФАЗА 3: SEARCH & QUERY ENGINE (Неделя 2.5-3.5)
 
 ### 3.1 QueryEngine (rag/query_engine.py)
 
-**Алгоритм семантического поиска:**
+**Алгоритм семантического поиска (CPU-оптимизированный):**
 1. **Query Processing**: Preprocessing пользовательского запроса
 2. **Intent Recognition**: Определение типа запроса (explain/find/refactor/etc.)
-3. **Vector Search**: Поиск в Qdrant по косинусному сходству  
-4. **Context Expansion**: Добавление связанных чанков
-5. **Re-ranking**: Переранжирование по релевантности
+3. **Hybrid Search**: Dense + sparse векторный поиск в Qdrant (RRF/DBSF)
+4. **Context Expansion**: Добавление связанных чанков по logical_group
+5. **Re-ranking**: CPU-эффективное переранжирование (hnsw_ef=128-256)
 6. **Context Assembly**: Сборка финального контекста для LLM
 
-**Типы запросов:**
-- **Explain queries**: "Объясни функцию X" → поиск function_def + related calls
-- **Find queries**: "Где используется переменная Y" → поиск по dependencies
-- **Pattern queries**: "Найди похожие паттерны" → similarity search
-- **Refactor queries**: "Предложи рефакторинг" → complex analysis
+**Типы запросов (с logical grouping):**
+- **Explain queries**: "Объясни функцию X" → поиск в группе + related calls
+- **Find queries**: "Где используется переменная Y" → поиск по dependencies + group filtering
+- **Pattern queries**: "Найди похожие паттерны" → similarity search + MMR server-side
+- **Config queries**: "Где настроена авторизация?" → поиск в config files + logical_group="auth"
 
-**Критические методы:**
+**Критические методы (ОБНОВЛЕНО):**
 ```python
-class QueryEngine:
-    async def search(self, query: str, filters: SearchFilters) -> SearchResult
-    async def explain_code(self, code_id: str) -> ExplanationResult  
-    async def find_usage(self, symbol: str, scope: str) -> UsageResult
-    async def suggest_refactoring(self, code_id: str) -> RefactoringResult
+class CPUQueryEngine:
+    async def hybrid_search(self, query: str, filters: SearchFilters) -> SearchResult
+    async def search_by_logical_group(self, query: str, group: str) -> GroupedResult
+    async def explain_code_with_context(self, code_id: str) -> ExplanationResult  
+    async def find_config_related(self, query: str) -> ConfigResult
+    def calculate_relevance_score_cpu(self, chunk: VersionedCodeChunk) -> float
+```
+
+### 3.2 HybridSearchEngine (rag/hybrid_search.py) - НОВАЯ ФАЗА 3.2
+
+**Гибридный поиск (dense + sparse):**
+- **Dense vectors**: e5-small-v2 эмбединги для семантического понимания
+- **Sparse vectors**: FastEmbed SPLADE/miniCOIL для точного терминологического поиска
+- **RRF (Reciprocal Rank Fusion)**: Комбинирование результатов
+- **MMR server-side**: Разнообразие результатов без CPU overhead
+
+**Критические возможности:**
+```python
+class HybridSearchEngine:
+    async def dense_search(self, query: str) -> List[SearchResult]
+    async def sparse_search(self, query: str) -> List[SearchResult] 
+    async def fuse_results_rrf(self, dense: List, sparse: List) -> List[SearchResult]
+    async def apply_mmr_server_side(self, results: List) -> List[SearchResult]
 ```
 
 ### 3.2 CodeContext (rag/code_context.py)
