@@ -16,7 +16,7 @@ jobs:
     # environment: ci
 
     env:
-      # Булев флаг наличия секрета (избегаем прямого использования secrets в if, чтобы не ловить ошибки линтера)
+      # Булев флаг наличия секрета
       HAS_OPENAI_SECRET: ${{ secrets.OPENAI_API_KEY != '' }}
       # Ускорение pip
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -33,7 +33,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          # Кэшируем pip-колесо, чтобы ускорить установку зависимостей/плагинов
+          # Кэшируем pip-колёса для ускорения установки
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -59,7 +59,7 @@ jobs:
           # Если проект упакован (pyproject.toml/setup.cfg/setup.py), установим его для корректных импортов
           if [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f setup.py ]; then pip install -e .; fi
 
-      # Убеждаемся, что плагин для блокировки сети установлен даже при cache-hit
+      # Гарантируем наличие плагина для блокировки сети даже при cache-hit
       - name: Ensure pytest-socket plugin is installed
         shell: bash
         run: |
