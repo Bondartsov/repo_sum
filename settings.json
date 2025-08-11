@@ -53,5 +53,53 @@
   },
   "prompts": {
     "code_analysis_prompt_file": "prompts/code_analysis_prompt.md"
+  },
+  "rag": {
+    "embeddings": {
+      "provider": "fastembed",
+      "model_name": "BAAI/bge-small-en-v1.5",
+      "vector_size": 384,
+      "normalize_embeddings": true,
+      "batch_size_min": 8,
+      "batch_size_max": 128,
+      "warmup_enabled": true
+    },
+    "qdrant": {
+      "host": "localhost",
+      "port": 6333,
+      "prefer_grpc": true,
+      "collection_name": "code_chunks",
+      "distance_metric": "cosine",
+      "hnsw_m": 24,
+      "hnsw_ef_construct": 128,
+      "search_hnsw_ef": 256,
+      "quantization_type": "SQ",
+      "enable_quantization": true,
+      "replication_factor": 2,
+      "write_consistency_factor": 1,
+      "mmap": true
+    },
+    "search": {
+      "max_results": 10,
+      "use_hybrid": true,
+      "rrf_enabled": true,
+      "mmr_enabled": true,
+      "mmr_lambda": 0.7,
+      "cache_ttl_seconds": 300,
+      "cache_max_entries": 1000,
+      "score_threshold": 0.7,
+      "concurrent_users_target": 20
+    },
+    "slo": {
+      "hot_cache_latency_ms": 200,
+      "cold_search_p50_ms": 500,
+      "cold_search_p95_ms": 1500,
+      "encode_timeout_ms": 1500
+    },
+    "security": {
+      "sanitize_enabled": true,
+      "content_scan_enabled": true,
+      "audit_queries": true
+    }
   }
 }

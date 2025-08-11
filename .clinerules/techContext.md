@@ -371,7 +371,7 @@ class ParallelismConfig:
       "host": "localhost",
       "port": 6333,
       "collection_name": "code_chunks",
-      "vector_size": 768,
+      "vector_size": 384,
       "distance_metric": "cosine"
     },
     "embeddings": {

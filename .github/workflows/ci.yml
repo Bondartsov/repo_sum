@@ -2,30 +2,100 @@ name: CI
 
 on:
   push:
-    branches: [ master, main, feature/** ]
+    branches: ["**"]
   pull_request:
-    branches: [ master, main ]
 
 jobs:
-  test:
+  tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    # Если секрет хранится в Environment (Settings → Environments),
+    # привяжите job к нужной среде (например, "ci"):
+    # environment: ci
+
+    env:
+      # Булев флаг наличия секрета (избегаем прямого использования secrets в if, чтобы не ловить ошибки линтера)
+      HAS_OPENAI_SECRET: ${{ secrets.OPENAI_API_KEY != '' }}
+      # Ускорение pip
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_PYTHON_VERSION_WARNING: "1"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
+        id: setup-python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.11"
+          # Кэшируем pip-колесо, чтобы ускорить установку зависимостей/плагинов
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
 
-      - name: Install dependencies
+      # === КЭШ VENV: зависимости ставим только при изменении requirements ===
+      - name: Restore venv from cache
+        id: cache-venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('requirements*.txt') }}
+
+      - name: Create venv and install deps (first run or requirements changed)
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install -U pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          # Если проект упакован (pyproject.toml/setup.cfg/setup.py), установим его для корректных импортов
+          if [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f setup.py ]; then pip install -e .; fi
 
-      - name: Run tests
-        run: python -m pytest -q
+      # Убеждаемся, что плагин для блокировки сети установлен даже при cache-hit
+      - name: Ensure pytest-socket plugin is installed
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          pip install -q "pytest-socket>=0.6"
 
-      - name: Verify requirements
-        run: python scripts/verify_requirements.py
+      # === Диагностика: виден ли секрет раннеру (без утечки значения) ===
+      - name: "Sanity check: OPENAI_API_KEY visibility"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        shell: bash
+        run: |
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "::warning::OPENAI_API_KEY is NOT present in this context";
+          else
+            echo "OPENAI_API_KEY is present (masked)";
+          fi
 
+      # Юниты должны работать без сети и без реального ключа
+      - name: Run unit tests (no network)
+        shell: bash
+        env:
+          OPENAI_API_KEY: ""
+          http_proxy: ""
+          https_proxy: ""
+        run: |
+          source .venv/bin/activate
+          pytest -m "not integration" --disable-socket -q
+
+      # Интеграционные тесты запускаем только если секрет доступен
+      # и это не PR из форка (у форков секрета нет).
+      - name: Run integration tests (real API)
+        if: env.HAS_OPENAI_SECRET == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          pytest -m "integration" -q

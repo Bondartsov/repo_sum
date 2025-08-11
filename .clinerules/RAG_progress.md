@@ -20,15 +20,13 @@
 - **Модельное ускорение**: экспорт в ONNX/OpenVINO через `export_dynamic_quantized_onnx_model`, `export_static_quantized_openvino_model`
 - **Альтернатива**: FastEmbed с готовыми квантованными ONNX моделями
 
-#### 1.2 FastEmbed как CPU-бэкэнд по умолчанию
-**РЕКОМЕНДАЦИЯ**: Использовать `FastEmbed` от Qdrant для минимальных зависимостей:
+#### 1.2 FastEmbed как CPU-бэкэнд по умолчанию ✅ ФИНАЛИЗИРОВАНО
+**РЕШЕНИЕ**: Использовать `FastEmbed` от Qdrant как единственный дефолт:
 - ONNX Runtime внутри, квантованные веса, CPU-first
-- Готовые модели: `Qdrant/bge-small-en-v1.5-onnx-Q` (384d)
-- Интеграция: `qdrant-client[fastembed]`
+- Модель: `BAAI/bge-small-en-v1.5` (384d) - зафиксирована в settings.json
+- Интеграция: `qdrant-client[fastembed]>=1.15.1`
 
-**ДВА ПРОФИЛЯ СБОРКИ**:
-- *Лёгкая (рекомендуется)*: `fastembed` + `qdrant-client[fastembed]`, без `torch`
-- *Расширенная*: `sentence-transformers` + опциональный ONNX/OpenVINO экспорт
+**ПРОФИЛЬ ЗАФИКСИРОВАН**: FastEmbed-light без torch как основной, sentence-transformers как опциональный fallback
 
 #### 1.3 Qdrant API актуализация
 **ВАЖНО**: Использовать актуальные типы клиента:
