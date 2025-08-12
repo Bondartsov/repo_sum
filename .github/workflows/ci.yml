@@ -60,16 +60,42 @@ jobs:
         run: |
           source .venv/bin/activate
           # Сеть отключена, но UNIX-сокеты разрешены для event loop
-          pytest --disable-socket --allow-unix-socket -k "not integration" -q
+          # Запускаем только юнит-тесты: исключаем integration/functional/e2e
+          pytest --disable-socket --allow-unix-socket -m "not integration and not functional and not e2e" -q
 
-      - name: Run integration tests (real API if available)
+      - name: Run integration tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         shell: bash
         run: |
           source .venv/bin/activate
+          # Если секрет недоступен (например, fork PR), запускаем с заглушкой.
           if [ -z "${OPENAI_API_KEY:-}" ]; then
-            echo "OPENAI_API_KEY не передан (fork PR или секрет не настроен) — пропускаем интеграционные тесты."
-            exit 0
+            echo "OPENAI_API_KEY не передан — запускаем интеграционные тесты в режиме mock (без сети)."
+            export OPENAI_API_KEY=dummy
           fi
-          pytest -k "integration" -q
+          pytest -m "integration" -q
+
+      - name: Run functional tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          # Для функциональных тестов ключ нужен только для инициализации менеджера; при отсутствии — ставим заглушку.
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            export OPENAI_API_KEY=dummy
+          fi
+          pytest -m "functional" -q
+
+      - name: Run e2e tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          # E2E сценарии не требуют сети, но ключ нужен для инициализации; при отсутствии — ставим заглушку.
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            export OPENAI_API_KEY=dummy
+          fi
+          pytest -m "e2e" -q
