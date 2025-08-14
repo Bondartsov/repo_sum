@@ -52,6 +52,10 @@ class TestPathNormalization:
 
     def test_windows_style_paths(self):
         """Тест обработки путей в стиле Windows (обратные слеши)"""
+        # Пропускаем на не-Windows системах, т.к. обратные слеши не работают как разделители
+        if os.name != 'nt':
+            pytest.skip("Windows path test only applicable on Windows systems")
+            
         # Создаем файл
         test_file = self.create_test_file("subdir/test.py", "print('hello')")
         

@@ -157,6 +157,7 @@ def web_server_process(port=None, timeout=30):
 class TestAdditionalWeb:
     """Дополнительные тесты для веб-режима"""
     
+    @pytest.mark.enable_socket
     def test_t004_web_occupied_port(self):
         """
         T-004 - Веб-режим: занятый порт
