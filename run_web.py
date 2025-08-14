@@ -6,6 +6,7 @@
 import subprocess
 import sys
 import os
+import argparse
 from dotenv import load_dotenv
 load_dotenv()
 from pathlib import Path
@@ -31,6 +32,16 @@ def install_requirements():
 
 def main():
     """Основная функция запуска"""
+    # Парсинг аргументов командной строки
+    parser = argparse.ArgumentParser(description="Запуск веб-интерфейса анализатора репозиториев")
+    parser.add_argument("--port", type=int, help="Порт для веб-сервера (по умолчанию из .env или 8501)")
+    args = parser.parse_args()
+    
+    # Определяем порт: CLI > env > default
+    port = args.port
+    if port is None:
+        port = int(os.getenv("PORT", 8501))
+    
     print("🚀 Запуск веб-интерфейса анализатора репозиториев...")
     
     # Проверяем установлен ли Streamlit
@@ -48,16 +59,16 @@ def main():
     
     # Запускаем Streamlit
     print("🌐 Запускаю веб-интерфейс...")
-    print("📱 Откройте браузер и перейдите по адресу: http://localhost:8501")
+    print(f"📱 Откройте браузер и перейдите по адресу: http://localhost:{port}")
     print("🛑 Для остановки нажмите Ctrl+C")
     print("-" * 50)
     
     try:
         subprocess.run([
-            sys.executable, "-m", "streamlit", "run", 
+            sys.executable, "-m", "streamlit", "run",
             str(web_ui_file),
             "--server.address", "localhost",
-            "--server.port", "8501",
+            "--server.port", str(port),
             "--browser.gatherUsageStats", "false"
         ])
     except KeyboardInterrupt:
