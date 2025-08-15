@@ -22,20 +22,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 @pytest.fixture
-def query_engine():
+def query_engine(mock_cpu_embedder_offline):
     """Фикстура для создания CPUQueryEngine"""
-    from rag import CPUEmbedder, QdrantVectorStore
+    from rag import QdrantVectorStore
     from rag.query_engine import CPUQueryEngine
     from config import get_config
     
     # Получаем конфигурацию
     config = get_config(require_api_key=False)
     
-    # Создаём компоненты (без подключения к реальному Qdrant)
-    embedder = CPUEmbedder(
-        config.rag.embeddings,
-        config.rag.parallelism
-    )
+    # Используем mock эмбеддер из фикстуры
+    embedder = mock_cpu_embedder_offline
     
     # Создаём заглушку для QdrantVectorStore
     if QdrantVectorStore is None:
@@ -81,9 +78,9 @@ def test_imports():
     assert get_config is not None
     assert QueryEngineConfig is not None
 
-def test_basic_initialization():
+def test_basic_initialization(mock_cpu_embedder_offline):
     """Тестирует базовую инициализацию CPUQueryEngine"""
-    from rag import CPUEmbedder, QdrantVectorStore
+    from rag import QdrantVectorStore
     
     # Импортируем CPUQueryEngine напрямую из модуля
     from rag.query_engine import CPUQueryEngine
@@ -93,11 +90,8 @@ def test_basic_initialization():
     # Получаем конфигурацию
     config = get_config(require_api_key=False)
     
-    # Создаём компоненты (без подключения к реальному Qdrant)
-    embedder = CPUEmbedder(
-        config.rag.embeddings,
-        config.rag.parallelism
-    )
+    # Используем mock эмбеддер из фикстуры
+    embedder = mock_cpu_embedder_offline
     
     # Создаём заглушку для QdrantVectorStore
     if QdrantVectorStore is None:

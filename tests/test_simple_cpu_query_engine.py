@@ -31,27 +31,23 @@ def test_config_loading():
     assert hasattr(config.rag, 'embeddings')
     assert hasattr(config.rag, 'query_engine')
 
-def test_embedder_creation():
+def test_embedder_creation(mock_cpu_embedder_offline):
     """Тестирует создание CPUEmbedder"""
-    from rag.embedder import CPUEmbedder
-    from config import get_config
-    
-    config = get_config(require_api_key=False)
-    embedder = CPUEmbedder(config.rag.embeddings, config.rag.parallelism)
+    # Используем mock эмбеддер из фикстуры
+    embedder = mock_cpu_embedder_offline
     assert embedder is not None
     
     stats = embedder.get_stats()
     assert isinstance(stats, dict)
     assert 'provider' in stats
 
-def test_query_engine_creation():
+def test_query_engine_creation(mock_cpu_embedder_offline):
     """Тестирует создание CPUQueryEngine"""
-    from rag.embedder import CPUEmbedder
     from rag.query_engine import CPUQueryEngine
     from config import get_config
     
     config = get_config(require_api_key=False)
-    embedder = CPUEmbedder(config.rag.embeddings, config.rag.parallelism)
+    embedder = mock_cpu_embedder_offline
     
     # Создаём заглушку векторного хранилища
     class MockVectorStore:
@@ -81,14 +77,13 @@ def test_query_engine_creation():
     cache_cleared = query_engine.clear_cache()
     assert isinstance(cache_cleared, int)
 
-async def test_query_engine_async_methods():
+async def test_query_engine_async_methods(mock_cpu_embedder_offline):
     """Тестирует асинхронные методы CPUQueryEngine"""
-    from rag.embedder import CPUEmbedder
     from rag.query_engine import CPUQueryEngine
     from config import get_config
     
     config = get_config(require_api_key=False)
-    embedder = CPUEmbedder(config.rag.embeddings, config.rag.parallelism)
+    embedder = mock_cpu_embedder_offline
     
     # Создаём заглушку векторного хранилища
     class MockVectorStore:

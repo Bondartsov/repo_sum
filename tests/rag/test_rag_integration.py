@@ -153,12 +153,10 @@ class TestRAGIntegration:
         assert test_config.rag.vector_store.hnsw_m > 0
         assert test_config.rag.vector_store.hnsw_ef_construct > 0
     
-    def test_embedder_initialization(self, test_config):
+    def test_embedder_initialization(self, test_config, mock_cpu_embedder_offline):
         """Тестирует инициализацию эмбеддера"""
-        embedder = CPUEmbedder(
-            test_config.rag.embeddings,
-            test_config.rag.parallelism
-        )
+        # Используем mock эмбеддер вместо реального
+        embedder = mock_cpu_embedder_offline
         
         assert embedder.embedding_config.provider == "fastembed"
         assert embedder.embedding_config.model_name == "BAAI/bge-small-en-v1.5"

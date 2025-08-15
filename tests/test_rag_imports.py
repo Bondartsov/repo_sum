@@ -57,7 +57,7 @@ def test_embedder_initialization():
         mkl_num_threads=2
     )
     
-    # Попытка создания эмбеддера (может не удастся без установленных зависимостей)
+    # Попытка создания эмбеддера (в offline режиме будет использован mock)
     try:
         embedder = CPUEmbedder(embedding_config, parallelism_config)
         logger.info("✓ CPUEmbedder инициализирован успешно")
