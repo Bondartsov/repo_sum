@@ -20,9 +20,17 @@ streamlit>=1.46.0
 ############################
 # RAG система (FastEmbed + Qdrant)
 ############################
+# FastEmbed - основной эмбеддинг провайдер (ONNX, CPU-first)
+fastembed>=0.3.0
 qdrant-client[fastembed]>=1.15.1
+
+# Sentence Transformers - альтернативный провайдер
 sentence-transformers>=3.0.0
+
+# PyTorch CPU-only
 torch>=2.4.0
+
+# FAISS как локальная альтернатива векторной БД
 faiss-cpu>=1.7.4
 
 ############################

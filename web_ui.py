@@ -17,6 +17,9 @@ from typing import Optional, Dict, Any, Tuple
 import logging
 import json
 
+# Настройка логирования для веб-интерфейса
+logger = logging.getLogger(__name__)
+
 # Импортируем компоненты программы
 from config import get_config, reload_config
 from file_scanner import FileScanner
@@ -35,6 +38,32 @@ from utils import (
     create_error_gpt_result,
 )
 
+# Импортируем RAG компоненты
+try:
+    from rag import (
+        CPUEmbedder,
+        QdrantVectorStore,
+        CPUQueryEngine,
+        IndexerService,
+        SearchService,
+        RagException,
+        VectorStoreException,
+        VectorStoreConnectionError
+    )
+    RAG_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"RAG компоненты недоступны: {e}")
+    RAG_AVAILABLE = False
+    # Заглушки для отсутствующих классов
+    CPUEmbedder = None
+    QdrantVectorStore = None
+    CPUQueryEngine = None
+    IndexerService = None
+    SearchService = None
+    RagException = Exception
+    VectorStoreException = Exception
+    VectorStoreConnectionError = Exception
+
 # Настройка страницы
 st.set_page_config(
     page_title="Анализатор репозиториев",
@@ -45,7 +74,6 @@ st.set_page_config(
 
 # Настройка логирования для веб-интерфейса
 setup_logging("DEBUG")
-logger = logging.getLogger(__name__)
 
 
 def validate_uploaded_file(uploaded_file) -> Tuple[bool, str]:
@@ -255,6 +283,95 @@ def get_analyzer():
     return WebRepositoryAnalyzer()
 
 
+@st.cache_resource
+def init_rag_components():
+    """
+    Инициализирует RAG компоненты с кэшированием.
+    
+    Returns:
+        Tuple[Optional[SearchService], Optional[CPUQueryEngine], Optional[IndexerService], str]:
+            Кортеж (search_service, query_engine, indexer_service, status_message)
+    """
+    if not RAG_AVAILABLE:
+        return None, None, None, "RAG компоненты недоступны"
+    
+    try:
+        # Загружаем конфигурацию
+        config = get_config(require_api_key=False)
+        
+        # Инициализируем компоненты
+        embedder = CPUEmbedder(config.rag.embeddings, config.rag.parallelism)
+        vector_store = QdrantVectorStore(config.rag.vector_store)
+        search_service = SearchService(config)
+        query_engine = CPUQueryEngine(embedder, vector_store, config.rag.query_engine)
+        indexer_service = IndexerService(config)
+        
+        logger.info("RAG компоненты успешно инициализированы")
+        return search_service, query_engine, indexer_service, "RAG система готова"
+        
+    except Exception as e:
+        logger.error(f"Ошибка инициализации RAG компонентов: {e}")
+        return None, None, None, f"Ошибка RAG системы: {e}"
+
+
+def run_async(coro):
+    """
+    Выполняет асинхронную функцию в Streamlit.
+    
+    Args:
+        coro: Асинхронная функция
+        
+    Returns:
+        Результат выполнения функции
+    """
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
+
+
+def format_search_results_for_display(results, max_content_lines=10):
+    """
+    Форматирует результаты поиска для отображения в Streamlit.
+    
+    Args:
+        results: Список результатов поиска
+        max_content_lines: Максимальное количество строк контента
+        
+    Returns:
+        Список отформатированных результатов
+    """
+    formatted_results = []
+    
+    for i, result in enumerate(results, 1):
+        # Определяем цвет скора
+        score_color = "🟢" if result.score > 0.8 else "🟡" if result.score > 0.6 else "🔴"
+        
+        # Обрезаем контент если слишком длинный
+        content_lines = result.content.split('\n')
+        if len(content_lines) > max_content_lines:
+            content = '\n'.join(content_lines[:max_content_lines]) + '\n... (обрезано)'
+        else:
+            content = result.content
+        
+        formatted_result = {
+            'index': i,
+            'title': f"{score_color} {i}. {result.chunk_name}",
+            'subtitle': f"{result.file_path}:{result.start_line}-{result.end_line} | Скор: {result.score:.3f}",
+            'metadata': f"Язык: {result.language.title()}, Тип: {result.chunk_type}, Файл: {result.file_name}",
+            'content': content,
+            'language': result.language,
+            'start_line': result.start_line,
+            'original_result': result
+        }
+        
+        formatted_results.append(formatted_result)
+    
+    return formatted_results
+
+
 def main():
     """Основная функция веб-интерфейса"""
     
@@ -320,6 +437,29 @@ def main():
             value=20,
             help="Ограничение для избежания больших расходов"
         )
+        
+        # RAG система статус
+        st.subheader("🔍 RAG Система")
+        search_service, query_engine, indexer_service, rag_status = init_rag_components()
+        
+        if search_service is not None:
+            st.success(f"✅ {rag_status}")
+            if st.button("📊 Статистика RAG"):
+                try:
+                    stats = run_async(search_service.get_search_stats())
+                    with st.expander("📈 Подробная статистика", expanded=True):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Всего запросов", stats.get('total_queries', 0))
+                            st.metric("Попаданий в кэш", stats.get('cache_hits', 0))
+                        with col2:
+                            st.metric("Размер кэша", stats.get('cache_size', 0))
+                            st.metric("Среднее время поиска", f"{stats.get('avg_search_time', 0):.3f}s")
+                except Exception as e:
+                    st.error(f"Ошибка получения статистики: {e}")
+        else:
+            st.error(f"❌ {rag_status}")
+            st.info("💡 Установите Qdrant для RAG функций")
     
     # Основная область
     analyzer = get_analyzer()
@@ -331,7 +471,7 @@ def main():
         st.session_state.analysis_result = None
     
     # Вкладки интерфейса
-    tab1, tab2, tab3 = st.tabs(["📁 Анализ репозитория", "📊 Статистика", "❓ Справка"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📁 Анализ репозитория", "🔍 RAG: Поиск", "📊 Статистика", "❓ Справка"])
     
     with tab1:
         st.header("📁 Выберите репозиторий для анализа")
@@ -413,6 +553,18 @@ def main():
                 except Exception as e:
                     st.error(f"Ошибка анализа папки: {e}")
         
+        # RAG индексация
+        if search_service and indexer_service:
+            enable_rag_indexing = st.checkbox(
+                "📊 Индексировать в RAG систему",
+                value=True,
+                help="Параллельно с анализом создать векторный индекс для семантического поиска"
+            )
+        else:
+            enable_rag_indexing = False
+            if repo_path:
+                st.info("ℹ️ RAG система недоступна - индексация отключена")
+        
         # Кнопка запуска анализа
         if st.button("🚀 Начать анализ", type="primary", disabled=not (repo_path and api_key)):
             if not api_key:
@@ -442,6 +594,32 @@ def main():
                             repo_path,  # ИСПРАВЛЕНИЕ: используем repo_path для создания SUMMARY_REPORT_ внутри репозитория
                             progress_callback=update_progress
                         ))
+                        
+                        # Параллельная RAG индексация если включена
+                        if enable_rag_indexing and indexer_service:
+                            try:
+                                status_text.text("Индексация в RAG систему...")
+                                progress_bar.progress(95)
+                                
+                                # Запускаем индексацию репозитория
+                                indexing_result = run_async(indexer_service.index_repository(
+                                    repo_path,
+                                    batch_size=512,
+                                    recreate=False,
+                                    show_progress=False
+                                ))
+                                
+                                if indexing_result and indexing_result.get('success', False):
+                                    st.success(f"🎯 RAG индексация завершена: {indexing_result.get('indexed_chunks', 0)} чанков")
+                                    result['rag_indexing'] = indexing_result
+                                else:
+                                    st.warning("⚠️ RAG индексация завершена с ошибками")
+                                    result['rag_indexing'] = {'success': False, 'error': 'Индексация не удалась'}
+                                    
+                            except Exception as rag_error:
+                                st.warning(f"⚠️ Ошибка RAG индексации: {rag_error}")
+                                logger.exception("Ошибка RAG индексации")
+                                result['rag_indexing'] = {'success': False, 'error': str(rag_error)}
                         
                         st.session_state.analysis_result = result
                         st.session_state.analysis_completed = True
@@ -477,6 +655,14 @@ def main():
                 if 'token_stats' in result:
                     token_stats = result['token_stats']
                     st.info(f"🔢 Использовано токенов: {token_stats.get('used_today', 0)}")
+                
+                # Информация о RAG индексации
+                if 'rag_indexing' in result:
+                    rag_result = result['rag_indexing']
+                    if rag_result.get('success', False):
+                        st.success(f"🔍 RAG индексация: {rag_result.get('indexed_chunks', 0)} чанков проиндексировано")
+                    else:
+                        st.warning(f"⚠️ RAG индексация: {rag_result.get('error', 'неизвестная ошибка')}")
                 
                 # Ссылка на результаты
                 output_path = result.get('output_directory', './web_output')
@@ -514,6 +700,220 @@ def main():
                 st.error(f"❌ Ошибка анализа: {result.get('error', 'Неизвестная ошибка')}")
     
     with tab2:
+        st.header("🔍 Семантический поиск по коду")
+        
+        # Инициализация RAG компонентов
+        search_service, query_engine, indexer_service, rag_status = init_rag_components()
+        
+        # Показываем статус RAG системы
+        if search_service is not None:
+            st.success(f"✅ {rag_status}")
+        else:
+            st.error(f"❌ {rag_status}")
+            st.info("💡 Для использования RAG функций необходимо установить Qdrant и настроить RAG систему")
+        
+        # Разделы RAG интерфейса
+        rag_mode = st.radio(
+            "Выберите режим:",
+            ["🔍 Семантический поиск", "💬 Q&A по репозиторию"],
+            horizontal=True
+        )
+        
+        if rag_mode == "🔍 Семантический поиск":
+            st.subheader("🔍 Поиск по коду")
+            
+            # Поисковый интерфейс
+            query = st.text_input(
+                "Введите запрос для поиска по коду",
+                placeholder="например: authentication middleware, database connection, error handling"
+            )
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                top_k = st.slider("Количество результатов", 1, 20, 10)
+            with col2:
+                lang_filter = st.selectbox(
+                    "Язык",
+                    ["все", "python", "javascript", "typescript", "cpp", "csharp", "java", "go", "rust"]
+                )
+            with col3:
+                chunk_type = st.selectbox(
+                    "Тип",
+                    ["все", "function", "class", "imports", "other"]
+                )
+            
+            # Кнопка поиска
+            if st.button("🔍 Поиск", type="primary", disabled=not search_service or not query.strip()):
+                if not query.strip():
+                    st.warning("⚠️ Введите поисковый запрос")
+                elif not search_service:
+                    st.error("❌ RAG система недоступна")
+                else:
+                    try:
+                        with st.spinner("Выполнение семантического поиска..."):
+                            # Подготовка параметров поиска
+                            language_filter = None if lang_filter == "все" else lang_filter
+                            chunk_type_filter = None if chunk_type == "все" else chunk_type
+                            
+                            # Выполнение поиска
+                            results = run_async(search_service.search(
+                                query=query,
+                                top_k=top_k,
+                                language_filter=language_filter,
+                                chunk_type_filter=chunk_type_filter,
+                                min_score=0.5
+                            ))
+                            
+                            # Отображение результатов
+                            if results:
+                                st.success(f"🎯 Найдено {len(results)} результатов")
+                                
+                                # Форматирование результатов для отображения
+                                formatted_results = format_search_results_for_display(results)
+                                
+                                for result in formatted_results:
+                                    with st.expander(f"{result['title']} - {result['subtitle']}", expanded=False):
+                                        st.caption(result['metadata'])
+                                        
+                                        # Отображение кода с подсветкой синтаксиса
+                                        st.code(
+                                            result['content'],
+                                            language=result['language'],
+                                            line_numbers=True
+                                        )
+                                        
+                                        # Дополнительная информация
+                                        st.caption(f"📍 Строки: {result['start_line']}-{result['original_result'].end_line}")
+                            else:
+                                st.info("🔍 Результаты не найдены. Попробуйте изменить запрос или параметры поиска.")
+                                
+                    except Exception as e:
+                        st.error(f"❌ Ошибка поиска: {e}")
+                        logger.exception("Ошибка выполнения семантического поиска")
+        
+        elif rag_mode == "💬 Q&A по репозиторию":
+            st.subheader("💬 Q&A по репозиторию")
+            
+            # Инициализация истории чата
+            if "rag_chat_history" not in st.session_state:
+                st.session_state.rag_chat_history = []
+            
+            # Отображение истории чата
+            for i, (question, answer, context_files) in enumerate(st.session_state.rag_chat_history):
+                with st.container():
+                    st.markdown(f"**❓ Вопрос {i+1}:** {question}")
+                    st.markdown(f"**💡 Ответ:** {answer}")
+                    if context_files:
+                        st.caption(f"📚 Использованные файлы: {', '.join(context_files)}")
+                    st.divider()
+            
+            # Поле ввода нового вопроса
+            question = st.text_area(
+                "Задайте вопрос о коде репозитория",
+                placeholder="Как работает аутентификация в этом проекте?\nКакие есть API endpoints?\nКак устроена архитектура базы данных?",
+                height=100
+            )
+            
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                context_limit = st.number_input("Контекст (файлы)", 1, 10, 5)
+            
+            # Кнопка отправки вопроса
+            if st.button("💬 Ответить", type="primary", disabled=not search_service or not query_engine or not question.strip()):
+                if not question.strip():
+                    st.warning("⚠️ Введите вопрос")
+                elif not search_service or not query_engine:
+                    st.error("❌ RAG система недоступна")
+                elif not api_key:
+                    st.error("❌ Необходим OpenAI API ключ для Q&A")
+                else:
+                    try:
+                        with st.spinner("Поиск релевантного кода и генерация ответа..."):
+                            # 1. Семантический поиск релевантного кода
+                            search_results = run_async(search_service.search(
+                                query=question,
+                                top_k=context_limit,
+                                min_score=0.6
+                            ))
+                            
+                            if search_results:
+                                # 2. Формирование контекста из найденного кода
+                                context_parts = []
+                                context_files = []
+                                
+                                for result in search_results:
+                                    context_parts.append(f"""
+**Файл:** {result.file_path} (строки {result.start_line}-{result.end_line})
+**Тип:** {result.chunk_type}
+**Код:**
+```{result.language}
+{result.content}
+```
+""")
+                                    if result.file_name not in context_files:
+                                        context_files.append(result.file_name)
+                                
+                                context = "\n---\n".join(context_parts)
+                                
+                                # 3. Формирование промпта с контекстом
+                                prompt_with_context = f"""
+Ты - опытный разработчик, анализирующий кодовую базу. Используй предоставленный контекст кода для ответа на вопрос пользователя.
+
+**КОНТЕКСТ ИЗ КОДА РЕПОЗИТОРИЯ:**
+{context}
+
+**ВОПРОС ПОЛЬЗОВАТЕЛЯ:**
+{question}
+
+**ИНСТРУКЦИИ:**
+- Отвечай на русском языке
+- Используй только информацию из предоставленного контекста кода
+- Если контекста недостаточно для полного ответа, так и скажи
+- Приводи примеры кода из контекста при необходимости
+- Структурируй ответ для лучшего понимания
+
+**ОТВЕТ:**
+"""
+                                
+                                # 4. Вызов OpenAI с контекстом
+                                if not analyzer.initialize_with_api_key(api_key):
+                                    st.error("❌ Ошибка инициализации OpenAI API")
+                                else:
+                                    try:
+                                        response = analyzer.openai_manager.client.chat.completions.create(
+                                            model=analyzer.openai_manager.model,
+                                            messages=[
+                                                {"role": "user", "content": prompt_with_context}
+                                            ],
+                                            temperature=0.1,
+                                            max_tokens=2000
+                                        )
+                                        
+                                        answer = response.choices[0].message.content.strip()
+                                        
+                                        # 5. Сохранение в истории и отображение
+                                        st.session_state.rag_chat_history.append((question, answer, context_files))
+                                        
+                                        # Отображение нового ответа
+                                        st.success("✅ Ответ сгенерирован!")
+                                        st.rerun()
+                                        
+                                    except Exception as openai_error:
+                                        st.error(f"❌ Ошибка OpenAI API: {openai_error}")
+                            else:
+                                st.warning("🔍 Не найдено релевантного кода для ответа на вопрос. Попробуйте переформулировать вопрос.")
+                                
+                    except Exception as e:
+                        st.error(f"❌ Ошибка Q&A: {e}")
+                        logger.exception("Ошибка выполнения Q&A")
+            
+            # Кнопка очистки истории
+            if st.session_state.rag_chat_history:
+                if st.button("🗑️ Очистить историю", type="secondary"):
+                    st.session_state.rag_chat_history = []
+                    st.rerun()
+    
+    with tab3:
         st.header("📊 Статистика")
         
         if api_key:
@@ -534,7 +934,7 @@ def main():
         else:
             st.info("ℹ️ Введите OpenAI API ключ для просмотра статистики")
     
-    with tab3:
+    with tab4:
         st.header("❓ Справка по использованию")
         
         st.markdown("""
