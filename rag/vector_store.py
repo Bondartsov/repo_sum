@@ -192,29 +192,40 @@ class QdrantVectorStore:
                 if self.config.quantization_type == "SQ":  # Scalar Quantization
                     # Совместимость с различными версиями qdrant-client
                     try:
-                        # Новый API (qdrant-client >= 1.15.0)
+                        # Пытаемся использовать новый API (qdrant-client >= 1.15.0)
                         from qdrant_client.models import ScalarQuantizationConfig
                         quantization_config = ScalarQuantization(
-                            scalar=ScalarQuantizationConfig()
+                            scalar=ScalarQuantizationConfig(
+                                type="int8",  # Тип квантования
+                                quantile=None,  # Убираем quantile параметр
+                                always_ram=False  # Используем диск для экономии RAM
+                            )
                         )
-                    except ImportError:
-                        # Fallback для старых версий - базовая конфигурация
+                        logger.debug("Используется новый API ScalarQuantization")
+                    except (ImportError, TypeError, Exception) as e:
+                        # Fallback для более старых версий или других проблем
                         try:
-                            quantization_config = ScalarQuantization(scalar={})
+                            quantization_config = ScalarQuantization(scalar=True)
+                            logger.debug("Используется упрощенный API ScalarQuantization")
                         except Exception as sq_e:
-                            logger.warning(f"Ошибка SQ конфигурации (старый API): {sq_e}, отключаем квантование")
+                            logger.warning(f"Не удалось создать конфигурацию SQ: {sq_e}, отключаем квантование")
                             quantization_config = None
-                    except Exception as e:
-                        logger.warning(f"Ошибка SQ конфигурации (новый API): {e}, отключаем квантование")
-                        quantization_config = None
                 elif self.config.quantization_type == "PQ":  # Product Quantization
-                    quantization_config = ProductQuantization(
-                        compression=CompressionRatio.X16  # 16x сжатие
-                    )
+                    try:
+                        quantization_config = ProductQuantization(
+                            compression=CompressionRatio.X16  # 16x сжатие
+                        )
+                    except Exception as e:
+                        logger.warning(f"Ошибка PQ конфигурации: {e}, отключаем квантование")
+                        quantization_config = None
                 elif self.config.quantization_type == "BQ":  # Binary Quantization
-                    quantization_config = BinaryQuantization()
+                    try:
+                        quantization_config = BinaryQuantization()
+                    except Exception as e:
+                        logger.warning(f"Ошибка BQ конфигурации: {e}, отключаем квантование")
+                        quantization_config = None
             except Exception as e:
-                logger.warning(f"Не удалось создать конфигурацию квантования {self.config.quantization_type}: {e}")
+                logger.warning(f"Общая ошибка создания квантования {self.config.quantization_type}: {e}")
                 quantization_config = None
         
         # Основные параметры векторов

@@ -75,6 +75,7 @@ class CPUEmbedder:
             torch.set_grad_enabled(False)
         
         self.model = None
+        self.provider_name = None  # Инициализируем provider_name
         self._is_warmed_up = False
         self._current_batch_size = embedding_config.batch_size_min
         
@@ -246,19 +247,27 @@ class CPUEmbedder:
             min_batch = self.embedding_config.batch_size_min
             max_batch = self.embedding_config.batch_size_max
             
-            # Простая логика адаптивного батчирования для предсказуемости тестов
-            if queue_len <= 50:
-                target_batch = min_batch + (queue_len // 10) * 2  # Плавное увеличение
+            # Предсказуемая логика адаптивного батчирования для тестов
+            if queue_len <= 20:
+                # Малая очередь: min_batch + небольшое увеличение
+                target_batch = min_batch
+            elif queue_len <= 100:
+                # Средняя очередь: постепенное увеличение
+                progress = (queue_len - 20) / 80  # 0.0 to 1.0
+                target_batch = int(min_batch + progress * (max_batch - min_batch) * 0.3)
             elif queue_len <= 500:
-                target_batch = min_batch + (queue_len // 50) * 8  # Среднее увеличение
+                # Большая очередь: более значительное увеличение
+                progress = (queue_len - 100) / 400  # 0.0 to 1.0
+                target_batch = int(min_batch + 0.3 * (max_batch - min_batch) + progress * (max_batch - min_batch) * 0.4)
             else:
-                target_batch = max_batch  # Максимальный батч для больших очередей
+                # Очень большая очередь: близко к максимуму
+                target_batch = max_batch
             
             # Корректировка по доступной памяти
             if available_memory_gb < 2.0:
                 target_batch = min_batch  # Критически мало памяти
             elif available_memory_gb < 4.0:
-                target_batch = min(target_batch, int(max_batch * 0.5))  # Ограничиваем при нехватке памяти
+                target_batch = min(target_batch, int(max_batch * 0.6))  # Ограничиваем при нехватке памяти
             
             # Финальный размер с учетом ограничений
             calculated_size = max(min_batch, min(max_batch, target_batch))
