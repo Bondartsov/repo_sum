@@ -1,99 +1,156 @@
 # Implementation Plan
 
-## Overview
-Решение проблемы падающих тестов в GitHub CI из-за блокировки сетевых соединений pytest-socket при инициализации RAG эмбеддеров.
+## [Overview]
+Переход от mock-архитектуры к правильной категоризации тестов с использованием pytest маркеров для стабильной работы CI.
 
-Основная проблема: CPUEmbedder пытается загрузить модели эмбеддингов с HuggingFace Hub во время инициализации, но pytest-socket блокирует все сетевые запросы в CI окружении. Решение заключается в создании mock архитектуры, которая автоматически заменяет реальные эмбеддеры фиктивными в offline режиме, сохраняя при этом полную функциональность тестов.
+Проблема заключается в неправильной категоризации тестов в CI пайплайне. Этап "Run unit tests (offline)" использует флаг `--disable-socket`, который блокирует сетевые вызовы, но многие тесты, являющиеся по сути интеграционными или функциональными, не имеют соответствующих маркеров. В результате они запускаются вместе с unit тестами, пытаются выполнить запрещенные операции и падают с SocketBlockedError.
 
-## Types
-Создание новых типов данных для mock архитектуры.
+Решение: правильно классифицировать каждый тест с помощью pytest маркеров (@pytest.mark.integration, @pytest.mark.functional), чтобы CI мог разделить их выполнение на соответствующие этапы с правильными настройками сети.
 
-**MockCPUEmbedder class:**
-- Наследует интерфейс CPUEmbedder
-- Генерирует детерминированные фиктивные эмбеддинги без сетевых запросов
-- Поддерживает все методы оригинального класса (embed_texts, get_stats, reset_stats)
-- Имитирует статистику производительности
-- Включает детекцию pytest-socket режима
+## [Types]  
+Добавление pytest маркеров для категоризации тестов без изменения типов данных.
 
-**EmbedderMode enum:**
-- REAL: использовать настоящие эмбеддеры
-- MOCK: использовать фиктивные эмбеддеры
-- AUTO: автоматическая детекция на основе окружения
+Используются стандартные pytest маркеры:
+- `@pytest.mark.functional` - для тестов, использующих subprocess и CLI интерфейсы
+- `@pytest.mark.integration` - для тестов, работающих с файловой системой, OpenAI API, внешними зависимостями
+- Без маркеров остаются только изолированные unit тесты
 
-## Files
-Модификация файлов тестовой инфраструктуры.
+## [Files]
+Модификация существующих тестовых файлов для добавления правильных pytest маркеров.
 
-**Новые файлы:**
-- `tests/mocks/mock_cpu_embedder.py` - основной MockCPUEmbedder класс
-- `tests/mocks/__init__.py` - пакет для mock объектов
+**Файлы, требующие изменений:**
 
-**Изменяемые файлы:**
-- `tests/conftest.py` - добавить глобальный патчинг CPUEmbedder
-- `tests/rag/conftest.py` - интеграция MockCPUEmbedder с существующими фикстурами
-- `tests/test_cpu_query_engine.py` - использование mock фикстур
-- `tests/test_simple_cpu_query_engine.py` - использование mock фикстур
-- `tests/test_rag_imports.py` - использование mock фикстур
-- `tests/rag/test_rag_integration.py` - использование mock фикстур
-- `tests/rag/test_rag_e2e_cli.py` - исправление логики тестов ошибок
+**FUNCTIONAL маркеры (subprocess/CLI тесты):**
+- `tests/test_additional_cli.py` - добавить `@pytest.mark.functional` к классу TestAdditionalCLI
+- `tests/test_additional_config.py` - добавить `@pytest.mark.functional` к test_t003_cli_port_priority_over_env, test_t006_missing_required_openai_api_key, test_t007_invalid_env_type_validation
+- `tests/test_additional_scanner.py` - добавить `@pytest.mark.functional` к test_main_analyze_command_integration
+- `tests/test_additional_verify_requirements.py` - добавить `@pytest.mark.functional` к классу TestVerifyRequirements
+- `tests/test_additional_web.py` - добавить `@pytest.mark.functional` к test_t004_web_occupied_port, test_t005_web_ui_404_unknown_route
+- `tests/test_main.py` - добавить `@pytest.mark.functional` к test_main_cli_help
 
-## Functions
-Создание и модификация функций для поддержки mock архитектуры.
+**INTEGRATION маркеры (файловая система/внешние зависимости):**
+- `tests/test_additional_docgen.py` - добавить `@pytest.mark.integration` к test_t015_markdown_header_collisions, test_t016_long_lines_tables_lists
+- `tests/test_additional_openai.py` - добавить `@pytest.mark.integration` к классам TestOpenAIRateLimit, TestOpenAIConnectionErrors
+- `tests/test_additional_scanner.py` - добавить `@pytest.mark.integration` к остальным методам класса TestFileScannerAdditional
+- `tests/test_config.py` - добавить `@pytest.mark.integration` к test_get_config_default
+- `tests/test_error_handling.py` - добавить `@pytest.mark.integration` к test_openai_manager_no_api_key, test_openai_manager_network_error
+- `tests/test_file_scanner.py` - добавить `@pytest.mark.integration` к test_scan_python_files
+- `tests/test_integration_full_cycle.py` - добавить `@pytest.mark.integration` к test_full_analysis_cycle
+- `tests/test_openai_integration.py` - добавить `@pytest.mark.integration` к test_analyze_chunk_with_mock
 
-**Новые функции:**
-- `MockCPUEmbedder.__init__(embedding_config, parallelism_config)` - инициализация mock эмбеддера
-- `MockCPUEmbedder.embed_texts(texts, deadline_ms)` - генерация фиктивных эмбеддингов
-- `MockCPUEmbedder.get_stats()` - возврат имитированной статистики
-- `MockCPUEmbedder.reset_stats()` - сброс mock статистики
-- `MockCPUEmbedder.warmup()` - имитация прогрева модели
-- `is_socket_disabled()` - детекция режима pytest-socket
-- `auto_patch_embedder()` - автоматический патчинг в зависимости от окружения
+**Файлы без изменений (корректные unit тесты):**
+- `tests/test_additional_chunker.py`, `tests/test_additional_parsers.py`, `tests/test_additional_utils.py`
+- `tests/test_code_chunker.py`, `tests/test_doc_generator.py`, `tests/test_markdown_report.py`
+- `tests/test_parsers.py`, `tests/test_property_based.py`, `tests/test_readme.py`
+- `tests/test_run_web.py`, `tests/test_utils.py`, `tests/test_web_ui.py`
+- `tests/e2e/*` (уже имеют корректные маркеры)
+- `tests/test_new_functional.py`, `tests/test_new_integration.py` (уже имеют маркеры)
 
+## [Functions]
+Добавление декораторов к существующим тестовым функциям без изменения их логики.
+
+**Новые функции:** Нет  
+**Удаляемые функции:** Нет  
 **Модифицируемые функции:**
-- Все тестовые функции, создающие CPUEmbedder напрямую → использовать фикстуры
-- Функции тестирования ошибок → проверять mock ошибки вместо реальных
 
-## Classes
-Создание и модификация классов для mock архитектуры.
+**В tests/test_additional_cli.py:**
+- Класс `TestAdditionalCLI` - добавить декоратор `@pytest.mark.functional`
 
-**Новые классы:**
-- `MockCPUEmbedder` - главный mock класс, реализующий интерфейс CPUEmbedder
-- `MockEmbedderStats` - имитация статистики производительности  
-- `EmbedderModeDetector` - класс для определения режима работы
+**В tests/test_additional_config.py:**
+- `test_t003_cli_port_priority_over_env()` - добавить `@pytest.mark.functional`
+- `test_t006_missing_required_openai_api_key()` - добавить `@pytest.mark.functional`  
+- `test_t007_invalid_env_type_validation()` - добавить `@pytest.mark.functional`
 
+**В tests/test_additional_docgen.py:**
+- `test_t015_markdown_header_collisions()` - добавить `@pytest.mark.integration`
+- `test_t016_long_lines_tables_lists()` - добавить `@pytest.mark.integration`
+
+**В tests/test_additional_openai.py:**
+- Класс `TestOpenAIRateLimit` - добавить `@pytest.mark.integration`
+- Класс `TestOpenAIConnectionErrors` - добавить `@pytest.mark.integration`
+
+**В tests/test_additional_scanner.py:**
+- Все методы класса `TestFileScannerAdditional` кроме `test_main_analyze_command_integration` - добавить `@pytest.mark.integration`
+- `test_main_analyze_command_integration()` - добавить `@pytest.mark.functional`
+
+**В tests/test_additional_verify_requirements.py:**
+- Класс `TestVerifyRequirements` - добавить `@pytest.mark.functional`
+
+**В tests/test_additional_web.py:**
+- Все тестовые методы - добавить `@pytest.mark.functional`
+
+**В остальных файлах:**
+- По одной функции на файл с соответствующим маркером
+
+## [Classes]
+Добавление декораторов к тестовым классам без изменения их структуры.
+
+**Новые классы:** Нет  
+**Удаляемые классы:** Нет  
 **Модифицируемые классы:**
-- Тестовые классы в проблемных файлах → добавить использование mock фикстур
 
-## Dependencies
-Изменения в зависимостях не требуются.
+- `TestAdditionalCLI` в tests/test_additional_cli.py - добавить `@pytest.mark.functional`
+- `TestOpenAIRateLimit` в tests/test_additional_openai.py - добавить `@pytest.mark.integration`  
+- `TestOpenAIConnectionErrors` в tests/test_additional_openai.py - добавить `@pytest.mark.integration`
+- `TestVerifyRequirements` в tests/test_additional_verify_requirements.py - добавить `@pytest.mark.functional`
+- Остальные модификации на уровне отдельных методов
 
-Все mock объекты используют только стандартную библиотеку Python и numpy, который уже присутствует в requirements.txt.
+## [Dependencies]
+Никаких изменений в зависимостях не требуется.
 
-## Testing
-Стратегия тестирования mock архитектуры.
+pytest и все необходимые маркеры уже определены в pytest.ini. Конфигурация CI в .github/workflows/ci.yml уже правильно настроена для разделения тестов по маркерам.
 
-**Новые тесты:**
-- `tests/test_mock_embedder.py` - unit тесты MockCPUEmbedder
-- Тесты детекции режима pytest-socket
-- Тесты автоматического переключения между real/mock режимами
+## [Testing]
+Поэтапная проверка правильности категоризации через локальное тестирование.
 
-**Изменения в существующих тестах:**
-- Все проблемные тесты получат mock фикстуры
-- Тесты производительности будут работать с фиктивными данными в CI
-- E2E тесты будут правильно обрабатывать mock ошибки
+**Стратегия тестирования:**
+1. **Локальная проверка unit тестов:** `pytest --disable-socket -m "not integration and not functional and not e2e" -v`
+2. **Локальная проверка integration тестов:** `pytest -m "integration" -v` 
+3. **Локальная проверка functional тестов:** `pytest -m "functional" -v`
+4. **Проверка что ни один тест не запускается в нескольких категориях**
+5. **Финальная проверка готовности к CI**
 
-**Валидационная стратегия:**
-- Локальное тестирование: `pytest tests/ -v`
-- Проверка offline режима: `pytest tests/ --disable-socket --allow-unix-socket`
-- GitHub CI: автоматическая проверка в составе PR
+**Критерии успеха:**
+- Unit тесты проходят с `--disable-socket` (без попыток сетевых подключений)
+- Integration тесты запускаются только с доступом к сети
+- Functional тесты корректно выполняют subprocess операции
+- Нет тестов без категории, которые могут попасть не в ту группу
 
-## Implementation Order
-Последовательность реализации изменений.
+## [Implementation Order]
+Пошаговая реализация с проверкой каждого этапа.
 
-1. **Создать MockCPUEmbedder класс** - базовая mock архитектура
-2. **Добавить детекцию pytest-socket** - определение режима работы
-3. **Создать автоматический патчинг** - глобальная замена в conftest.py
-4. **Обновить проблемные тесты** - интеграция mock фикстур
-5. **Исправить логику E2E тестов** - корректная обработка mock ошибок
-6. **Создать unit тесты для mock** - валидация mock архитектуры
-7. **Локальное тестирование** - проверка работы в offline режиме
-8. **Проверка в GitHub CI** - финальная валидация в cloud окружении
+**Шаг 1: Критически важные FUNCTIONAL тесты (subprocess/CLI)**
+- Модифицировать `tests/test_additional_cli.py` - добавить маркер к классу
+- Модифицировать `tests/test_additional_config.py` - добавить маркеры к трём функциям
+- Модифицировать `tests/test_main.py` - добавить маркер к CLI тесту
+- **Проверка:** `pytest --disable-socket -m "not integration and not functional and not e2e" -v` не должен запускать эти тесты
+
+**Шаг 2: Критически важные INTEGRATION тесты (файловая система/OpenAI)**  
+- Модифицировать `tests/test_additional_openai.py` - добавить маркеры к классам
+- Модифицировать `tests/test_config.py` - добавить маркер к функции чтения settings.json
+- Модифицировать `tests/test_error_handling.py` - добавить маркеры к OpenAI тестам
+- **Проверка:** Unit тесты больше не должны пытаться работать с OpenAI или файловой системой
+
+**Шаг 3: Оставшиеся FUNCTIONAL тесты**
+- Модифицировать `tests/test_additional_scanner.py` - добавить functional маркер к subprocess тесту
+- Модифицировать `tests/test_additional_verify_requirements.py` - добавить маркер к классу
+- Модифицировать `tests/test_additional_web.py` - добавить маркеры к веб-тестам
+- **Проверка:** `pytest -m "functional" -v` должен запустить все CLI/subprocess тесты
+
+**Шаг 4: Оставшиеся INTEGRATION тесты**
+- Модифицировать `tests/test_additional_docgen.py` - добавить маркеры к тестам с файловой системой
+- Модифицировать `tests/test_additional_scanner.py` - добавить integration маркеры к остальным тестам
+- Модифицировать остальные integration файлы
+- **Проверка:** `pytest -m "integration" -v` должен запустить все тесты с внешними зависимостями
+
+**Шаг 5: Финальная верификация**
+- Запустить полный набор тестов локально по категориям
+- Убедиться что каждый тест попадает только в одну категорию
+- Проверить что unit тесты работают с `--disable-socket`
+- Подготовить к деплою в CI
+
+**Шаг 6: CI проверка**
+- Зафиксировать изменения в git
+- Запустить GitHub Actions CI
+- Убедиться что все этапы (unit/integration/functional) проходят успешно
+- При необходимости скорректировать маркеры на основе результатов CI

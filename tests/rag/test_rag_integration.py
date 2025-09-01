@@ -34,6 +34,7 @@ from rag.exceptions import (
 )
 
 
+@pytest.mark.integration
 class TestRAGIntegration:
     """Интеграционные тесты RAG системы"""
     
@@ -60,8 +61,8 @@ class TestRAGIntegration:
                     warmup_enabled=True
                 ),
                 vector_store=VectorStoreConfig(
-                    host="localhost",
-                    port=6333,
+                    host=os.getenv("QDRANT_HOST", "localhost"),
+                    port=int(os.getenv("QDRANT_PORT", "6333")),
                     collection_name="test_collection",
                     vector_size=384,
                     distance="cosine",
@@ -209,8 +210,12 @@ class TestRAGIntegration:
         
         vector_store = QdrantVectorStore(test_config.rag.vector_store)
         
-        assert vector_store.config.host == "localhost"
-        assert vector_store.config.port == 6333
+        # Проверяем что конфигурация соответствует environment variables
+        expected_host = os.getenv("QDRANT_HOST", "localhost")
+        expected_port = int(os.getenv("QDRANT_PORT", "6333"))
+        
+        assert vector_store.config.host == expected_host
+        assert vector_store.config.port == expected_port
         assert vector_store.config.collection_name == "test_collection"
         assert not vector_store._connected
         

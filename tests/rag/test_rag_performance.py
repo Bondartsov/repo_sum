@@ -14,6 +14,7 @@ import pytest
 import asyncio
 import time
 import gc
+import os
 import psutil
 import threading
 import tempfile
@@ -107,6 +108,7 @@ class PerformanceMonitor:
         return duration, memory_peak, memory_avg, cpu_avg
 
 
+@pytest.mark.integration
 class TestRAGPerformance:
     """Тесты производительности RAG системы"""
     
@@ -134,8 +136,8 @@ class TestRAGPerformance:
                     num_workers=4
                 ),
                 vector_store=VectorStoreConfig(
-                    host="localhost",
-                    port=6333,
+                    host=os.getenv("QDRANT_HOST", "localhost"),
+                    port=int(os.getenv("QDRANT_PORT", "6333")),
                     collection_name="perf_test_collection",
                     vector_size=384,
                     distance="cosine",
@@ -983,6 +985,7 @@ class TestRAGPerformance:
 
 
 @pytest.mark.benchmark 
+@pytest.mark.integration
 class TestRAGBenchmarks:
     """Бенчмарки производительности для сравнения версий"""
     

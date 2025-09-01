@@ -74,8 +74,8 @@ def test_rag_settings_file():
                 "num_workers": 4
             },
             "vector_store": {
-                "host": "localhost",
-                "port": 6333,
+                "host": os.getenv("QDRANT_HOST", "localhost"),
+                "port": int(os.getenv("QDRANT_PORT", "6333")),
                 "prefer_grpc": False,
                 "collection_name": "test_rag_collection",
                 "vector_size": 384,
@@ -140,8 +140,8 @@ def test_rag_config():
             num_workers=4
         ),
         vector_store=VectorStoreConfig(
-            host="localhost",
-            port=6333,
+            host=os.getenv("QDRANT_HOST", "localhost"),
+            port=int(os.getenv("QDRANT_PORT", "6333")),
             prefer_grpc=False,
             collection_name="test_collection",
             vector_size=384,

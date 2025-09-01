@@ -28,6 +28,7 @@ from config import get_config, reload_config
 from rag.exceptions import VectorStoreConnectionError
 
 
+@pytest.mark.integration
 class TestRAGCliE2E:
     """End-to-End тесты CLI команд RAG системы"""
     
@@ -63,8 +64,8 @@ class TestRAGCliE2E:
                     "warmup_enabled": True
                 },
                 "vector_store": {
-                    "host": "localhost",
-                    "port": 6333,
+                    "host": os.getenv("QDRANT_HOST", "localhost"),
+                    "port": int(os.getenv("QDRANT_PORT", "6333")),
                     "collection_name": "test_e2e_collection",
                     "vector_size": 384,
                     "distance": "cosine",
