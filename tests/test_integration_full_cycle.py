@@ -9,6 +9,7 @@ from openai_integration import OpenAIManager
 from doc_generator import DocumentationGenerator
 from utils import GPTAnalysisRequest
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_full_analysis_cycle(tmp_path):
     """

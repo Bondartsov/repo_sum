@@ -6,6 +6,7 @@ import sys
 
 # Пример smoke-теста для запуска CLI
 
+@pytest.mark.functional
 def test_main_cli_help():
     """
     Проверяет, что при запуске main.py с --help выводится справка.

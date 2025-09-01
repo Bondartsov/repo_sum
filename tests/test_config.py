@@ -6,6 +6,7 @@ from config import get_config, reload_config, Config
 
 # Пример теста для get_config
 
+@pytest.mark.integration
 def test_get_config_default():
     """
     Проверяет, что get_config возвращает объект Config с нужными атрибутами.

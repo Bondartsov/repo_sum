@@ -157,6 +157,7 @@ def web_server_process(port=None, timeout=30):
 class TestAdditionalWeb:
     """Дополнительные тесты для веб-режима"""
     
+    @pytest.mark.functional
     @pytest.mark.enable_socket
     def test_t004_web_occupied_port(self):
         """
@@ -226,6 +227,7 @@ class TestAdditionalWeb:
                 process.wait()
                 pytest.fail("Процесс веб-сервера завис при попытке запуска на занятом порту")
     
+    @pytest.mark.functional
     @pytest.mark.skip("Требует установки зависимостей Streamlit")
     def test_t005_web_ui_404_unknown_route(self):
         """

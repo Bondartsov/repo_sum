@@ -24,6 +24,7 @@ main = verify_requirements.main
 MODULE_TO_PKG = verify_requirements.MODULE_TO_PKG
 
 
+@pytest.mark.functional
 class TestVerifyRequirements:
     """Тесты для скрипта проверки зависимостей"""
 

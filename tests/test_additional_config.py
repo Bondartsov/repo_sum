@@ -43,6 +43,7 @@ def clean_env():
     os.environ.update(original_env)
 
 
+@pytest.mark.functional
 def test_t003_cli_port_priority_over_env(temp_env_file, clean_env):
     """
     T-003 - Конфигурация: приоритет CLI над .env и значениями по умолчанию
@@ -133,6 +134,7 @@ if __name__ == "__main__":
             os.unlink(str(test_env_path))
 
 
+@pytest.mark.functional
 def test_t006_missing_required_openai_api_key(clean_env):
     """
     T-006 - Конфигурация: отсутствует обязательная переменная
@@ -190,6 +192,7 @@ def test_t006_missing_required_openai_api_key(clean_env):
         assert success_condition, f"Программа должна либо сообщить об отсутствии API ключа, либо работать корректно. returncode: {result.returncode}, combined_output: {combined_output}"
 
 
+@pytest.mark.functional
 def test_t007_invalid_env_type_validation(temp_env_file, clean_env):
     """
     T-007 - Конфигурация: некорректная типизация значения в .env

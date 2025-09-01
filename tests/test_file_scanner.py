@@ -5,6 +5,7 @@ from file_scanner import FileScanner
 
 # Пример теста для сканирования файлов
 
+@pytest.mark.integration
 def test_scan_python_files(tmp_path):
     """
     Проверяет, что FileScanner находит Python-файлы в директории.

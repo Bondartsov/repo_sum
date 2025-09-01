@@ -19,6 +19,7 @@ from file_scanner import FileScanner
 class TestFileScannerAdditional:
     """Дополнительные тесты для FileScanner"""
 
+    @pytest.mark.integration
     def test_gitignore_not_respected(self):
         """
         T-008: Сканер: уважение .gitignore
@@ -60,6 +61,7 @@ class TestFileScannerAdditional:
             # .gitignore не найден, т.к. скрытый файл
             assert ".gitignore" not in found_files
 
+    @pytest.mark.integration
     def test_hidden_and_system_files_excluded(self):
         """
         T-009: Сканер: скрытые/системные файлы
@@ -110,6 +112,7 @@ class TestFileScannerAdditional:
                 # поэтому системный файл БУДЕТ найден
                 assert "system.py" in found_files
 
+    @pytest.mark.integration
     def test_circular_symlinks_handling(self):
         """
         T-010: Сканер: циклические симлинки
@@ -186,6 +189,7 @@ class TestFileScannerAdditional:
             except (OSError, NotImplementedError):
                 pytest.skip("Не удалось создать симлинки на данной платформе")
 
+    @pytest.mark.integration
     def test_binary_files_and_encodings(self):
         """
         T-011: Сканер: бинарные файлы и не-UTF-8 кодировки
@@ -250,6 +254,7 @@ class TestFileScannerAdditional:
             latin1_info = files_by_name["latin1_file.py"]
             assert latin1_info.encoding is not None
 
+    @pytest.mark.functional
     def test_main_analyze_command_integration(self):
         """
         Интеграционный тест с командой main.py --analyze
