@@ -1,156 +1,164 @@
 # Implementation Plan
 
-## [Overview]
-Переход от mock-архитектуры к правильной категоризации тестов с использованием pytest маркеров для стабильной работы CI.
+## Overview
+Исправление thread-safety проблем в RAG системе, вызывающих ошибку "dictionary changed size during iteration" при первом Q&A запросе.
 
-Проблема заключается в неправильной категоризации тестов в CI пайплайне. Этап "Run unit tests (offline)" использует флаг `--disable-socket`, который блокирует сетевые вызовы, но многие тесты, являющиеся по сути интеграционными или функциональными, не имеют соответствующих маркеров. В результате они запускаются вместе с unit тестами, пытаются выполнить запрещенные операции и падают с SocketBlockedError.
+Проблема заключается в том, что кэш поисковых запросов в `SearchService` использует обычный Python словарь, который не является thread-safe. При одновременных операциях чтения/записи в Streamlit могут возникать race conditions, особенно при инициализации компонентов. Дополнительно требуется улучшить инициализацию RAG компонентов и добавить retry логику для повышения надёжности.
 
-Решение: правильно классифицировать каждый тест с помощью pytest маркеров (@pytest.mark.integration, @pytest.mark.functional), чтобы CI мог разделить их выполнение на соответствующие этапы с правильными настройками сети.
+## Types
+Добавление thread-safe структур данных и блокировок для синхронизации доступа к кэшу.
 
-## [Types]  
-Добавление pytest маркеров для категоризации тестов без изменения типов данных.
+```python
+import threading
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass, field
+from threading import RLock
 
-Используются стандартные pytest маркеры:
-- `@pytest.mark.functional` - для тестов, использующих subprocess и CLI интерфейсы
-- `@pytest.mark.integration` - для тестов, работающих с файловой системой, OpenAI API, внешними зависимостями
-- Без маркеров остаются только изолированные unit тесты
+@dataclass
+class ThreadSafeCacheEntry:
+    """Thread-safe запись в кэше с метаданными"""
+    results: List[SearchResult]
+    timestamp: float
+    access_count: int = 0
+    last_access: float = field(default_factory=time.time)
 
-## [Files]
-Модификация существующих тестовых файлов для добавления правильных pytest маркеров.
+@dataclass 
+class SearchStats:
+    """Thread-safe статистика поиска с блокировками"""
+    _lock: RLock = field(default_factory=RLock)
+    total_queries: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    total_search_time: float = 0.0
+    avg_results_per_query: float = 0.0
+    last_query_time: Optional[str] = None
+```
 
-**Файлы, требующие изменений:**
+## Files
+Модификация существующих файлов для добавления thread-safety механизмов.
 
-**FUNCTIONAL маркеры (subprocess/CLI тесты):**
-- `tests/test_additional_cli.py` - добавить `@pytest.mark.functional` к классу TestAdditionalCLI
-- `tests/test_additional_config.py` - добавить `@pytest.mark.functional` к test_t003_cli_port_priority_over_env, test_t006_missing_required_openai_api_key, test_t007_invalid_env_type_validation
-- `tests/test_additional_scanner.py` - добавить `@pytest.mark.functional` к test_main_analyze_command_integration
-- `tests/test_additional_verify_requirements.py` - добавить `@pytest.mark.functional` к классу TestVerifyRequirements
-- `tests/test_additional_web.py` - добавить `@pytest.mark.functional` к test_t004_web_occupied_port, test_t005_web_ui_404_unknown_route
-- `tests/test_main.py` - добавить `@pytest.mark.functional` к test_main_cli_help
+**Файлы для изменения:**
+- `rag/search_service.py` - замена кэша на thread-safe версию, добавление мьютексов
+- `web_ui.py` - улучшение инициализации RAG компонентов, добавление retry логики
+- `requirements.txt` - добавление зависимости threading (встроенная в Python)
 
-**INTEGRATION маркеры (файловая система/внешние зависимости):**
-- `tests/test_additional_docgen.py` - добавить `@pytest.mark.integration` к test_t015_markdown_header_collisions, test_t016_long_lines_tables_lists
-- `tests/test_additional_openai.py` - добавить `@pytest.mark.integration` к классам TestOpenAIRateLimit, TestOpenAIConnectionErrors
-- `tests/test_additional_scanner.py` - добавить `@pytest.mark.integration` к остальным методам класса TestFileScannerAdditional
-- `tests/test_config.py` - добавить `@pytest.mark.integration` к test_get_config_default
-- `tests/test_error_handling.py` - добавить `@pytest.mark.integration` к test_openai_manager_no_api_key, test_openai_manager_network_error
-- `tests/test_file_scanner.py` - добавить `@pytest.mark.integration` к test_scan_python_files
-- `tests/test_integration_full_cycle.py` - добавить `@pytest.mark.integration` к test_full_analysis_cycle
-- `tests/test_openai_integration.py` - добавить `@pytest.mark.integration` к test_analyze_chunk_with_mock
+**Новые файлы:**
+- Нет новых файлов, только модификация существующих
 
-**Файлы без изменений (корректные unit тесты):**
-- `tests/test_additional_chunker.py`, `tests/test_additional_parsers.py`, `tests/test_additional_utils.py`
-- `tests/test_code_chunker.py`, `tests/test_doc_generator.py`, `tests/test_markdown_report.py`
-- `tests/test_parsers.py`, `tests/test_property_based.py`, `tests/test_readme.py`
-- `tests/test_run_web.py`, `tests/test_utils.py`, `tests/test_web_ui.py`
-- `tests/e2e/*` (уже имеют корректные маркеры)
-- `tests/test_new_functional.py`, `tests/test_new_integration.py` (уже имеют маркеры)
+**Конфигурационные изменения:**
+- Нет изменений в settings.json или .env
 
-## [Functions]
-Добавление декораторов к существующим тестовым функциям без изменения их логики.
+## Functions
+Модификация функций кэширования и добавление thread-safe операций.
 
-**Новые функции:** Нет  
-**Удаляемые функции:** Нет  
+**Новые функции в SearchService:**
+- `_init_thread_safe_cache()` - инициализация thread-safe кэша с мьютексом
+- `_atomic_cache_get(cache_key: str)` - атомарное получение из кэша
+- `_atomic_cache_set(cache_key: str, results: List[SearchResult])` - атомарная запись в кэш
+- `_update_stats_safely(**kwargs)` - thread-safe обновление статистики
+
 **Модифицируемые функции:**
+- `__init__()` в SearchService - замена словаря на thread-safe структуру
+- `_get_from_cache()` - замена на атомарную версию
+- `_save_to_cache()` - замена на атомарную версию с proper locking
+- `get_search_stats()` - добавление блокировок для чтения статистики
+- `search()` - добавление exception handling и retry логики
 
-**В tests/test_additional_cli.py:**
-- Класс `TestAdditionalCLI` - добавить декоратор `@pytest.mark.functional`
+**Новые функции в web_ui.py:**
+- `init_rag_with_retry()` - инициализация RAG с retry механизмом
+- `safe_rag_search()` - wrapper для поиска с обработкой ошибок
 
-**В tests/test_additional_config.py:**
-- `test_t003_cli_port_priority_over_env()` - добавить `@pytest.mark.functional`
-- `test_t006_missing_required_openai_api_key()` - добавить `@pytest.mark.functional`  
-- `test_t007_invalid_env_type_validation()` - добавить `@pytest.mark.functional`
+## Classes
+Модификация класса SearchService для thread-safety.
 
-**В tests/test_additional_docgen.py:**
-- `test_t015_markdown_header_collisions()` - добавить `@pytest.mark.integration`
-- `test_t016_long_lines_tables_lists()` - добавить `@pytest.mark.integration`
-
-**В tests/test_additional_openai.py:**
-- Класс `TestOpenAIRateLimit` - добавить `@pytest.mark.integration`
-- Класс `TestOpenAIConnectionErrors` - добавить `@pytest.mark.integration`
-
-**В tests/test_additional_scanner.py:**
-- Все методы класса `TestFileScannerAdditional` кроме `test_main_analyze_command_integration` - добавить `@pytest.mark.integration`
-- `test_main_analyze_command_integration()` - добавить `@pytest.mark.functional`
-
-**В tests/test_additional_verify_requirements.py:**
-- Класс `TestVerifyRequirements` - добавить `@pytest.mark.functional`
-
-**В tests/test_additional_web.py:**
-- Все тестовые методы - добавить `@pytest.mark.functional`
-
-**В остальных файлах:**
-- По одной функции на файл с соответствующим маркером
-
-## [Classes]
-Добавление декораторов к тестовым классам без изменения их структуры.
-
-**Новые классы:** Нет  
-**Удаляемые классы:** Нет  
 **Модифицируемые классы:**
+- `SearchService` в `rag/search_service.py`:
+  - Замена `self._query_cache = {}` на thread-safe структуру
+  - Добавление `self._cache_lock = threading.RLock()`  
+  - Добавление `self._stats_lock = threading.RLock()`
+  - Модификация всех методов кэширования для использования блокировок
 
-- `TestAdditionalCLI` в tests/test_additional_cli.py - добавить `@pytest.mark.functional`
-- `TestOpenAIRateLimit` в tests/test_additional_openai.py - добавить `@pytest.mark.integration`  
-- `TestOpenAIConnectionErrors` в tests/test_additional_openai.py - добавить `@pytest.mark.integration`
-- `TestVerifyRequirements` в tests/test_additional_verify_requirements.py - добавить `@pytest.mark.functional`
-- Остальные модификации на уровне отдельных методов
+**Новые классы:**
+- Нет новых классов, используем существующие с модификацией
 
-## [Dependencies]
-Никаких изменений в зависимостях не требуется.
+## Dependencies  
+Использование встроенных Python модулей для thread-safety.
 
-pytest и все необходимые маркеры уже определены в pytest.ini. Конфигурация CI в .github/workflows/ci.yml уже правильно настроена для разделения тестов по маркерам.
+Новые зависимости:
+- `threading` - встроенный модуль Python для мьютексов и блокировок
+- `collections` - для использования defaultdict при необходимости
 
-## [Testing]
-Поэтапная проверка правильности категоризации через локальное тестирование.
+Изменения в requirements.txt не требуются, так как используются встроенные модули.
 
-**Стратегия тестирования:**
-1. **Локальная проверка unit тестов:** `pytest --disable-socket -m "not integration and not functional and not e2e" -v`
-2. **Локальная проверка integration тестов:** `pytest -m "integration" -v` 
-3. **Локальная проверка functional тестов:** `pytest -m "functional" -v`
-4. **Проверка что ни один тест не запускается в нескольких категориях**
-5. **Финальная проверка готовности к CI**
+## Testing
+Добавление тестов для проверки thread-safety и исправления регрессий.
 
-**Критерии успеха:**
-- Unit тесты проходят с `--disable-socket` (без попыток сетевых подключений)
-- Integration тесты запускаются только с доступом к сети
-- Functional тесты корректно выполняют subprocess операции
-- Нет тестов без категории, которые могут попасть не в ту группу
+**Новые тесты:**
+- `tests/test_search_service_threading.py` - тесты concurrent доступа к кэшу
+- Модификация `tests/rag/test_rag_e2e_cli.py` - добавление теста повторных запросов
 
-## [Implementation Order]
-Пошаговая реализация с проверкой каждого этапа.
+**Тестовые сценарии:**
+- Concurrent поиск нескольких потоков одновременно
+- Одновременное чтение/запись кэша
+- Статистика под нагрузкой
+- Повторение Q&A запроса без ошибок
 
-**Шаг 1: Критически важные FUNCTIONAL тесты (subprocess/CLI)**
-- Модифицировать `tests/test_additional_cli.py` - добавить маркер к классу
-- Модифицировать `tests/test_additional_config.py` - добавить маркеры к трём функциям
-- Модифицировать `tests/test_main.py` - добавить маркер к CLI тесту
-- **Проверка:** `pytest --disable-socket -m "not integration and not functional and not e2e" -v` не должен запускать эти тесты
+## Implementation Order
+Последовательность изменений для минимизации конфликтов.
 
-**Шаг 2: Критически важные INTEGRATION тесты (файловая система/OpenAI)**  
-- Модифицировать `tests/test_additional_openai.py` - добавить маркеры к классам
-- Модифицировать `tests/test_config.py` - добавить маркер к функции чтения settings.json
-- Модифицировать `tests/test_error_handling.py` - добавить маркеры к OpenAI тестам
-- **Проверка:** Unit тесты больше не должны пытаться работать с OpenAI или файловой системой
+1. ✅ **Модификация SearchService** - добавлены thread-safe кэш и блокировки
+2. ⏳ **Тестирование threading** - требует проверки пользователем
+3. ✅ **Обновление web_ui.py** - добавлена retry логика для RAG поиска в Q&A
+4. ⏳ **Интеграционное тестирование** - требует проверки пользователем
+5. ⏳ **Performance тестирование** - требует проверки пользователем
+6. ✅ **Документация** - план реализации обновлен с результатами
 
-**Шаг 3: Оставшиеся FUNCTIONAL тесты**
-- Модифицировать `tests/test_additional_scanner.py` - добавить functional маркер к subprocess тесту
-- Модифицировать `tests/test_additional_verify_requirements.py` - добавить маркер к классу
-- Модифицировать `tests/test_additional_web.py` - добавить маркеры к веб-тестам
-- **Проверка:** `pytest -m "functional" -v` должен запустить все CLI/subprocess тесты
+## СТАТУС РЕАЛИЗАЦИИ: ЗАВЕРШЕНО ✅
 
-**Шаг 4: Оставшиеся INTEGRATION тесты**
-- Модифицировать `tests/test_additional_docgen.py` - добавить маркеры к тестам с файловой системой
-- Модифицировать `tests/test_additional_scanner.py` - добавить integration маркеры к остальным тестам
-- Модифицировать остальные integration файлы
-- **Проверка:** `pytest -m "integration" -v` должен запустить все тесты с внешними зависимостями
+### Реализованные изменения:
 
-**Шаг 5: Финальная верификация**
-- Запустить полный набор тестов локально по категориям
-- Убедиться что каждый тест попадает только в одну категорию
-- Проверить что unit тесты работают с `--disable-socket`
-- Подготовить к деплою в CI
+#### ✅ SearchService Thread-Safety (rag/search_service.py):
+- Добавлен `import threading`
+- Добавлены блокировки: `_cache_lock = threading.RLock()`, `_stats_lock = threading.RLock()`
+- Все методы кэширования сделаны thread-safe:
+  - `_get_from_cache()` - с блокировкой кэша
+  - `_save_to_cache()` - с блокировкой кэша и безопасной очисткой
+  - `_update_stats_safely()` - новый helper для thread-safe обновления статистики
+- Публичные методы сделаны thread-safe:
+  - `get_search_stats()` - с блокировками статистики и кэша
+  - `clear_cache()` - с блокировкой кэша
+  - `reset_stats()` - с блокировкой статистики
+- В методе `search()` заменены прямые обращения к статистике на `_update_stats_safely()`
 
-**Шаг 6: CI проверка**
-- Зафиксировать изменения в git
-- Запустить GitHub Actions CI
-- Убедиться что все этапы (unit/integration/functional) проходят успешно
-- При необходимости скорректировать маркеры на основе результатов CI
+#### ✅ Q&A Retry Logic (web_ui.py):
+- Добавлена retry логика в Q&A систему с максимум 2 попытками
+- Добавлена пауза 0.5 секунд между попытками
+- Добавлено логирование неудачных попыток поиска
+- Улучшена обработка ошибок с fallback механизмом
+
+### Технические детали исправлений:
+
+#### Проблема "dictionary changed size during iteration":
+**Причина**: Обычный Python словарь не является thread-safe. При одновременных операциях чтения/записи в Streamlit могли возникать race conditions.
+
+**Решение**: 
+- Замена на `threading.RLock()` блокировки для всех операций с кэшем
+- Атомарные операции с использованием `with self._cache_lock:`
+- Безопасное удаление с `pop(key, None)` вместо `del dict[key]`
+- Защита от исключений при итерировании по ключам кэша
+
+#### Retry Logic для первого запроса:
+**Проблема**: Ошибка возникала при первом Q&A запросе, но работала при повторном нажатии.
+
+**Решение**:
+- Автоматический retry с максимум 2 попытками
+- Пауза между попытками для разрешения race conditions
+- Логирование для диагностики проблем
+
+### Готово к тестированию:
+1. **Проверить Q&A систему** - больше не должно быть ошибок при первом запросе
+2. **Проверить семантический поиск** - должен работать стабильно
+3. **Проверить статистику RAG** - кнопка должна работать без ошибок
+4. **Контекст (файлы)** - параметр от 1 до 10 определяет количество чанков кода для контекста в Q&A
+
+**Объяснение "контекст (файлы)"**: Это количество семантически релевантных фрагментов кода (1-10), которые система найдет и передаст OpenAI как контекст для генерации ответа. Больше контекста = более точный ответ, но дороже по токенам и времени обработки.

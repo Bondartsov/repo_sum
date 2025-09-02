@@ -7,6 +7,7 @@
 
 import logging
 import time
+import threading
 from typing import List, Dict, Optional, Any, Union
 from datetime import datetime
 from dataclasses import dataclass
@@ -54,26 +55,30 @@ class SearchService:
     - Кэширование запросов
     """
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, silent_mode: bool = False):
         """
         Инициализация сервиса поиска.
         
         Args:
             config: Конфигурация системы
+            silent_mode: Отключить консольный вывод (для web UI)
         """
         self.config = config
-        self.console = Console()
+        self.console = Console() if not silent_mode else None
+        self.silent_mode = silent_mode
         
         # Инициализация компонентов
         self.embedder = CPUEmbedder(config.rag.embeddings, config.rag.parallelism)
         self.vector_store = QdrantVectorStore(config.rag.vector_store)
         
-        # Кэш запросов
+        # Thread-safe кэш запросов с блокировками
         self._query_cache = {}
+        self._cache_lock = threading.RLock()  # RLock для поддержки вложенных вызовов
         self._cache_max_size = config.rag.query_engine.cache_max_entries
         self._cache_ttl = config.rag.query_engine.cache_ttl_seconds
         
-        # Статистика поиска
+        # Thread-safe статистика поиска с блокировкой
+        self._stats_lock = threading.RLock()
         self.stats = {
             'total_queries': 0,
             'cache_hits': 0,
@@ -83,7 +88,7 @@ class SearchService:
             'last_query_time': None
         }
         
-        logger.info("SearchService инициализирован")
+        logger.info("SearchService инициализирован с thread-safe поддержкой")
     
     async def search(
         self,
@@ -118,11 +123,11 @@ class SearchService:
             
             cached_result = self._get_from_cache(cache_key)
             if cached_result:
-                self.stats['cache_hits'] += 1
+                self._update_stats_safely(cache_hits_incr=1)
                 logger.debug(f"Получен результат из кэша для запроса: {query[:50]}...")
                 return cached_result
             
-            self.stats['cache_misses'] += 1
+            self._update_stats_safely(cache_misses_incr=1)
             
             # Генерируем эмбеддинг для запроса
             embed_start = time.time()
@@ -169,15 +174,13 @@ class SearchService:
             # Сохраняем в кэш
             self._save_to_cache(cache_key, processed_results)
             
-            # Обновляем статистику
+            # Thread-safe обновление статистики
             total_time = time.time() - start_time
-            self.stats['total_queries'] += 1
-            self.stats['total_search_time'] += total_time
-            self.stats['last_query_time'] = datetime.utcnow().isoformat()
-            
-            if self.stats['total_queries'] > 0:
-                total_results = sum(len(self._get_from_cache(k) or []) for k in self._query_cache.keys())
-                self.stats['avg_results_per_query'] = total_results / self.stats['total_queries']
+            self._update_stats_safely(
+                total_queries_incr=1,
+                total_search_time_incr=total_time,
+                last_query_time=datetime.utcnow().isoformat()
+            )
             
             logger.info(
                 f"Поиск завершен: '{query}' -> {len(processed_results)} результатов за {total_time:.3f}s"
@@ -342,34 +345,71 @@ class SearchService:
         return hashlib.md5(key_string.encode()).hexdigest()
     
     def _get_from_cache(self, cache_key: str) -> Optional[List[SearchResult]]:
-        """Получает результат из кэша"""
-        if cache_key not in self._query_cache:
-            return None
-        
-        cached_data = self._query_cache[cache_key]
-        
-        # Проверяем TTL
-        if time.time() - cached_data['timestamp'] > self._cache_ttl:
-            del self._query_cache[cache_key]
-            return None
-        
-        return cached_data['results']
+        """Thread-safe получение результата из кэша"""
+        with self._cache_lock:
+            if cache_key not in self._query_cache:
+                return None
+            
+            cached_data = self._query_cache[cache_key]
+            
+            # Проверяем TTL
+            if time.time() - cached_data['timestamp'] > self._cache_ttl:
+                self._query_cache.pop(cache_key, None)  # Безопасное удаление
+                return None
+            
+            return cached_data['results']
     
+    def _update_stats_safely(self, **kwargs) -> None:
+        """Thread-safe обновление статистики поиска"""
+        with self._stats_lock:
+            if 'cache_hits_incr' in kwargs:
+                self.stats['cache_hits'] += kwargs['cache_hits_incr']
+            if 'cache_misses_incr' in kwargs:
+                self.stats['cache_misses'] += kwargs['cache_misses_incr']
+            if 'total_queries_incr' in kwargs:
+                self.stats['total_queries'] += kwargs['total_queries_incr']
+            if 'total_search_time_incr' in kwargs:
+                self.stats['total_search_time'] += kwargs['total_search_time_incr']
+            if 'last_query_time' in kwargs:
+                self.stats['last_query_time'] = kwargs['last_query_time']
+            
+            # Пересчитываем average results per query
+            if self.stats['total_queries'] > 0:
+                with self._cache_lock:  # Блокируем кэш для безопасного итерирования
+                    try:
+                        # Создаем копию значений для безопасного итерирования
+                        cache_values = list(self._query_cache.values())
+                        total_results = sum(len(data.get('results', [])) for data in cache_values)
+                        self.stats['avg_results_per_query'] = total_results / self.stats['total_queries']
+                    except Exception as e:
+                        logger.warning(f"Ошибка пересчета avg_results_per_query: {e}")
+                        self.stats['avg_results_per_query'] = 0.0
+
     def _save_to_cache(self, cache_key: str, results: List[SearchResult]) -> None:
-        """Сохраняет результат в кэш"""
-        # Ограничиваем размер кэша
-        if len(self._query_cache) >= self._cache_max_size:
-            # Удаляем самый старый элемент
-            oldest_key = min(
-                self._query_cache.keys(),
-                key=lambda k: self._query_cache[k]['timestamp']
-            )
-            del self._query_cache[oldest_key]
-        
-        self._query_cache[cache_key] = {
-            'results': results,
-            'timestamp': time.time()
-        }
+        """Thread-safe сохранение результата в кэш"""
+        with self._cache_lock:
+            # Ограничиваем размер кэша
+            if len(self._query_cache) >= self._cache_max_size:
+                # Удаляем самый старый элемент
+                try:
+                    if self._query_cache:  # Проверяем что кэш не пустой
+                        oldest_key = min(
+                            self._query_cache.keys(), 
+                            key=lambda k: self._query_cache[k]['timestamp']
+                        )
+                        self._query_cache.pop(oldest_key, None)
+                except (ValueError, KeyError) as e:
+                    # Если произошла ошибка, очищаем один произвольный элемент
+                    logger.warning(f"Ошибка очистки кэша: {e}, очищаем произвольный элемент")
+                    if self._query_cache:
+                        first_key = next(iter(self._query_cache))
+                        self._query_cache.pop(first_key, None)
+            
+            # Атомарная запись в кэш
+            self._query_cache[cache_key] = {
+                'results': results,
+                'timestamp': time.time()
+            }
     
     def format_search_results(
         self, 
@@ -385,6 +425,10 @@ class SearchService:
             show_content: Показывать содержимое чанков
             max_content_lines: Максимальное количество строк контента
         """
+        # В silent режиме не выводим в консоль
+        if self.silent_mode or not self.console:
+            return
+            
         if not results:
             self.console.print("[yellow]🔍 Результаты не найдены[/yellow]")
             return
@@ -446,49 +490,53 @@ class SearchService:
     
     def get_search_stats(self) -> Dict[str, Any]:
         """
-        Возвращает статистику поиска.
+        Thread-safe возврат статистики поиска.
         
         Returns:
             Словарь со статистикой
         """
-        stats = self.stats.copy()
+        with self._stats_lock:
+            stats = self.stats.copy()
+            
+            # Дополнительные вычисленные метрики
+            if stats['total_queries'] > 0:
+                stats['avg_search_time'] = stats['total_search_time'] / stats['total_queries']
+                stats['cache_hit_rate'] = stats['cache_hits'] / stats['total_queries']
+            else:
+                stats['avg_search_time'] = 0.0
+                stats['cache_hit_rate'] = 0.0
         
-        # Дополнительные вычисленные метрики
-        if stats['total_queries'] > 0:
-            stats['avg_search_time'] = stats['total_search_time'] / stats['total_queries']
-            stats['cache_hit_rate'] = stats['cache_hits'] / stats['total_queries']
-        else:
-            stats['avg_search_time'] = 0.0
-            stats['cache_hit_rate'] = 0.0
-        
-        stats['cache_size'] = len(self._query_cache)
-        stats['cache_max_size'] = self._cache_max_size
+        with self._cache_lock:
+            stats['cache_size'] = len(self._query_cache)
+            stats['cache_max_size'] = self._cache_max_size
         
         return stats
     
     def clear_cache(self) -> int:
         """
-        Очищает кэш поисковых запросов.
+        Thread-safe очистка кэша поисковых запросов.
         
         Returns:
             Количество удаленных записей
         """
-        cache_size = len(self._query_cache)
-        self._query_cache.clear()
-        logger.info(f"Очищен кэш поиска: {cache_size} записей")
-        return cache_size
+        with self._cache_lock:
+            cache_size = len(self._query_cache)
+            self._query_cache.clear()
+            logger.info(f"Очищен кэш поиска: {cache_size} записей")
+            return cache_size
     
     def reset_stats(self) -> None:
-        """Сбрасывает статистику поиска"""
-        self.stats = {
-            'total_queries': 0,
-            'cache_hits': 0,
-            'cache_misses': 0,
-            'total_search_time': 0.0,
-            'avg_results_per_query': 0.0,
-            'last_query_time': None
-        }
-        logger.info("Статистика поиска сброшена")
+        """Thread-safe сброс статистики поиска"""
+        with self._stats_lock:
+            self.stats = {
+                'total_queries': 0,
+                'cache_hits': 0,
+                'cache_misses': 0,
+                'total_search_time': 0.0,
+                'avg_results_per_query': 0.0,
+                'last_query_time': None
+            }
+            logger.info("Статистика поиска сброшена")
     
     async def close(self) -> None:
         """Закрывает соединения и освобождает ресурсы"""

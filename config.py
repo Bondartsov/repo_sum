@@ -22,9 +22,9 @@ except ImportError:
 class OpenAIConfig:
     """Конфигурация OpenAI API"""
     api_key_env_var: str = "OPENAI_API_KEY"
-    temperature: float = 0.1
-    retry_attempts: int = 3
-    retry_delay: float = 1.0
+    temperature: float = field(default_factory=lambda: float(os.getenv("OPENAI_TEMPERATURE", "0.1")))
+    retry_attempts: int = field(default_factory=lambda: int(os.getenv("OPENAI_RETRY_ATTEMPTS", "3")))
+    retry_delay: float = field(default_factory=lambda: float(os.getenv("OPENAI_RETRY_DELAY", "1.0")))
 
     @property
     def api_key(self) -> Optional[str]:

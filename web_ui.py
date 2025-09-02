@@ -302,7 +302,7 @@ def init_rag_components():
         # Инициализируем компоненты
         embedder = CPUEmbedder(config.rag.embeddings, config.rag.parallelism)
         vector_store = QdrantVectorStore(config.rag.vector_store)
-        search_service = SearchService(config)
+        search_service = SearchService(config, silent_mode=True)
         query_engine = CPUQueryEngine(embedder, vector_store, config.rag.query_engine)
         indexer_service = IndexerService(config)
         
@@ -312,6 +312,56 @@ def init_rag_components():
     except Exception as e:
         logger.error(f"Ошибка инициализации RAG компонентов: {e}")
         return None, None, None, f"Ошибка RAG системы: {e}"
+
+
+def get_current_api_key() -> Optional[str]:
+    """
+    Получает текущий API ключ из различных источников в правильном порядке приоритета.
+    
+    Returns:
+        API ключ или None если не найден
+    """
+    # 1. Сначала проверяем session state (если пользователь ввел вручную)
+    if 'manual_api_key' in st.session_state and st.session_state.manual_api_key:
+        api_key = st.session_state.manual_api_key.strip()
+        if api_key and not api_key.startswith('your_'):  # Проверяем что это не плейсхолдер
+            return api_key
+    
+    # 2. Затем проверяем переменные окружения
+    env_api_key = os.getenv('OPENAI_API_KEY', '').strip()
+    if env_api_key and not env_api_key.startswith('your_'):  # Проверяем что это не плейсхолдер
+        return env_api_key
+    
+    return None
+
+
+def validate_api_key(api_key: str) -> tuple[bool, str]:
+    """
+    Валидирует API ключ OpenAI.
+    
+    Args:
+        api_key: API ключ для проверки
+        
+    Returns:
+        Кортеж (валидность, сообщение об ошибке)
+    """
+    if not api_key or not api_key.strip():
+        return False, "API ключ пустой"
+    
+    api_key = api_key.strip()
+    
+    # Проверяем что это не плейсхолдер
+    if api_key.startswith('your_') and api_key.endswith('_here'):
+        return False, "Используется плейсхолдер вместо реального API ключа"
+    
+    # Проверяем формат OpenAI API ключа
+    if not api_key.startswith('sk-'):
+        return False, "API ключ должен начинаться с 'sk-'"
+    
+    if len(api_key) < 20:
+        return False, "API ключ слишком короткий"
+    
+    return True, "OK"
 
 
 def run_async(coro):
@@ -405,14 +455,20 @@ def main():
         if st.session_state.api_key_source == 'env' and existing_api_key:
             st.success("✅ Используется API ключ из переменных окружения (.env)")
             api_key = existing_api_key
+            # Очищаем manual_api_key чтобы get_current_api_key() использовал env
+            st.session_state.manual_api_key = ""
         else:
             api_key = st.text_input(
                 "API ключ",
-                value="",
+                value=st.session_state.get('manual_api_key', ''),
                 placeholder="sk-...",
                 type="password",
                 help="Получите API ключ на https://platform.openai.com/api-keys"
             )
+            # Сохраняем введенный ключ в session_state для get_current_api_key()
+            if api_key != st.session_state.get('manual_api_key', ''):
+                st.session_state.manual_api_key = api_key
+            
             if api_key:
                 st.success("✅ API ключ введен")
             elif not existing_api_key:
@@ -446,7 +502,7 @@ def main():
             st.success(f"✅ {rag_status}")
             if st.button("📊 Статистика RAG"):
                 try:
-                    stats = run_async(search_service.get_search_stats())
+                    stats = search_service.get_search_stats()  # Убираем run_async для синхронной функции
                     with st.expander("📈 Подробная статистика", expanded=True):
                         col1, col2 = st.columns(2)
                         with col1:
@@ -455,6 +511,16 @@ def main():
                         with col2:
                             st.metric("Размер кэша", stats.get('cache_size', 0))
                             st.metric("Среднее время поиска", f"{stats.get('avg_search_time', 0):.3f}s")
+                            
+                        # Дополнительная статистика
+                        col3, col4 = st.columns(2)
+                        with col3:
+                            st.metric("Промахи кэша", stats.get('cache_misses', 0))
+                            st.metric("Коэф. попадания", f"{stats.get('cache_hit_rate', 0):.1%}")
+                        with col4:
+                            if stats.get('last_query_time'):
+                                st.caption(f"Последний запрос: {stats['last_query_time'][:19].replace('T', ' ')}")
+                            st.metric("Макс. размер кэша", stats.get('cache_max_size', 0))
                 except Exception as e:
                     st.error(f"Ошибка получения статистики: {e}")
         else:
@@ -885,21 +951,43 @@ def main():
             
             # Кнопка отправки вопроса
             if st.button("💬 Ответить", type="primary", disabled=not search_service or not query_engine or not question.strip()):
+                # Получаем актуальный API ключ
+                current_api_key = get_current_api_key()
+                
                 if not question.strip():
                     st.warning("⚠️ Введите вопрос")
                 elif not search_service or not query_engine:
                     st.error("❌ RAG система недоступна")
-                elif not api_key:
+                elif not current_api_key:
                     st.error("❌ Необходим OpenAI API ключ для Q&A")
                 else:
+                    # Валидируем API ключ
+                    is_valid, error_msg = validate_api_key(current_api_key)
+                    if not is_valid:
+                        st.error(f"❌ Ошибка API ключа: {error_msg}")
+                        return
                     try:
                         with st.spinner("Поиск релевантного кода и генерация ответа..."):
-                            # 1. Семантический поиск релевантного кода
-                            search_results = run_async(search_service.search(
-                                query=question,
-                                top_k=context_limit,
-                                min_score=0.6
-                            ))
+                            # 1. Семантический поиск релевантного кода с retry логикой
+                            search_results = None
+                            max_retries = 2
+                            
+                            for attempt in range(max_retries):
+                                try:
+                                    search_results = run_async(search_service.search(
+                                        query=question,
+                                        top_k=context_limit,
+                                        min_score=0.6
+                                    ))
+                                    break  # Успешно выполнен, выходим из цикла
+                                except Exception as search_error:
+                                    logger.warning(f"Попытка поиска {attempt + 1}/{max_retries} неудачна: {search_error}")
+                                    if attempt == max_retries - 1:
+                                        # Последняя попытка неудачна, пробрасываем исключение
+                                        raise search_error
+                                    # Небольшая пауза перед повтором
+                                    import time
+                                    time.sleep(0.5)
                             
                             if search_results:
                                 # 2. Формирование контекста из найденного кода
@@ -941,7 +1029,7 @@ def main():
 """
                                 
                                 # 4. Вызов OpenAI с контекстом
-                                if not analyzer.initialize_with_api_key(api_key):
+                                if not analyzer.initialize_with_api_key(current_api_key):
                                     st.error("❌ Ошибка инициализации OpenAI API")
                                 else:
                                     try:
