@@ -712,6 +712,71 @@ def main():
             st.error(f"❌ {rag_status}")
             st.info("💡 Для использования RAG функций необходимо установить Qdrant и настроить RAG систему")
         
+        # НОВОЕ: Standalone RAG индексация
+        st.subheader("📚 Индексация репозитория")
+        st.markdown("*Создание векторного индекса для семантического поиска (не требует OpenAI API)*")
+        
+        # Выбор репозитория для индексации
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            index_repo_path = st.text_input(
+                "Путь к репозиторию для индексации",
+                placeholder="C:/path/to/your/repository",
+                help="Укажите путь к папке с исходным кодом для создания векторного индекса"
+            )
+        with col2:
+            recreate_index = st.checkbox(
+                "Пересоздать индекс",
+                value=False,
+                help="Удалить существующий индекс и создать новый"
+            )
+        
+        # Кнопка standalone индексации
+        if st.button(
+            "🔄 Индексировать репозиторий", 
+            type="secondary", 
+            disabled=not (indexer_service and index_repo_path and Path(index_repo_path).exists())
+        ):
+            if not indexer_service:
+                st.error("❌ RAG система недоступна")
+            elif not index_repo_path:
+                st.warning("⚠️ Укажите путь к репозиторию")
+            elif not Path(index_repo_path).exists():
+                st.error("❌ Репозиторий не найден")
+            else:
+                try:
+                    with st.spinner("Индексация репозитория в RAG систему..."):
+                        indexing_result = run_async(indexer_service.index_repository(
+                            index_repo_path,
+                            batch_size=512,
+                            recreate=recreate_index,
+                            show_progress=False
+                        ))
+                        
+                        if indexing_result and indexing_result.get('success', False):
+                            st.success(f"🎯 Индексация завершена успешно!")
+                            
+                            # Отображаем статистику индексации
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Проиндексировано чанков", indexing_result.get('indexed_chunks', 0))
+                            with col2:
+                                st.metric("Обработано файлов", indexing_result.get('processed_files', 0))
+                            with col3:
+                                st.metric("Время индексации", f"{indexing_result.get('processing_time', 0):.1f}s")
+                                
+                            st.info("💡 Теперь можете использовать семантический поиск по этому репозиторию")
+                            
+                        else:
+                            error_msg = indexing_result.get('error', 'Неизвестная ошибка') if indexing_result else 'Индексация не удалась'
+                            st.error(f"❌ Ошибка индексации: {error_msg}")
+                            
+                except Exception as e:
+                    st.error(f"❌ Ошибка индексации: {e}")
+                    logger.exception("Ошибка standalone RAG индексации")
+        
+        st.divider()
+        
         # Разделы RAG интерфейса
         rag_mode = st.radio(
             "Выберите режим:",
@@ -885,8 +950,7 @@ def main():
                                             messages=[
                                                 {"role": "user", "content": prompt_with_context}
                                             ],
-                                            temperature=0.1,
-                                            max_tokens=2000
+                                            temperature=0.1
                                         )
                                         
                                         answer = response.choices[0].message.content.strip()

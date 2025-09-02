@@ -48,7 +48,6 @@ class TestRAGCliE2E:
         test_settings = {
             "openai": {
                 "api_key_env_var": "OPENAI_API_KEY",
-                "max_tokens_per_chunk": 4000,
                 "temperature": 0.1
             },
             "rag": {

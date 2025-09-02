@@ -155,7 +155,7 @@ class SearchService:
             
             # Обрабатываем и фильтруем результаты
             processed_results = self._process_search_results(
-                raw_results, min_score or self.config.rag.query_engine.score_threshold
+                raw_results, min_score or 0.5  # Используем дефолтный порог 0.5
             )
             
             # Применяем MMR если включено

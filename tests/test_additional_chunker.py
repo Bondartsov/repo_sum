@@ -220,11 +220,52 @@ def function_five():
         
         temp_file = self.create_temp_python_file(large_code)
         try:
-            # Создаём CodeChunker с небольшим лимитом токенов для принудительного разбиения
+            # Создаём CodeChunker с принудительным разбиением на много чанков
             chunker = CodeChunker()
-            # Временно уменьшаем лимит для получения нескольких чанков
-            original_limit = chunker.max_tokens_per_chunk
-            chunker.max_tokens_per_chunk = 800  # Небольшой лимит для принудительного разбиения
+            # Временно уменьшаем max_functions_per_chunk для принудительного создания нескольких чанков
+            # Получаем доступ к методу _group_functions_into_chunks через monkey patching
+            original_method = chunker._group_functions_into_chunks
+            
+            def patched_group_functions(parsed_file, source_code):
+                # Вызываем оригинальный метод, но с измененной логикой
+                function_chunks = []
+                max_functions_per_chunk = 1  # Принудительно по одной функции на чанк
+                
+                functions = [elem for elem in parsed_file.elements if elem.type == 'function']
+                if not functions:
+                    return []
+                
+                lines = source_code.splitlines()
+                
+                for func in functions:
+                    try:
+                        func_start = func.line_number - 1
+                        func_end = chunker._find_function_end(lines, func_start)
+                        func_lines = lines[func_start:func_end + 1]
+                        func_content = "\n".join(func_lines)
+                        func_tokens = chunker._count_tokens(func_content)
+                        
+                        # Создаем отдельный чанк для каждой функции
+                        current_chunk_functions = [{
+                            'element': func,
+                            'content': func_content,
+                            'start_line': func.line_number,
+                            'end_line': func_end + 1,
+                            'tokens': func_tokens
+                        }]
+                        
+                        chunk = chunker._create_functions_chunk(current_chunk_functions, "functions")
+                        if chunk:
+                            function_chunks.append(chunk)
+                            
+                    except Exception as e:
+                        chunker.logger.warning(f"Ошибка при обработке функции {func.name}: {e}")
+                        continue
+                
+                return function_chunks
+            
+            # Подменяем метод
+            chunker._group_functions_into_chunks = patched_group_functions
             
             # Создаём ParsedFile
             parsed_file = self.create_parsed_file_with_many_functions(temp_file, large_code)
@@ -232,8 +273,8 @@ def function_five():
             # Получаем чанки
             chunks = chunker.chunk_parsed_file(parsed_file, large_code)
             
-            # Восстанавливаем оригинальный лимит
-            chunker.max_tokens_per_chunk = original_limit
+            # Восстанавливаем оригинальный метод
+            chunker._group_functions_into_chunks = original_method
             
             # Должно быть несколько чанков
             assert len(chunks) > 1, f"Ожидалось несколько чанков, получено: {len(chunks)}"

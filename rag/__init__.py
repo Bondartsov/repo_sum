@@ -20,14 +20,16 @@ from .exceptions import (
 
 # Импорт основных модулей
 try:
-    from .vector_store import VectorStore, QdrantVectorStore
+    from .vector_store import QdrantVectorStore
+    VectorStore = None  # Базовый класс пока не реализован
 except ImportError:
     # Модуль еще не реализован
     VectorStore = None
     QdrantVectorStore = None
 
 try:
-    from .query_engine import QueryEngine, CPUQueryEngine
+    from .query_engine import CPUQueryEngine
+    QueryEngine = None  # Базовый класс пока не реализован
 except ImportError:
     # Модуль еще не реализован
     QueryEngine = None

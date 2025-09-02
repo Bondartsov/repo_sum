@@ -366,7 +366,21 @@ def cli(ctx, config, verbose, quiet):
 @click.option('--incremental/--no-incremental', default=True, help='Инкрементальный анализ только изменённых файлов')
 def analyze(repo_path, output, no_progress, incremental):
     """Анализирует репозиторий и создает MD документацию."""
-    analyzer = RepositoryAnalyzer()
+    console = Console()
+    
+    try:
+        # Fail-fast: проверяем что все компоненты могут быть инициализированы
+        analyzer = RepositoryAnalyzer()
+    except ValueError as e:
+        # Быстрый выход при ошибках конфигурации (например, отсутствие API ключа)
+        console.print(f"[bold red]Ошибка конфигурации: {e}[/bold red]")
+        sys.exit(1)
+    except Exception as e:
+        # Любая другая критическая ошибка инициализации
+        logger = logging.getLogger(__name__)
+        logger.error(f"Критическая ошибка инициализации: {e}", exc_info=True)
+        console.print(f"[bold red]Критическая ошибка инициализации: {e}[/bold red]")
+        sys.exit(1)
     
     try:
         result = asyncio.run(analyzer.analyze_repository(

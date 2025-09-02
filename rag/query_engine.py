@@ -128,22 +128,27 @@ class CPUQueryEngine:
         self.config = qcfg
 
         # Используем SearchService как базовый компонент
+        # Безопасно извлекаем параметры из store.config
+        store_host = getattr(store.config, 'host', 'localhost') if hasattr(store, 'config') else 'localhost'
+        store_port = getattr(store.config, 'port', 6333) if hasattr(store, 'config') else 6333
+        store_collection = getattr(store.config, 'collection_name', 'default') if hasattr(store, 'config') else 'default'
+        
         # Создаём фиктивный Config для SearchService
         from config import Config, RagConfig
         config_dict = {
             'rag': {
                 'embeddings': {
                     'provider': 'fastembed',
-                    'model_name': embedder.embedding_config.model_name,
+                    'model_name': getattr(embedder.embedding_config, 'model_name', 'BAAI/bge-small-en-v1.5') if hasattr(embedder, 'embedding_config') else 'BAAI/bge-small-en-v1.5',
                     'batch_size_min': 8,
                     'batch_size_max': 128,
                     'device': 'cpu',
                     'num_workers': 4
                 },
                 'vector_store': {
-                    'host': store.host,
-                    'port': store.port,
-                    'collection_name': store.collection_name
+                    'host': store_host,
+                    'port': store_port,
+                    'collection_name': store_collection
                 },
                 'query_engine': {
                     'mmr_enabled': qcfg.mmr_enabled,

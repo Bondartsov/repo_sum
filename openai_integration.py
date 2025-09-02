@@ -206,11 +206,7 @@ class OpenAIManager:
         functions_count = len([chunk for chunk in request.chunks if chunk.chunk_type == 'function'])
         classes_count = len([chunk for chunk in request.chunks if chunk.chunk_type == 'class'])
         
-        # Ограничиваем размер кода
-        max_code_tokens = 1500  # Оставляем место для промпта и ответа
-        if self.count_tokens(code) > max_code_tokens:
-            code = self.truncate_to_tokens(code, max_code_tokens)
-            code += "\n\n... [код обрезан для экономии токенов] ..."
+        # Убираем токен лимиты - позволяем OpenAI самому управлять размером
 
         # Загружаем промпт из файла
         prompt_template = load_prompt_from_file(self.config.prompts.code_analysis_prompt_file)
@@ -241,7 +237,6 @@ class OpenAIManager:
                         {"role": "user", "content": prompt},
                     ],
                     temperature=self.temperature,
-                    max_tokens=self.config.openai.max_response_tokens,
                 )
                 return response.choices[0].message.content
             except Exception as exc:

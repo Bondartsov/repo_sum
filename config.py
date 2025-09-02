@@ -22,8 +22,6 @@ except ImportError:
 class OpenAIConfig:
     """Конфигурация OpenAI API"""
     api_key_env_var: str = "OPENAI_API_KEY"
-    max_tokens_per_chunk: int = 4000
-    max_response_tokens: int = 5000
     temperature: float = 0.1
     retry_attempts: int = 3
     retry_delay: float = 1.0
@@ -240,12 +238,6 @@ class Config:
         # Валидация OpenAI конфигурации
         if require_api_key and not self.openai.api_key:
             errors.append(f"OpenAI API ключ не найден в переменной окружения {self.openai.api_key_env_var}")
-        
-        if self.openai.max_tokens_per_chunk <= 0:
-            errors.append("max_tokens_per_chunk должно быть положительным числом")
-        
-        if self.openai.max_response_tokens <= 0:
-            errors.append("max_response_tokens должно быть положительным числом")
         
         if not 0 <= self.openai.temperature <= 2:
             errors.append("temperature должна быть в диапазоне 0-2")
