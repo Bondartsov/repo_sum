@@ -486,14 +486,6 @@ def main():
             help="gpt-4.1-nano - быстрая и экономичная модель (рекомендуется)"
         )
         
-        max_files = st.number_input(
-            "Максимум файлов для анализа",
-            min_value=1,
-            max_value=100,
-            value=20,
-            help="Ограничение для избежания больших расходов"
-        )
-        
         # RAG система статус
         st.subheader("🔍 RAG Система")
         search_service, query_engine, indexer_service, rag_status = init_rag_components()
@@ -597,27 +589,109 @@ def main():
                         st.error(f"❌ {message}")
                         repo_path = None
         
+        # Информация о файлах для анализа
+        if repo_path:
+            st.subheader("📊 Информация о файлах")
+            
+            try:
+                # Подсчитываем файлы для анализа
+                scanner = FileScanner()
+                total_files = scanner.count_files(repo_path)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Файлов для анализа", total_files)
+                with col2:
+                    st.metric("Поддерживаемых языков", len(scanner.supported_extensions))
+                
+                # Информация об исключениях
+                with st.expander("ℹ️ Какие файлы исключаются из анализа"):
+                    st.markdown("""
+                    **🗂️ Исключаемые директории:**
+                    - **Системы контроля версий**: `.git`, `.svn`, `.hg` - служебная информация
+                    - **Зависимости**: `node_modules`, `venv`, `.venv` - сторонний код
+                    - **Кэши**: `__pycache__`, `.pytest_cache` - временные файлы
+                    - **Сборка**: `target`, `build`, `dist` - компилированный код  
+                    - **IDE**: `.idea`, `.vscode` - настройки редакторов
+                    - **Логи и временные**: `logs`, `tmp`, `temp` - служебная информация
+                    
+                    **🔸 Исключаемые файлы:**
+                    - Скрытые файлы (начинающиеся с точки)
+                    - Файлы больше 10MB (защита от больших бинарных файлов)
+                    - Неподдерживаемые расширения файлов
+                    
+                    **💡 Результат:** Анализируется только ваш исходный код, исключая служебные файлы
+                    """)
+                    
+                # Оценка стоимости для больших репозиториев
+                if total_files > 100:
+                    st.warning(f"⚠️ Найдено {total_files} файлов. Анализ может занять время и использовать много токенов OpenAI.")
+                    
+                    # Примерная оценка стоимости
+                    estimated_tokens = total_files * 800  # примерная оценка
+                    estimated_cost = estimated_tokens * 0.000001  # цена за токен для gpt-4.1-nano
+                    st.info(f"💰 Примерная стоимость: {estimated_tokens:,} токенов (~${estimated_cost:.3f})")
+                
+            except Exception as e:
+                st.error(f"❌ Ошибка подсчета файлов: {e}")
+        
         # Предварительный просмотр файлов
         if repo_path:
-            with st.expander("👀 Предварительный просмотр"):
+            with st.expander("👀 Детальная статистика репозитория"):
                 try:
                     stats = analyzer.get_repository_stats(repo_path)
                     
-                    col1, col2, col3 = st.columns(3)
+                    # Основные метрики
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.metric("Всего файлов", stats['total_files'])
                     with col2:
                         st.metric("Размер", f"{stats['total_size'] / 1024 / 1024:.1f} MB")
                     with col3:
                         st.metric("Языков", len(stats['languages']))
+                    with col4:
+                        if stats['total_files'] > 0:
+                            avg_size = stats['total_size'] / stats['total_files'] / 1024
+                            st.metric("Средний размер файла", f"{avg_size:.1f} KB")
+                        else:
+                            st.metric("Средний размер файла", "0 KB")
                     
+                    # Разбивка по языкам с процентами
                     if stats['languages']:
-                        st.write("**Языки программирования:**")
-                        for lang, count in sorted(stats['languages'].items(), key=lambda x: x[1], reverse=True)[:5]:
-                            st.write(f"• {lang.title()}: {count} файлов")
+                        st.write("**📊 Распределение по языкам программирования:**")
+                        
+                        # Сортируем по количеству файлов
+                        sorted_languages = sorted(stats['languages'].items(), key=lambda x: x[1], reverse=True)
+                        
+                        for lang, count in sorted_languages:
+                            percentage = (count / stats['total_files']) * 100
+                            # Создаем прогресс бар для визуализации
+                            progress_bar_html = f"""
+                            <div style="background-color: #f0f2f6; border-radius: 10px; overflow: hidden; margin: 2px 0;">
+                                <div style="background-color: #1f77b4; height: 20px; width: {percentage:.1f}%; 
+                                           display: flex; align-items: center; padding-left: 8px; color: white; font-size: 12px;">
+                                    <strong>{lang.title()}</strong>: {count} файлов ({percentage:.1f}%)
+                                </div>
+                            </div>
+                            """
+                            st.markdown(progress_bar_html, unsafe_allow_html=True)
+                    
+                    # Информация о кодировках (если есть разнообразие)
+                    if len(stats.get('encoding_distribution', {})) > 1:
+                        st.write("**🔤 Кодировки файлов:**")
+                        for encoding, count in stats['encoding_distribution'].items():
+                            st.write(f"• {encoding}: {count} файлов")
+                    
+                    # Топ самых больших файлов
+                    if stats.get('largest_files'):
+                        st.write("**📈 Самые большие файлы:**")
+                        for i, file_info in enumerate(stats['largest_files'][:5], 1):
+                            size_mb = file_info['size'] / 1024 / 1024
+                            file_path = Path(file_info['path']).name  # Показываем только имя файла
+                            st.write(f"{i}. **{file_path}** ({file_info['language'].title()}) - {size_mb:.2f} MB")
                 
                 except Exception as e:
-                    st.error(f"Ошибка анализа папки: {e}")
+                    st.error(f"❌ Ошибка анализа папки: {e}")
         
         # RAG индексация
         if search_service and indexer_service:
@@ -708,27 +782,59 @@ def main():
             if result.get('success', True):
                 st.success("🎉 Анализ завершен успешно!")
                 
-                # Статистика результатов
-                col1, col2, col3 = st.columns(3)
+                # Основная статистика результатов
+                st.subheader("📈 Детальная статистика анализа")
+                
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Обработано файлов", result.get('total_files', 0))
+                    st.metric("Найдено файлов", result.get('scanned_files', result.get('total_files', 0)))
                 with col2:
-                    st.metric("Успешно", result.get('successful', 0))
+                    st.metric("Проанализировано", result.get('successful', 0))
                 with col3:
                     st.metric("С ошибками", result.get('failed', 0))
+                with col4:
+                    success_rate = 0
+                    total = result.get('total_files', 0)
+                    if total > 0:
+                        success_rate = (result.get('successful', 0) / total) * 100
+                    st.metric("Успешность", f"{success_rate:.1f}%")
                 
-                # Статистика токенов
+                # Информация о токенах и затратах
                 if 'token_stats' in result:
                     token_stats = result['token_stats']
-                    st.info(f"🔢 Использовано токенов: {token_stats.get('used_today', 0)}")
+                    used_tokens = token_stats.get('used_today', 0)
+                    estimated_cost = used_tokens * 0.000001  # примерная стоимость для gpt-4.1-nano
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.info(f"🔢 Использовано токенов: {used_tokens:,}")
+                    with col2:
+                        st.info(f"💰 Примерная стоимость: ${estimated_cost:.4f}")
                 
-                # Информация о RAG индексации
+                # Статус RAG индексации
                 if 'rag_indexing' in result:
+                    st.subheader("🔍 Статус RAG индексации")
                     rag_result = result['rag_indexing']
+                    
                     if rag_result.get('success', False):
-                        st.success(f"🔍 RAG индексация: {rag_result.get('indexed_chunks', 0)} чанков проиндексировано")
+                        st.success("✅ RAG индексация выполнена успешно!")
+                        
+                        # Детальная статистика RAG
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Проиндексировано чанков", rag_result.get('indexed_chunks', 0))
+                        with col2:
+                            st.metric("Обработано файлов", rag_result.get('processed_files', 0))
+                        with col3:
+                            processing_time = rag_result.get('processing_time', 0)
+                            st.metric("Время индексации", f"{processing_time:.1f}s")
+                        
+                        # Дополнительная информация о RAG
+                        if rag_result.get('indexed_chunks', 0) > 0:
+                            st.info("💡 Теперь вы можете использовать семантический поиск по коду во вкладке 'RAG: Поиск'")
                     else:
-                        st.warning(f"⚠️ RAG индексация: {rag_result.get('error', 'неизвестная ошибка')}")
+                        st.warning(f"⚠️ RAG индексация завершилась с ошибкой: {rag_result.get('error', 'неизвестная ошибка')}")
+                        st.info("ℹ️ Анализ кода выполнен успешно, но векторный индекс не создан. Вы можете создать его отдельно во вкладке 'RAG: Поиск'")
                 
                 # Ссылка на результаты
                 output_path = result.get('output_directory', './web_output')

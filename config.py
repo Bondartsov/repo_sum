@@ -18,13 +18,44 @@ except ImportError:
     pass  # dotenv не установлен, переменные окружения должны быть установлены системно
 
 
+# Utility функции для безопасной конверсии environment variables
+def safe_int(env_var: str, default: str) -> int:
+    """Безопасно конвертирует environment variable в int с fallback на default"""
+    value = os.getenv(env_var, default)
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        logger.warning(f"Невалидное значение для {env_var}='{value}', используется default: {default}")
+        return int(default)
+
+
+def safe_float(env_var: str, default: str) -> float:
+    """Безопасно конвертирует environment variable в float с fallback на default"""
+    value = os.getenv(env_var, default)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        logger.warning(f"Невалидное значение для {env_var}='{value}', используется default: {default}")
+        return float(default)
+
+
+def safe_bool(env_var: str, default: str) -> bool:
+    """Безопасно конвертирует environment variable в bool с fallback на default"""
+    value = os.getenv(env_var, default)
+    try:
+        return value.lower() == "true"
+    except (AttributeError, TypeError):
+        logger.warning(f"Невалидное значение для {env_var}='{value}', используется default: {default}")
+        return default.lower() == "true"
+
+
 @dataclass
 class OpenAIConfig:
     """Конфигурация OpenAI API"""
     api_key_env_var: str = "OPENAI_API_KEY"
-    temperature: float = field(default_factory=lambda: float(os.getenv("OPENAI_TEMPERATURE", "0.1")))
-    retry_attempts: int = field(default_factory=lambda: int(os.getenv("OPENAI_RETRY_ATTEMPTS", "3")))
-    retry_delay: float = field(default_factory=lambda: float(os.getenv("OPENAI_RETRY_DELAY", "1.0")))
+    temperature: float = field(default_factory=lambda: safe_float("OPENAI_TEMPERATURE", "0.1"))
+    retry_attempts: int = field(default_factory=lambda: safe_int("OPENAI_RETRY_ATTEMPTS", "3"))
+    retry_delay: float = field(default_factory=lambda: safe_float("OPENAI_RETRY_DELAY", "1.0"))
 
     @property
     def api_key(self) -> Optional[str]:
@@ -111,61 +142,61 @@ class EmbeddingConfig:
     provider: str = field(default_factory=lambda: os.getenv("EMBEDDING_PROVIDER", "fastembed"))
     model_name: str = field(default_factory=lambda: os.getenv("FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5"))
     precision: str = field(default_factory=lambda: os.getenv("FASTEMBED_PRECISION", "int8"))
-    truncate_dim: int = field(default_factory=lambda: int(os.getenv("EMBEDDING_DIMENSION", "384")))
-    batch_size_min: int = field(default_factory=lambda: int(os.getenv("EMBEDDING_BATCH_SIZE_MIN", "8")))
-    batch_size_max: int = field(default_factory=lambda: int(os.getenv("EMBEDDING_BATCH_SIZE_MAX", "128")))
-    normalize_embeddings: bool = field(default_factory=lambda: os.getenv("EMBEDDING_NORMALIZE", "true").lower() == "true")
+    truncate_dim: int = field(default_factory=lambda: safe_int("EMBEDDING_DIMENSION", "384"))
+    batch_size_min: int = field(default_factory=lambda: safe_int("EMBEDDING_BATCH_SIZE_MIN", "8"))
+    batch_size_max: int = field(default_factory=lambda: safe_int("EMBEDDING_BATCH_SIZE_MAX", "128"))
+    normalize_embeddings: bool = field(default_factory=lambda: safe_bool("EMBEDDING_NORMALIZE", "true"))
     device: str = field(default_factory=lambda: os.getenv("FASTEMBED_DEVICE", "cpu"))
-    warmup_enabled: bool = field(default_factory=lambda: os.getenv("EMBEDDING_WARMUP", "true").lower() == "true")
-    num_workers: int = field(default_factory=lambda: int(os.getenv("EMBEDDING_WORKERS", "4")))
+    warmup_enabled: bool = field(default_factory=lambda: safe_bool("EMBEDDING_WARMUP", "true"))
+    num_workers: int = field(default_factory=lambda: safe_int("EMBEDDING_WORKERS", "4"))
 
 
 @dataclass
 class VectorStoreConfig:
     """Конфигурация Qdrant"""
     host: str = field(default_factory=lambda: os.getenv("QDRANT_HOST", "localhost"))
-    port: int = field(default_factory=lambda: int(os.getenv("QDRANT_PORT", "6333")))
-    prefer_grpc: bool = field(default_factory=lambda: os.getenv("QDRANT_PREFER_GRPC", "true").lower() == "true")
+    port: int = field(default_factory=lambda: safe_int("QDRANT_PORT", "6333"))
+    prefer_grpc: bool = field(default_factory=lambda: safe_bool("QDRANT_PREFER_GRPC", "true"))
     collection_name: str = field(default_factory=lambda: os.getenv("QDRANT_COLLECTION_NAME", "code_chunks"))
-    vector_size: int = field(default_factory=lambda: int(os.getenv("EMBEDDING_DIMENSION", "384")))
+    vector_size: int = field(default_factory=lambda: safe_int("EMBEDDING_DIMENSION", "384"))
     distance: str = field(default_factory=lambda: os.getenv("QDRANT_DISTANCE", "cosine"))
     # HNSW параметры
-    hnsw_m: int = field(default_factory=lambda: int(os.getenv("QDRANT_HNSW_M", "24")))
-    hnsw_ef_construct: int = field(default_factory=lambda: int(os.getenv("QDRANT_HNSW_EF_CONSTRUCT", "128")))
-    search_hnsw_ef: int = field(default_factory=lambda: int(os.getenv("QDRANT_SEARCH_HNSW_EF", "256")))
+    hnsw_m: int = field(default_factory=lambda: safe_int("QDRANT_HNSW_M", "24"))
+    hnsw_ef_construct: int = field(default_factory=lambda: safe_int("QDRANT_HNSW_EF_CONSTRUCT", "128"))
+    search_hnsw_ef: int = field(default_factory=lambda: safe_int("QDRANT_SEARCH_HNSW_EF", "256"))
     # Квантование
     quantization_type: str = field(default_factory=lambda: os.getenv("QDRANT_QUANTIZATION_TYPE", "SQ"))
-    enable_quantization: bool = field(default_factory=lambda: os.getenv("QDRANT_ENABLE_QUANTIZATION", "true").lower() == "true")
+    enable_quantization: bool = field(default_factory=lambda: safe_bool("QDRANT_ENABLE_QUANTIZATION", "true"))
     # Репликация
-    replication_factor: int = field(default_factory=lambda: int(os.getenv("QDRANT_REPLICATION_FACTOR", "2")))
-    write_consistency_factor: int = field(default_factory=lambda: int(os.getenv("QDRANT_WRITE_CONSISTENCY_FACTOR", "1")))
+    replication_factor: int = field(default_factory=lambda: safe_int("QDRANT_REPLICATION_FACTOR", "2"))
+    write_consistency_factor: int = field(default_factory=lambda: safe_int("QDRANT_WRITE_CONSISTENCY_FACTOR", "1"))
     # Хранилище
-    mmap: bool = field(default_factory=lambda: os.getenv("QDRANT_MMAP", "true").lower() == "true")
+    mmap: bool = field(default_factory=lambda: safe_bool("QDRANT_MMAP", "true"))
 
 
 @dataclass
 class QueryEngineConfig:
     """Конфигурация поиска"""
-    max_results: int = field(default_factory=lambda: int(os.getenv("SEARCH_MAX_RESULTS", "10")))
-    rrf_enabled: bool = field(default_factory=lambda: os.getenv("SEARCH_RRF_ENABLED", "true").lower() == "true")
-    use_hybrid: bool = field(default_factory=lambda: os.getenv("SEARCH_USE_HYBRID", "true").lower() == "true")
-    mmr_enabled: bool = field(default_factory=lambda: os.getenv("SEARCH_MMR_ENABLED", "true").lower() == "true")
-    mmr_lambda: float = field(default_factory=lambda: float(os.getenv("SEARCH_MMR_LAMBDA", "0.7")))
-    cache_ttl_seconds: int = field(default_factory=lambda: int(os.getenv("CACHE_TTL_SECONDS", "300")))
-    cache_max_entries: int = field(default_factory=lambda: int(os.getenv("CACHE_MAX_ENTRIES", "1000")))
-    score_threshold: float = field(default_factory=lambda: float(os.getenv("SEARCH_SCORE_THRESHOLD", "0.7")))
+    max_results: int = field(default_factory=lambda: safe_int("SEARCH_MAX_RESULTS", "10"))
+    rrf_enabled: bool = field(default_factory=lambda: safe_bool("SEARCH_RRF_ENABLED", "true"))
+    use_hybrid: bool = field(default_factory=lambda: safe_bool("SEARCH_USE_HYBRID", "true"))
+    mmr_enabled: bool = field(default_factory=lambda: safe_bool("SEARCH_MMR_ENABLED", "true"))
+    mmr_lambda: float = field(default_factory=lambda: safe_float("SEARCH_MMR_LAMBDA", "0.7"))
+    cache_ttl_seconds: int = field(default_factory=lambda: safe_int("CACHE_TTL_SECONDS", "300"))
+    cache_max_entries: int = field(default_factory=lambda: safe_int("CACHE_MAX_ENTRIES", "1000"))
+    score_threshold: float = field(default_factory=lambda: safe_float("SEARCH_SCORE_THRESHOLD", "0.7"))
     # Параллелизм
-    concurrent_users_target: int = field(default_factory=lambda: int(os.getenv("SEARCH_CONCURRENT_USERS", "20")))
-    search_workers: int = field(default_factory=lambda: int(os.getenv("SEARCH_WORKERS", "4")))
-    embed_workers: int = field(default_factory=lambda: int(os.getenv("EMBED_WORKERS", "4")))
+    concurrent_users_target: int = field(default_factory=lambda: safe_int("SEARCH_CONCURRENT_USERS", "20"))
+    search_workers: int = field(default_factory=lambda: safe_int("SEARCH_WORKERS", "4"))
+    embed_workers: int = field(default_factory=lambda: safe_int("EMBED_WORKERS", "4"))
 
 
 @dataclass
 class ParallelismConfig:
     """Управление потоками"""
-    torch_num_threads: int = field(default_factory=lambda: int(os.getenv("TORCH_NUM_THREADS", "4")))
-    omp_num_threads: int = field(default_factory=lambda: int(os.getenv("OMP_NUM_THREADS", "4")))
-    mkl_num_threads: int = field(default_factory=lambda: int(os.getenv("MKL_NUM_THREADS", "4")))
+    torch_num_threads: int = field(default_factory=lambda: safe_int("TORCH_NUM_THREADS", "4"))
+    omp_num_threads: int = field(default_factory=lambda: safe_int("OMP_NUM_THREADS", "4"))
+    mkl_num_threads: int = field(default_factory=lambda: safe_int("MKL_NUM_THREADS", "4"))
 
 
 @dataclass
