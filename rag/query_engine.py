@@ -502,9 +502,10 @@ class CPUQueryEngine:
                     results[i].embedding = embedding
             except Exception as e:
                 logger.warning(f"Не удалось получить эмбеддинги для MMR: {e}")
-                # Fallback: используем случайные эмбеддинги
+                # Fallback: используем случайные эмбеддинги правильной размерности
+                vector_dim = self.config.vector_store.vector_size if hasattr(self.config, 'vector_store') else 384
                 for i in indices_to_embed:
-                    results[i].embedding = np.random.random(self.embedder.embedding_dim)
+                    results[i].embedding = np.random.random(vector_dim)
 
     def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
         """Вычисляет косинусное сходство между векторами"""
@@ -611,7 +612,8 @@ class CPUQueryEngine:
     async def _check_vector_store(self) -> bool:
         """Проверяет доступность векторного хранилища"""
         try:
-            return self.vector_store.is_connected()
+            health_info = await self.vector_store.health_check()
+            return health_info.get("status") == "connected"
         except Exception:
             return False
 

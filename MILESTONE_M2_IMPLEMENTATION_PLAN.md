@@ -36,11 +36,11 @@
 
 ### 🔧 Фаза 1: Исправление критических багов [День 1-2]
 
-#### 1.1 QueryEngine исправления
-- [ ] **rag/query_engine.py:573** - Исправить `store.is_connected()` на `vector_store.health_check()`
-- [ ] **rag/query_engine.py:521** - Исправить `self.embedder.embedding_dim` на `config.truncate_dim`
-- [ ] Добавить unit тест для `health_check()` метода
-- [ ] Проверить что `rag status` команда работает корректно
+#### ✅ 1.1 QueryEngine исправления - ЗАВЕРШЕНО (4.09.2025)
+- [x] **rag/query_engine.py:573** - ИСПРАВЛЕНО: `store.is_connected()` заменён на `vector_store.health_check()`
+- [x] **rag/query_engine.py:521** - ИСПРАВЛЕНО: `self.embedder.embedding_dim` заменён на `config.vector_store.vector_size`
+- [x] СОЗДАНО: unit тесты `tests/rag/test_query_engine_health.py` (7 тестов)
+- [x] ВАЛИДИРОВАНО: команда `rag status` работает корректно, MMR fallback с правильной размерностью (384)
 
 #### 1.2 SearchService исправления  
 - [ ] **rag/search_service.py:127** - Исправить `min_score or 0.5` на `min_score if min_score is not None else 0.5`
