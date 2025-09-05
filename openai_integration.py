@@ -276,11 +276,27 @@ class OpenAIManager:
         )
 
     def get_token_usage_stats(self) -> Dict:
-        """Статистика использования токенов (заглушка)"""
+        """Статистика использования токенов с обратной совместимостью.
+        
+        Возвращает:
+            - used_today: суммарные токены за сегодня (синоним total_tokens)
+            - requests_today: количество запросов за сегодня (синоним total_requests)
+            - average_per_request: среднее число токенов на запрос (синоним average_tokens_per_request)
+            - total_requests, total_tokens, average_tokens_per_request: сохранены для обратной совместимости
+        """
+        # TODO: заменить заглушку реальными счётчиками при наличии телеметрии
+        total_requests = 0
+        total_tokens = 0
+        average_tokens_per_request = 0
+        
         return {
-            "total_requests": 0,
-            "total_tokens": 0,
-            "average_tokens_per_request": 0
+            "used_today": total_tokens,
+            "requests_today": total_requests,
+            "average_per_request": average_tokens_per_request,
+            # Обратная совместимость
+            "total_requests": total_requests,
+            "total_tokens": total_tokens,
+            "average_tokens_per_request": average_tokens_per_request,
         }
 
     def clear_cache(self) -> int:

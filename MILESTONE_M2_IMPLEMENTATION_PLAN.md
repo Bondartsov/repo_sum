@@ -43,16 +43,16 @@
 - [x] ВАЛИДИРОВАНО: команда `rag status` работает корректно, MMR fallback с правильной размерностью (384)
 
 #### 1.2 SearchService исправления  
-- [ ] **rag/search_service.py:127** - Исправить `min_score or 0.5` на `min_score if min_score is not None else 0.5`
-- [ ] **rag/search_service.py** - Добавить `score_threshold` в `get_search_stats()`
-- [ ] Добавить тест для корректной обработки `min_score=0.0`
+- [x] **rag/search_service.py:127** - Исправить `min_score or 0.5` на `min_score if min_score is not None else 0.5` (выполнено 05.09.2025)
+- [x] **rag/search_service.py** - Добавить `score_threshold` в `get_search_stats()` (выполнено 05.09.2025)
+- [x] Добавить тест для корректной обработки `min_score=0.0` (выполнено 05.09.2025)
 
 #### 1.3 Config синхронизация
-- [ ] **config.py:134** - Изменить `QueryEngineConfig.score_threshold` с 0.7 на 0.5
+- [x] **config.py:134** - Изменить `QueryEngineConfig.score_threshold` с 0.7 на 0.5 (выполнено 05.09.2025)
 - [ ] Проверить что все дефолтные значения синхронизированы
 - [ ] Добавить валидационный тест конфигурации
 
-#### 1.4 Обновление зависимостей
+#### 1.4 Обновление зависимостей (но важно проверить на конфликт версий разных зависимостей, вполне возмодно не просто так ткие версии. В оьщем, возможно через mcp Context7 можно почитать доки каждой зависимости перед обновлением. Но в целом приоритет макисмально свежим версиям всегда отдавать надо)
 - [ ] **requirements.txt** - Обновить `fastembed>=0.3.6` (было 0.3.0)
 - [ ] **requirements.txt** - Обновить `sentence-transformers>=5.1.0` (было 3.0.0)
 - [ ] Запустить `pip install -r requirements.txt --upgrade`

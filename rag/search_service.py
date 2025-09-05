@@ -159,8 +159,9 @@ class SearchService:
             logger.debug(f"Поиск выполнен за {search_time:.3f}s, найдено {len(raw_results)} результатов")
             
             # Обрабатываем и фильтруем результаты
+            effective_min_score = min_score if min_score is not None else self.config.rag.query_engine.score_threshold
             processed_results = self._process_search_results(
-                raw_results, min_score or 0.5  # Используем дефолтный порог 0.5
+                raw_results, effective_min_score
             )
             
             # Применяем MMR если включено
@@ -337,7 +338,7 @@ class SearchService:
             str(top_k),
             language_filter or '',
             chunk_type_filter or '',
-            str(min_score) if min_score else '',
+            str(min_score) if min_score is not None else '',
             file_path_filter or ''
         ]
         
@@ -509,6 +510,9 @@ class SearchService:
         with self._cache_lock:
             stats['cache_size'] = len(self._query_cache)
             stats['cache_max_size'] = self._cache_max_size
+        
+        # Добавляем порог релевантности из конфигурации
+        stats['score_threshold'] = self.config.rag.query_engine.score_threshold
         
         return stats
     

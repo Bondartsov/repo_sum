@@ -184,7 +184,7 @@ class QueryEngineConfig:
     mmr_lambda: float = field(default_factory=lambda: safe_float("SEARCH_MMR_LAMBDA", "0.7"))
     cache_ttl_seconds: int = field(default_factory=lambda: safe_int("CACHE_TTL_SECONDS", "300"))
     cache_max_entries: int = field(default_factory=lambda: safe_int("CACHE_MAX_ENTRIES", "1000"))
-    score_threshold: float = field(default_factory=lambda: safe_float("SEARCH_SCORE_THRESHOLD", "0.7"))
+    score_threshold: float = field(default_factory=lambda: safe_float("SEARCH_SCORE_THRESHOLD", "0.5"))
     # Параллелизм
     concurrent_users_target: int = field(default_factory=lambda: safe_int("SEARCH_CONCURRENT_USERS", "20"))
     search_workers: int = field(default_factory=lambda: safe_int("SEARCH_WORKERS", "4"))

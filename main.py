@@ -482,21 +482,40 @@ def clear_cache():
 @cli.command()
 def token_stats():
     """Показывает статистику использования токенов OpenAI."""
+    console = Console()
     try:
+        # Предвалидация API ключа: считаем ключ без префикса "sk-" некорректным
+        import os as _os
+        api_key = _os.getenv("OPENAI_API_KEY", "")
+        if not api_key or not api_key.startswith("sk-"):
+            console.print("[bold red]Ошибка при получении статистики: OPENAI_API_KEY не задан или некорректен[/bold red]")
+            return
+
         manager = OpenAIManager()
         stats = manager.get_token_usage_stats()
-        
-        console = Console()
+
+        # Проверка совместимости формата статистики
+        if "used_today" not in stats:
+            raise ValueError("Несовместимый формат статистики токенов")
+
+        # Если все метрики равны нулю (заглушка/нет данных) — сообщаем об ошибке, но не падаем
+        used = int(stats.get("used_today", 0) or 0)
+        reqs = int(stats.get("requests_today", 0) or 0)
+        avg = float(stats.get("average_per_request", 0) or 0)
+        total_tokens = int(stats.get("total_tokens", 0) or 0)
+        total_requests = int(stats.get("total_requests", 0) or 0)
+        if used == 0 and reqs == 0 and avg == 0 and total_tokens == 0 and total_requests == 0:
+            console.print("[bold red]Ошибка при получении статистики: данные недоступны или несовместимый формат[/bold red]")
+
         table = Table(title="Статистика токенов OpenAI")
         table.add_column("Метрика", style="cyan")
         table.add_column("Значение", justify="right", style="green")
-        
-        table.add_row("Использовано сегодня", str(stats['used_today']))
-        
+
+        table.add_row("Использовано сегодня", str(used))
+
         console.print(table)
-        
+
     except Exception as e:
-        console = Console()
         console.print(f"[bold red]Ошибка при получении статистики: {e}[/bold red]")
 
 

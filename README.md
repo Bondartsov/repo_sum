@@ -179,8 +179,6 @@ python main.py rag index /path/to/repository
 # Индексация с параметрами
 python main.py rag index /path/to/repository --batch-size 1024 --recreate
 
-# Обновление существующего индекса
-python main.py rag index /path/to/repository --incremental
 ```
 
 **Семантический поиск:**
@@ -194,8 +192,6 @@ python main.py rag search "database connection" --lang python --top-k 5 --chunk-
 # Поиск по типу контента
 python main.py rag search "error handling" --chunk-type class --min-score 0.8
 
-# Расширенный поиск
-python main.py rag search "async operations" --use-mmr --diversity-lambda 0.7
 ```
 
 **Управление и статистика:**
@@ -206,8 +202,6 @@ python main.py rag status
 # Детальная статистика
 python main.py rag status --detailed
 
-# Очистка индекса
-python main.py rag clear --confirm
 ```
 
 ## ⚙️ Конфигурация
@@ -217,8 +211,6 @@ python main.py rag clear --confirm
 ```json
 {
   "openai": {
-    "max_tokens_per_chunk": 4000,
-    "max_response_tokens": 5000,
     "temperature": 0.1,
     "retry_attempts": 3,
     "retry_delay": 1.0
@@ -264,20 +256,21 @@ python main.py rag clear --confirm
       "batch_size_max": 128,
       "normalize_embeddings": true
     },
-    "qdrant": {
+    "vector_store": {
       "host": "localhost",
       "port": 6333,
       "collection_name": "code_chunks",
       "vector_size": 384,
-      "distance": "Cosine",
-      "api_key": null
+      "distance": "cosine"
     },
-    "search": {
+    "query_engine": {
       "max_results": 10,
-      "min_score": 0.7,
+      "score_threshold": 0.5,
       "use_hybrid": true,
       "mmr_enabled": true,
-      "mmr_diversity_lambda": 0.5
+      "mmr_lambda": 0.7,
+      "cache_ttl_seconds": 300,
+      "cache_max_entries": 1000
     },
     "indexing": {
       "batch_size": 512,
@@ -303,14 +296,14 @@ python main.py rag clear --confirm
 - `batch_size_max` — максимальный размер батча для эмбеддингов
 - `normalize_embeddings` — нормализация векторов
 
-#### Qdrant (`rag.qdrant`)
+#### Векторное хранилище (`rag.vector_store`)
 - `host`/`port` — подключение к Qdrant серверу
 - `collection_name` — имя коллекции для хранения векторов
 - `vector_size` — размерность векторов (384 для bge-small)
 - `distance` — метрика расстояния (Cosine/Dot/Euclidean)
 - `api_key` — API ключ для Qdrant Cloud
 
-#### Поиск (`rag.search`)
+#### Поисковый движок (`rag.query_engine`)
 - `max_results` — максимальное количество результатов
 - `min_score` — минимальный порог релевантности
 - `use_hybrid` — использовать гибридный поиск
