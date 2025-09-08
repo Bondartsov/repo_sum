@@ -29,14 +29,6 @@ def pytest_configure(config):
         try:
             from tests.mocks.mock_cpu_embedder import MockCPUEmbedder
             
-            # Создаем патч для rag.embedder.CPUEmbedder
-            embedder_patcher = patch('rag.embedder.CPUEmbedder', MockCPUEmbedder)
-            embedder_patcher.start()
-            
-            # Также патчим импорты из rag пакета
-            rag_embedder_patcher = patch('rag.CPUEmbedder', MockCPUEmbedder) 
-            rag_embedder_patcher.start()
-            
             # ВАЖНО: патчим IndexerService который импортирует CPUEmbedder напрямую
             indexer_embedder_patcher = patch('rag.indexer_service.CPUEmbedder', MockCPUEmbedder)
             indexer_embedder_patcher.start()
@@ -51,8 +43,6 @@ def pytest_configure(config):
             if not hasattr(config, '_mock_patchers'):
                 config._mock_patchers = []
             config._mock_patchers.extend([
-                embedder_patcher,
-                rag_embedder_patcher,
                 indexer_embedder_patcher,
                 search_embedder_patcher,
                 query_engine_embedder_patcher,
