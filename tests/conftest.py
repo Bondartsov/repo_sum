@@ -40,11 +40,23 @@ def pytest_configure(config):
             # ВАЖНО: патчим IndexerService который импортирует CPUEmbedder напрямую
             indexer_embedder_patcher = patch('rag.indexer_service.CPUEmbedder', MockCPUEmbedder)
             indexer_embedder_patcher.start()
+
+            # Дополнительно: патчим точки прямого импорта CPUEmbedder в сервисах поиска/движке
+            search_embedder_patcher = patch('rag.search_service.CPUEmbedder', MockCPUEmbedder)
+            search_embedder_patcher.start()
+            query_engine_embedder_patcher = patch('rag.query_engine.CPUEmbedder', MockCPUEmbedder)
+            query_engine_embedder_patcher.start()
             
             # Сохраняем патчеры для отключения в конце
             if not hasattr(config, '_mock_patchers'):
                 config._mock_patchers = []
-            config._mock_patchers.extend([embedder_patcher, rag_embedder_patcher, indexer_embedder_patcher])
+            config._mock_patchers.extend([
+                embedder_patcher,
+                rag_embedder_patcher,
+                indexer_embedder_patcher,
+                search_embedder_patcher,
+                query_engine_embedder_patcher,
+            ])
             
             print("✅ Mock эмбеддеры активированы")
             
