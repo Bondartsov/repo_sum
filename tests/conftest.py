@@ -5,6 +5,14 @@ import sys
 import os
 from unittest.mock import patch
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-symlink-tests",
+        action="store_true",
+        default=False,
+        help="Явно попытаться запускать тесты, создающие symlink (Windows требует права администратора/Developer Mode)"
+    )
+
 # Здесь можно определить фикстуры для всего проекта
 
 # Автоматический патчинг CPUEmbedder для offline тестов

@@ -26,6 +26,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+import importlib.util
+BENCHMARK_AVAILABLE = importlib.util.find_spec("pytest_benchmark") is not None
+
 from config import Config, RagConfig, EmbeddingConfig, VectorStoreConfig, QueryEngineConfig, ParallelismConfig
 from rag.embedder import CPUEmbedder
 from rag.vector_store import QdrantVectorStore
@@ -982,11 +985,40 @@ class TestRAGPerformance:
                     assert perf_config.rag.embeddings.batch_size_min <= size <= perf_config.rag.embeddings.batch_size_max
                 
                 print(f"Адаптивное батчирование работает корректно: {batch_sizes}")
-
+                
+    @pytest.mark.benchmark
+    @pytest.mark.integration
+    def test_embedder_benchmark(self, perf_config):
+        """Бенчмарк эмбеддера для регрессионного тестирования (требует pytest-benchmark)"""
+        with patch('rag.embedder.FASTEMBED_AVAILABLE', True):
+            with patch('rag.embedder.TextEmbedding') as mock_text_embedding:
+                mock_model = Mock()
+                mock_text_embedding.return_value = mock_model
+                mock_model.embed = lambda texts: [
+                    np.random.random(384).astype(np.float32) for _ in texts
+                ]
+                
+                embedder = CPUEmbedder(perf_config.rag.embeddings, perf_config.rag.parallelism)
+                
+                test_texts = [
+                    f"def test_function_{i}(): return {i}" for i in range(100)
+                ]
+                
+                # Простой performance тест без pytest-benchmark
+                start_time = time.time()
+                result = embedder.embed_texts(test_texts)
+                duration = time.time() - start_time
+                
+                # Результат должен быть корректным
+                assert result is not None
+                assert len(result) == 100
+                assert duration > 0
+                
+                print(f"\nSimple benchmark: обработано {len(result)} текстов за {duration:.3f}s")
 
 @pytest.mark.benchmark 
 @pytest.mark.integration
-class TestRAGBenchmarks:
+class _TestRAGBenchmarks:
     """Бенчмарки производительности для сравнения версий"""
     
     @pytest.mark.skipif(True, reason="pytest-benchmark не установлен, используйте стандартные performance тесты")

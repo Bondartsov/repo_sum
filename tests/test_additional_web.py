@@ -18,6 +18,9 @@ import sys
 from pathlib import Path
 import psutil
 from contextlib import contextmanager
+import importlib.util
+
+STREAMLIT_AVAILABLE = importlib.util.find_spec("streamlit") is not None
 
 
 @contextmanager
@@ -228,7 +231,8 @@ class TestAdditionalWeb:
                 pytest.fail("Процесс веб-сервера завис при попытке запуска на занятом порту")
     
     @pytest.mark.functional
-    @pytest.mark.skip("Требует установки зависимостей Streamlit")
+    @pytest.mark.enable_socket
+    @pytest.mark.skipif(not STREAMLIT_AVAILABLE, reason="Требуется установка streamlit: pip install streamlit")
     def test_t005_web_ui_404_unknown_route(self):
         """
         T-005 - Web UI: 404 для неизвестного маршрута

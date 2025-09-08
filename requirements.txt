@@ -58,6 +58,7 @@ prometheus-client>=0.19.0
 pytest>=8.3.4
 pytest-asyncio>=1.1.0
 hypothesis>=6.124.9
+pytest-benchmark
 
 ############################
 # Опциональные ускорители CPU
