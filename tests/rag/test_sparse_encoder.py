@@ -68,3 +68,14 @@ def test_property_based_encode_returns_valid_dicts(encoder, texts):
             assert isinstance(k, int)
             assert isinstance(val, float)
             assert val >= 0
+
+
+def test_mock_mode_tokenizer(monkeypatch):
+    import os
+    from tests.mocks.mock_tokenizer import MockTokenizer
+
+    monkeypatch.setenv("MOCK_MODE", "1")
+    encoder = SparseEncoder(model_name="bert-base-uncased")
+
+    assert isinstance(encoder.tokenizer, MockTokenizer)
+    assert encoder.model is None

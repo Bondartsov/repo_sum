@@ -1,8 +1,14 @@
 from typing import List, Dict, Any, Optional
 import torch
 import logging
+import os
 logging.getLogger("transformers").setLevel(logging.ERROR)
 from transformers import AutoTokenizer, AutoModelForMaskedLM
+
+try:
+    from tests.mocks.mock_tokenizer import MockTokenizer
+except ImportError:
+    MockTokenizer = None
 
 
 class SparseEncoder:
@@ -15,9 +21,14 @@ class SparseEncoder:
         self.model_name = model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForMaskedLM.from_pretrained(model_name).to(self.device)
-        self.model.eval()
+        if os.environ.get("MOCK_MODE") == "1" and MockTokenizer is not None:
+            logging.info("Используется mock-токенизатор для SparseEncoder")
+            self.tokenizer = MockTokenizer()
+            self.model = None
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
+            self.model = AutoModelForMaskedLM.from_pretrained(model_name, local_files_only=True).to(self.device)
+            self.model.eval()
 
     def encode(self, texts: List[str]) -> List[Dict[int, float]]:
         """
