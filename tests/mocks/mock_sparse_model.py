@@ -1,24 +1,41 @@
+from types import SimpleNamespace
+from typing import Optional
 import torch
+import torch.nn as nn
 
-class MockOutput:
-    def __init__(self, batch_size, seq_len, hidden_dim, device):
-        self.last_hidden_state = torch.ones((batch_size, seq_len, hidden_dim), device=device)
-        self.logits = torch.ones((batch_size, seq_len, hidden_dim), device=device)
 
-class MockSparseModel:
+class MockSparseModel(nn.Module):
     """
-    Фиктивная модель для offline-режима SparseEncoder.
-    Имеет метод .to(device), чтобы имитировать поведение torch.nn.Module.
+    Фиктивная sparse-модель для offline-режима SparseEncoder.
+    Наследуется от torch.nn.Module и возвращает объект с .logits.
     """
-    def __init__(self, hidden_dim: int = 16):
-        self.device = "cpu"
-        self.hidden_dim = hidden_dim
 
-    def to(self, device):
-        self.device = device
+    def __init__(self, vocab_size: int = 32768, boost: float = 3.0) -> None:
+        super().__init__()
+        self.device: str = "cpu"
+        self.vocab_size: int = vocab_size
+        self.boost: float = boost
+
+    def to(self, device: Optional[str] = None) -> "MockSparseModel":
+        if device is not None:
+            self.device = device
         return self
 
-    def __call__(self, **kwargs):
-        input_ids = kwargs.get("input_ids")
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> SimpleNamespace:
         batch_size, seq_len = input_ids.shape
-        return MockOutput(batch_size, seq_len, self.hidden_dim, self.device)
+        logits = torch.zeros(
+            (batch_size, seq_len, self.vocab_size), device=self.device
+        )
+
+        for b in range(batch_size):
+            for t in range(seq_len):
+                if attention_mask[b, t] == 1:
+                    token_id = int(input_ids[b, t].item())
+                    if 0 <= token_id < self.vocab_size:
+                        logits[b, t, token_id] = self.boost
+
+        return SimpleNamespace(logits=logits)

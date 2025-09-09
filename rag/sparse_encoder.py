@@ -28,7 +28,12 @@ class SparseEncoder:
         if ((os.environ.get("MOCK_MODE") == "1") or is_socket_disabled()) and MockTokenizer is not None:
             logging.info("SparseEncoder: offline/mock режим активен, используется MockTokenizer и MockSparseModel")
             self.tokenizer = MockTokenizer()
-            self.model = MockSparseModel().to(self.device)
+            model = MockSparseModel()
+            try:
+                moved = model.to(self.device)
+                self.model = moved if moved is not None else model
+            except Exception:
+                self.model = model
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
             self.model = AutoModelForMaskedLM.from_pretrained(model_name, local_files_only=True).to(self.device)
@@ -58,6 +63,9 @@ class SparseEncoder:
         for vec in scores:
             nonzero = torch.nonzero(vec > 0, as_tuple=True)[0]
             sparse_dict = {int(idx): float(vec[idx].cpu().item()) for idx in nonzero}
+            total = sum(sparse_dict.values())
+            if total > 0:
+                sparse_dict = {k: v / total for k, v in sparse_dict.items()}
             sparse_vectors.append(sparse_dict)
 
         return sparse_vectors

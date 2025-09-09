@@ -77,8 +77,9 @@ def test_mock_mode_tokenizer(monkeypatch):
     monkeypatch.setenv("MOCK_MODE", "1")
     encoder = SparseEncoder(model_name="bert-base-uncased")
 
+    import torch.nn as nn
     assert isinstance(encoder.tokenizer, MockTokenizer)
-    assert encoder.model is None
+    assert isinstance(encoder.model, nn.Module)
 import pytest
 
 from rag.sparse_encoder import SparseEncoder
@@ -92,5 +93,6 @@ def test_sparse_encoder_uses_mocktokenizer_in_offline_mode(monkeypatch):
 
     encoder = SparseEncoder()
 
+    import torch.nn as nn
     assert isinstance(encoder.tokenizer, MockTokenizer)
-    assert encoder.model is None
+    assert isinstance(encoder.model, nn.Module)
