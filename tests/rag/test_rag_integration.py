@@ -668,6 +668,37 @@ class DatabaseConnection:
                                 assert health['status'] in ['healthy', 'degraded', 'unhealthy']
                                 assert 'components' in health
     
+    @pytest.mark.asyncio
+    async def test_hybrid_search_integration(self, test_config, mock_qdrant_client):
+        """Проверяет, что гибридный поиск возвращает dense и sparse результаты"""
+        from rag.query_engine import SearchResult
+        from rag.query_engine import CPUQueryEngine
+        qcfg = test_config.rag.query_engine
+        qcfg.use_hybrid = True
+        engine = CPUQueryEngine(embedder=Mock(), store=Mock(), qcfg=qcfg)
+
+        # Создаем фиктивные dense и sparse результаты
+        r1 = SearchResult("id1", "f", "f", "c", "t", "py", 1, 2, 0.9, "dense", {})
+        r2 = SearchResult("id2", "f", "f", "c", "t", "py", 1, 2, 0.8, "sparse", {})
+
+        fused = engine._reciprocal_rank_fusion([[r1], [r2]], k=60)
+        ids = [r.chunk_id for r in fused]
+        assert "id1" in ids and "id2" in ids
+    
+    def test_rrf_fusion_prioritizes_common_documents(self, test_config):
+        """Проверяет, что документы, встречающиеся в обоих списках, поднимаются выше"""
+        from rag.query_engine import SearchResult, CPUQueryEngine
+        qcfg = test_config.rag.query_engine
+        qcfg.rrf_enabled = True
+        engine = CPUQueryEngine(embedder=Mock(), store=Mock(), qcfg=qcfg)
+
+        r1 = SearchResult("id1", "f", "f", "c", "t", "py", 1, 2, 0.9, "text", {})
+        r2 = SearchResult("id2", "f", "f", "c", "t", "py", 1, 2, 0.8, "text", {})
+        r3 = SearchResult("id1", "f", "f", "c", "t", "py", 1, 2, 0.7, "text", {})
+
+        fused = engine._reciprocal_rank_fusion([[r1, r2], [r3]], k=60)
+        ids = [r.chunk_id for r in fused]
+        assert ids[0] == "id1"
     def test_rag_error_handling(self, test_config):
         """Тестирует обработку ошибок в RAG системе"""
         # Тестируем ошибки соединения с векторным хранилищем

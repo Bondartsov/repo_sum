@@ -701,11 +701,12 @@ class QdrantVectorStore:
         return Filter(must=conditions) if conditions else None
     
     async def search(
-        self, 
-        query_vector: np.ndarray, 
+        self,
+        query_vector: np.ndarray,
         top_k: int,
-        filters: Optional[Dict] = None, 
-        use_hybrid: bool = False
+        filters: Optional[Dict] = None,
+        use_hybrid: bool = False,
+        sparse_vector: Optional[Dict[int, float]] = None
     ) -> List[Dict]:
         """
         Поиск с опциональным гибридным режимом (dense + sparse).
@@ -715,6 +716,7 @@ class QdrantVectorStore:
             top_k: Количество результатов
             filters: Фильтры по метаданным
             use_hybrid: Использовать гибридный поиск
+            sparse_vector: Разреженный вектор для гибридного поиска
             
         Returns:
             Список результатов поиска
@@ -743,12 +745,17 @@ class QdrantVectorStore:
                 indexed_only=False  # Включаем неиндексированные точки
             )
             
-            if use_hybrid:
-                # Гибридный поиск (пока только dense, sparse добавим позже)
-                logger.debug("Выполнение гибридного поиска (dense)")
-                results = await self._search_dense(
+            if use_hybrid and sparse_vector is not None:
+                # Гибридный поиск: dense + sparse
+                logger.debug("Выполнение гибридного поиска (dense + sparse)")
+                dense_results = await self._search_dense(
                     query_vector, top_k, search_filter, search_params
                 )
+                sparse_results = await self._search_sparse(
+                    sparse_vector, top_k, search_filter
+                )
+                # Объединяем результаты простым конкатенированием, RRF будет применяться выше
+                results = dense_results + sparse_results
             else:
                 # Обычный dense поиск
                 results = await self._search_dense(
@@ -823,6 +830,36 @@ class QdrantVectorStore:
         except Exception as e:
             logger.error(f"Ошибка dense поиска: {e}")
             raise
+    
+    async def _search_sparse(
+        self,
+        sparse_vector: Dict[int, float],
+        top_k: int,
+        search_filter: Optional[Filter]
+    ) -> List[Dict]:
+        """
+        Выполняет sparse поиск (BM25/TF-IDF).
+        """
+        try:
+            results = self.active_client.search(
+                collection_name=self.config.collection_name,
+                query_vector={"sparse": sparse_vector},
+                query_filter=search_filter,
+                limit=top_k,
+                with_payload=True,
+                with_vectors=False
+            )
+            formatted_results = []
+            for result in results:
+                formatted_results.append({
+                    "id": result.id,
+                    "score": float(result.score),
+                    "payload": result.payload or {}
+                })
+            return formatted_results
+        except Exception as e:
+            logger.error(f"Ошибка sparse поиска: {e}")
+            return []
     
     async def health_check(self) -> Dict[str, Any]:
         """

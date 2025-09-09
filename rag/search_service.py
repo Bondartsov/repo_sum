@@ -148,11 +148,20 @@ class SearchService:
             
             # Выполняем поиск в векторном хранилище
             search_start = time.time()
+            sparse_vector = None
+            if self.config.rag.query_engine.use_hybrid:
+                try:
+                    from .sparse_encoder import SparseEncoder
+                    encoder = SparseEncoder()
+                    sparse_vector = encoder.encode([query])[0]
+                except Exception as e:
+                    logger.warning(f"Ошибка генерации sparse-вектора: {e}")
             raw_results = await self.vector_store.search(
                 query_vector=query_vector,
                 top_k=top_k * 2,  # Берем больше результатов для фильтрации
                 filters=filters,
-                use_hybrid=self.config.rag.query_engine.use_hybrid
+                use_hybrid=self.config.rag.query_engine.use_hybrid,
+                sparse_vector=sparse_vector
             )
             search_time = time.time() - search_start
             

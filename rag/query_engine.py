@@ -273,10 +273,34 @@ class CPUQueryEngine:
 
                 # 3. Выполняем базовый поиск через SearchService
                 search_start = time.time()
-                raw_results = await self._perform_base_search(query, max_results * 2, request_id)
+                dense_results = await self._perform_base_search(query, max_results * 2, request_id)
+                sparse_results = []
+                if self.config.use_hybrid:
+                    try:
+                        from .sparse_encoder import SparseEncoder
+                        encoder = SparseEncoder()
+                        sparse_vec = encoder.encode([query])[0]
+                        raw_sparse = await self.vector_store._search_sparse(sparse_vec, max_results * 2, None)
+                        for idx, r in enumerate(raw_sparse):
+                            sparse_results.append(SearchResult(
+                                chunk_id=r["id"],
+                                file_path=r["payload"].get("file_path", ""),
+                                file_name=r["payload"].get("file_name", ""),
+                                chunk_name=r["payload"].get("chunk_name", ""),
+                                chunk_type=r["payload"].get("chunk_type", ""),
+                                language=r["payload"].get("language", ""),
+                                start_line=r["payload"].get("start_line", 0),
+                                end_line=r["payload"].get("end_line", 0),
+                                score=r["score"],
+                                content=r["payload"].get("content", ""),
+                                metadata=r["payload"],
+                                rank=idx + 1
+                            ))
+                    except Exception as e:
+                        logger.warning(f"[{request_id}] Ошибка sparse поиска: {e}")
                 self.stats.search_time += time.time() - search_start
 
-                if not raw_results:
+                if not dense_results and not sparse_results:
                     logger.debug(f"[{request_id}] Поиск не дал результатов")
                     self._cache_result(cache_key, [])
                     return []
@@ -284,11 +308,15 @@ class CPUQueryEngine:
                 # 4. Применяем RRF (если включен и есть несколько источников)
                 rerank_start = time.time()
                 if self.config.rrf_enabled:
-                    # Для демонстрации RRF создаём дополнительные источники результатов
-                    rrf_results = self._reciprocal_rank_fusion([raw_results], k=60)
+                    results_lists = []
+                    if dense_results:
+                        results_lists.append(dense_results)
+                    if sparse_results:
+                        results_lists.append(sparse_results)
+                    rrf_results = self._reciprocal_rank_fusion(results_lists, k=60)
                     self.stats.rrf_operations += 1
                 else:
-                    rrf_results = raw_results
+                    rrf_results = dense_results + sparse_results
 
                 # 5. Применяем MMR переранжирование
                 final_results = rrf_results
