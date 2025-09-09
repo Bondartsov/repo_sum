@@ -7,9 +7,11 @@ from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 try:
     from tests.mocks.mock_tokenizer import MockTokenizer
+    from tests.mocks.mock_sparse_model import MockSparseModel
     from tests.mocks import is_socket_disabled
 except ImportError:
     MockTokenizer = None
+    MockSparseModel = None
     is_socket_disabled = lambda: False
 
 
