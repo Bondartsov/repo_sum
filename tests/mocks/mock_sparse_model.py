@@ -3,6 +3,7 @@ import torch
 class MockOutput:
     def __init__(self, batch_size, seq_len, hidden_dim, device):
         self.last_hidden_state = torch.ones((batch_size, seq_len, hidden_dim), device=device)
+        self.logits = torch.ones((batch_size, seq_len, hidden_dim), device=device)
 
 class MockSparseModel:
     """

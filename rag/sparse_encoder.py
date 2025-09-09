@@ -26,9 +26,9 @@ class SparseEncoder:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
         if ((os.environ.get("MOCK_MODE") == "1") or is_socket_disabled()) and MockTokenizer is not None:
-            logging.info("SparseEncoder: offline/mock режим активен, используется MockTokenizer (model=None)")
+            logging.info("SparseEncoder: offline/mock режим активен, используется MockTokenizer и MockSparseModel")
             self.tokenizer = MockTokenizer()
-            self.model = None
+            self.model = MockSparseModel().to(self.device)
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
             self.model = AutoModelForMaskedLM.from_pretrained(model_name, local_files_only=True).to(self.device)
