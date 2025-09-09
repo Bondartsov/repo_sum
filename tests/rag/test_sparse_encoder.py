@@ -79,3 +79,18 @@ def test_mock_mode_tokenizer(monkeypatch):
 
     assert isinstance(encoder.tokenizer, MockTokenizer)
     assert encoder.model is None
+import pytest
+
+from rag.sparse_encoder import SparseEncoder
+from tests.mocks.mock_tokenizer import MockTokenizer
+
+
+def test_sparse_encoder_uses_mocktokenizer_in_offline_mode(monkeypatch):
+    """Проверяет, что в offline-режиме используется MockTokenizer вместо AutoTokenizer"""
+    monkeypatch.setenv("MOCK_MODE", "0")  # отключаем локальный mock
+    monkeypatch.setattr("rag.sparse_encoder.is_socket_disabled", lambda: True)
+
+    encoder = SparseEncoder()
+
+    assert isinstance(encoder.tokenizer, MockTokenizer)
+    assert encoder.model is None

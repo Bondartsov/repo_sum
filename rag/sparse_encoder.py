@@ -7,8 +7,10 @@ from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 try:
     from tests.mocks.mock_tokenizer import MockTokenizer
+    from tests.mocks import is_socket_disabled
 except ImportError:
     MockTokenizer = None
+    is_socket_disabled = lambda: False
 
 
 class SparseEncoder:
@@ -21,8 +23,8 @@ class SparseEncoder:
         self.model_name = model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
-        if os.environ.get("MOCK_MODE") == "1" and MockTokenizer is not None:
-            logging.info("Используется mock-токенизатор для SparseEncoder")
+        if ((os.environ.get("MOCK_MODE") == "1") or is_socket_disabled()) and MockTokenizer is not None:
+            logging.info("SparseEncoder: offline/mock режим активен, используется MockTokenizer")
             self.tokenizer = MockTokenizer()
             self.model = None
         else:
