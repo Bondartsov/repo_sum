@@ -1,0 +1,64 @@
+from typing import List, Dict, Any, Optional
+import torch
+import logging
+logging.getLogger("transformers").setLevel(logging.ERROR)
+from transformers import AutoTokenizer, AutoModelForMaskedLM
+
+
+class SparseEncoder:
+    """
+    Базовый sparse encoder для RAG.
+    Использует трансформер-модель (например, SPLADE или BERT) для генерации разреженных векторов.
+    """
+
+    def __init__(self, model_name: str = "bert-base-uncased", device: Optional[str] = None):
+        self.model_name = model_name
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForMaskedLM.from_pretrained(model_name).to(self.device)
+        self.model.eval()
+
+    def encode(self, texts: List[str]) -> List[Dict[int, float]]:
+        """
+        Кодирует список текстов в sparse-вектора.
+        Возвращает список словарей {token_id: weight}.
+        """
+        encodings = self.tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            return_tensors="pt"
+        ).to(self.device)
+
+        with torch.no_grad():
+            outputs = self.model(**encodings)
+            logits = outputs.logits  # [batch, seq_len, vocab_size]
+
+        # Простейший способ: берём max по seq_len → получаем важность токена
+        scores, _ = torch.max(logits, dim=1)  # [batch, vocab_size]
+        scores = torch.log1p(torch.relu(scores))  # сглаживание
+
+        sparse_vectors: List[Dict[int, float]] = []
+        for vec in scores:
+            nonzero = torch.nonzero(vec > 0, as_tuple=True)[0]
+            sparse_dict = {int(idx): float(vec[idx].cpu().item()) for idx in nonzero}
+            sparse_vectors.append(sparse_dict)
+
+        return sparse_vectors
+
+    def save(self, path: str) -> None:
+        """Сохраняет модель и токенизатор."""
+        self.model.save_pretrained(path)
+        self.tokenizer.save_pretrained(path)
+
+    @classmethod
+    def load(cls, path: str, device: Optional[str] = None) -> "SparseEncoder":
+        """Загружает модель и токенизатор."""
+        instance = cls.__new__(cls)
+        instance.model_name = path
+        instance.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        instance.tokenizer = AutoTokenizer.from_pretrained(path)
+        instance.model = AutoModelForMaskedLM.from_pretrained(path).to(instance.device)
+        instance.model.eval()
+        return instance

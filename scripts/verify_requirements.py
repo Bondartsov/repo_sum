@@ -18,6 +18,23 @@ MODULE_TO_PKG = {
     "pytest": "pytest",
     "pytest_asyncio": "pytest-asyncio",
     "hypothesis": "hypothesis",
+    # научные и системные
+    "numpy": "numpy",
+    "psutil": "psutil",
+    "cachetools": "cachetools",
+    # RAG и ML
+    "fastembed": "fastembed",
+    "qdrant_client": "qdrant-client",
+    "sentence_transformers": "sentence-transformers",
+    "torch": "torch",
+    "faiss": "faiss-cpu",
+    "rank_bm25": "rank-bm25",
+    "nltk": "nltk",
+    # инфраструктура
+    "fastapi": "fastapi",
+    "uvicorn": "uvicorn",
+    "prometheus_client": "prometheus-client",
+    "onnxruntime": "onnxruntime",
 }
 
 IGNORE_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules", "dist", "build"}
@@ -56,7 +73,9 @@ def parse_requirements(req_path: Path):
         if not line or line.startswith("#"):
             continue
         import re as _re
-        pkgs.add(_re.split(r"[<>=]", line)[0].strip())
+        base = _re.split(r"[<>=]", line)[0].strip()
+        # сохраняем extras (например, qdrant-client[fastembed])
+        pkgs.add(base)
     return pkgs
 
 

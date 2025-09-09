@@ -49,6 +49,7 @@ def mock_config():
     return config
 
 
+@pytest.mark.integration
 class TestOpenAIRateLimit:
     """T-017 - OpenAI: rate limit и повторные запросы"""
 
@@ -198,6 +199,7 @@ class TestOpenAIRateLimit:
         mock_sleep.assert_has_calls(expected_calls)
 
 
+@pytest.mark.integration
 class TestOpenAIConnectionErrors:
     """T-018 - OpenAI: офлайн/нет соединения"""
 

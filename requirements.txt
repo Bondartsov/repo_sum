@@ -2,7 +2,7 @@
 # Основные зависимости (обновлено 11.08.2025)
 ############################
 # OpenAI интеграция
-openai>=1.99.6
+openai>=1.100.0
 tiktoken>=0.8.0
 
 # Обработка файлов и утилиты
@@ -20,26 +20,47 @@ streamlit>=1.46.0
 ############################
 # RAG система (FastEmbed + Qdrant)
 ############################
+# FastEmbed - основной эмбеддинг провайдер (ONNX, CPU-first)
+fastembed>=0.3.6
 qdrant-client[fastembed]>=1.15.1
-sentence-transformers>=3.0.0
+
+# Sentence Transformers - альтернативный провайдер
+sentence-transformers>=5.1.0
+
+# PyTorch CPU-only
 torch>=2.4.0
+
+# FAISS как локальная альтернатива векторной БД
 faiss-cpu>=1.7.4
+
+############################
+# Milestone M2: Гибридный поиск
+############################
+# BM25 для sparse поиска
+rank-bm25>=0.2.2
+
+# NLTK для токенизации кода
+nltk>=3.8
+
+# Опционально для SPLADE (если GPU доступен)
+# transformers>=4.30.0
 
 ############################
 # Production infrastructure
 ############################
-fastapi>=0.104.0
-uvicorn>=0.24.0
-prometheus-client>=0.19.0
+fastapi>=0.115.0
+uvicorn>=0.30.0
+prometheus-client>=0.21.0
 
 ############################
 # Тестирование
 ############################
 pytest>=8.3.4
-pytest-asyncio>=1.1.0
-hypothesis>=6.124.9
+pytest-asyncio>=0.25.0
+hypothesis>=6.125.0
+pytest-benchmark
 
 ############################
 # Опциональные ускорители CPU
 ############################
-onnxruntime>=1.16.0
+onnxruntime>=1.19.0

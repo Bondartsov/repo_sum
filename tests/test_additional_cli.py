@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 
+@pytest.mark.functional
 class TestAdditionalCLI:
     """Дополнительные тесты CLI интерфейса"""
     

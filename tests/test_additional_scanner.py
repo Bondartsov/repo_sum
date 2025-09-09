@@ -5,6 +5,7 @@
 
 import os
 import platform
+import ctypes
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,7 @@ from file_scanner import FileScanner
 class TestFileScannerAdditional:
     """Дополнительные тесты для FileScanner"""
 
+    @pytest.mark.integration
     def test_gitignore_not_respected(self):
         """
         T-008: Сканер: уважение .gitignore
@@ -60,6 +62,7 @@ class TestFileScannerAdditional:
             # .gitignore не найден, т.к. скрытый файл
             assert ".gitignore" not in found_files
 
+    @pytest.mark.integration
     def test_hidden_and_system_files_excluded(self):
         """
         T-009: Сканер: скрытые/системные файлы
@@ -110,13 +113,26 @@ class TestFileScannerAdditional:
                 # поэтому системный файл БУДЕТ найден
                 assert "system.py" in found_files
 
-    def test_circular_symlinks_handling(self):
+    @pytest.mark.integration
+    def test_circular_symlinks_handling(self, request):
         """
         T-010: Сканер: циклические симлинки
         Проверяет обработку циклических симлинков
         """
         # Пропускаем тест на Windows если symlink недоступен
         if platform.system() == "Windows":
+            # Дополнительная проверка прав администратора/флага запуска на Windows
+            try:
+                is_admin = False
+                try:
+                    is_admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
+                except Exception:
+                    is_admin = False
+                run_flag = request.config.getoption("--run-symlink-tests")
+                if not is_admin and not run_flag:
+                    pytest.skip("Требуются права администратора (или Developer Mode) для создания симлинков в Windows. Запустите терминал от имени администратора или укажите --run-symlink-tests")
+            except Exception:
+                pass
             try:
                 # Проверяем права на создание symlink
                 with tempfile.TemporaryDirectory() as test_dir:
@@ -186,6 +202,7 @@ class TestFileScannerAdditional:
             except (OSError, NotImplementedError):
                 pytest.skip("Не удалось создать симлинки на данной платформе")
 
+    @pytest.mark.integration
     def test_binary_files_and_encodings(self):
         """
         T-011: Сканер: бинарные файлы и не-UTF-8 кодировки
@@ -250,6 +267,7 @@ class TestFileScannerAdditional:
             latin1_info = files_by_name["latin1_file.py"]
             assert latin1_info.encoding is not None
 
+    @pytest.mark.functional
     def test_main_analyze_command_integration(self):
         """
         Интеграционный тест с командой main.py --analyze

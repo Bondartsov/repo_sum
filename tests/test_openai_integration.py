@@ -7,6 +7,7 @@ from utils import CodeChunk, GPTAnalysisRequest
 
 # Пример теста для анализа чанка (мокаем OpenAI)
 
+@pytest.mark.integration
 def test_analyze_chunk_with_mock():
     """
     Проверяет, что OpenAIManager.analyze_chunk возвращает результат при успешном ответе OpenAI.

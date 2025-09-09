@@ -5,6 +5,7 @@ from file_scanner import FileScanner
 from parsers.base_parser import ParserRegistry
 from utils import FileInfo
 
+@pytest.mark.integration
 def test_openai_manager_no_api_key(monkeypatch):
     """
     Проверяет, что при отсутствии API-ключа OpenAIManager выбрасывает ошибку.
@@ -33,6 +34,7 @@ def test_python_parser_syntax_error(tmp_path):
     parsed = parser.parse_file(file_info)
     assert parsed.parse_errors, "Parser должен вернуть ошибку для некорректного кода"
 
+@pytest.mark.integration
 def test_openai_manager_network_error(monkeypatch, tmp_path):
     """
     Проверяет, что OpenAIManager корректно обрабатывает сетевую ошибку (эмулируется через mock).

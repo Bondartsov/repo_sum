@@ -79,6 +79,7 @@ class TestAdditionalDocGen:
             error=None
         )
 
+    @pytest.mark.integration
     @patch('openai_integration.OpenAIManager')
     def test_t015_markdown_header_collisions(self, mock_openai, temp_repo_dir, temp_output_dir):
         """
@@ -204,6 +205,7 @@ class TestAdditionalDocGen:
         print(f"Дублирующихся: {len(duplicate_headers)}")
         print(f"Выходной каталог: {summary_dir}")
 
+    @pytest.mark.integration
     @patch('openai_integration.OpenAIManager')
     def test_t016_long_lines_tables_lists(self, mock_openai, temp_repo_dir, temp_output_dir):
         """

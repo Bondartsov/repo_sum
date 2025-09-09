@@ -50,7 +50,6 @@ class CodeChunker:
     
     def __init__(self):
         self.config = get_config()
-        self.max_tokens_per_chunk = self.config.openai.max_tokens_per_chunk
         self.min_chunk_size = self.config.analysis.min_chunk_size
         self.logger = logging.getLogger(self.__class__.__name__)
         
@@ -121,11 +120,6 @@ class CodeChunker:
         content = "\n".join(header_content)
         tokens = self._count_tokens(content)
         
-        # Если чанк слишком большой, обрезаем
-        if tokens > self.max_tokens_per_chunk:
-            content = self._truncate_content(content, self.max_tokens_per_chunk)
-            tokens = self._count_tokens(content)
-        
         return CodeChunk(
             name=f"Header of {parsed_file.file_info.name}",
             content=content,
@@ -160,14 +154,6 @@ class CodeChunker:
             
             tokens = self._count_tokens(content)
             
-            # Если класс слишком большой, берем только сигнатуру и докстринг
-            if tokens > self.max_tokens_per_chunk:
-                content = f"{class_element.signature}\n"
-                if class_element.docstring:
-                    content += f'    """{class_element.docstring}"""\n'
-                content += "    # ... (остальной код класса сокращен)"
-                tokens = self._count_tokens(content)
-            
             return CodeChunk(
                 name=class_element.name,
                 content=content,
@@ -182,10 +168,10 @@ class CodeChunker:
             return None
     
     def _group_functions_into_chunks(self, parsed_file: ParsedFile, source_code: str) -> List[CodeChunk]:
-        """Группирует функции в чанки по лимиту токенов"""
+        """Группирует функции в чанки логически"""
         function_chunks = []
         current_chunk_functions = []
-        current_chunk_tokens = 0
+        max_functions_per_chunk = 5  # Разумный лимит функций в чанке
         
         # Получаем только функции (не методы классов)
         functions = [elem for elem in parsed_file.elements if elem.type == 'function']
@@ -206,29 +192,12 @@ class CodeChunker:
                 # Подсчитываем токены для функции
                 func_tokens = self._count_tokens(func_content)
                 
-                # Если одна функция больше лимита, создаем отдельный чанк
-                if func_tokens > self.max_tokens_per_chunk:
-                    # Сначала сохраняем накопленные функции
-                    if current_chunk_functions:
-                        chunk = self._create_functions_chunk(current_chunk_functions, "functions")
-                        if chunk:
-                            function_chunks.append(chunk)
-                        current_chunk_functions = []
-                        current_chunk_tokens = 0
-                    
-                    # Создаем чанк только с сигнатурой большой функции
-                    large_func_chunk = self._create_large_function_chunk(func)
-                    if large_func_chunk:
-                        function_chunks.append(large_func_chunk)
-                    continue
-                
-                # Если добавление функции превысит лимит, создаем чанк
-                if current_chunk_tokens + func_tokens > self.max_tokens_per_chunk and current_chunk_functions:
+                # Если накопилось достаточно функций, создаем чанк
+                if len(current_chunk_functions) >= max_functions_per_chunk:
                     chunk = self._create_functions_chunk(current_chunk_functions, "functions")
                     if chunk:
                         function_chunks.append(chunk)
                     current_chunk_functions = []
-                    current_chunk_tokens = 0
                 
                 # Добавляем функцию к текущему чанку
                 current_chunk_functions.append({
@@ -238,7 +207,6 @@ class CodeChunker:
                     'end_line': func_end + 1,
                     'tokens': func_tokens
                 })
-                current_chunk_tokens += func_tokens
                 
             except Exception as e:
                 self.logger.warning(f"Ошибка при обработке функции {func.name}: {e}")

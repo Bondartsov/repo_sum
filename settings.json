@@ -1,21 +1,10 @@
 {
-  "openai": {
-    "api_key_env_var": "OPENAI_API_KEY",
-    "max_tokens_per_chunk": 4000,
-    "max_response_tokens": 5000,
-    "temperature": 0.1,
-    "retry_attempts": 3,
-    "retry_delay": 1.0
-  },
-  "token_management": {
-    "enable_caching": true,
-    "cache_expiry_days": 7
-  },
   "analysis": {
     "chunk_strategy": "logical",
     "min_chunk_size": 100,
     "enable_fallback": true,
-    "languages_priority": ["python", "javascript", "java"]
+    "languages_priority": ["python", "javascript", "java"],
+    "sanitize_enabled": true
   },
   "file_scanner": {
     "max_file_size": 10485760,
@@ -30,7 +19,7 @@
     "supported_extensions": {
       ".py": "python",
       ".js": "javascript",
-      ".ts": "typescript", 
+      ".ts": "typescript",
       ".jsx": "javascript",
       ".tsx": "typescript",
       ".java": "java",
@@ -56,50 +45,28 @@
   },
   "rag": {
     "embeddings": {
-      "provider": "fastembed",
-      "model_name": "BAAI/bge-small-en-v1.5",
-      "vector_size": 384,
+      "truncate_dim": 384,
       "normalize_embeddings": true,
-      "batch_size_min": 8,
-      "batch_size_max": 128,
-      "warmup_enabled": true
+      "warmup_enabled": true,
+      "num_workers": 4
     },
-    "qdrant": {
-      "host": "localhost",
-      "port": 6333,
-      "prefer_grpc": true,
-      "collection_name": "code_chunks",
-      "distance_metric": "cosine",
+    "vector_store": {
+      "vector_size": 384,
+      "distance": "cosine",
       "hnsw_m": 24,
       "hnsw_ef_construct": 128,
-      "search_hnsw_ef": 256,
       "quantization_type": "SQ",
       "enable_quantization": true,
-      "replication_factor": 2,
-      "write_consistency_factor": 1,
       "mmap": true
     },
-    "search": {
-      "max_results": 10,
-      "use_hybrid": true,
+    "query_engine": {
       "rrf_enabled": true,
+      "use_hybrid": true,
       "mmr_enabled": true,
       "mmr_lambda": 0.7,
-      "cache_ttl_seconds": 300,
-      "cache_max_entries": 1000,
-      "score_threshold": 0.7,
-      "concurrent_users_target": 20
-    },
-    "slo": {
-      "hot_cache_latency_ms": 200,
-      "cold_search_p50_ms": 500,
-      "cold_search_p95_ms": 1500,
-      "encode_timeout_ms": 1500
-    },
-    "security": {
-      "sanitize_enabled": true,
-      "content_scan_enabled": true,
-      "audit_queries": true
+      "concurrent_users_target": 20,
+      "search_workers": 4,
+      "embed_workers": 4
     }
   }
 }

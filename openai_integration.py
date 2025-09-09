@@ -206,11 +206,7 @@ class OpenAIManager:
         functions_count = len([chunk for chunk in request.chunks if chunk.chunk_type == 'function'])
         classes_count = len([chunk for chunk in request.chunks if chunk.chunk_type == 'class'])
         
-        # Ограничиваем размер кода
-        max_code_tokens = 1500  # Оставляем место для промпта и ответа
-        if self.count_tokens(code) > max_code_tokens:
-            code = self.truncate_to_tokens(code, max_code_tokens)
-            code += "\n\n... [код обрезан для экономии токенов] ..."
+        # Убираем токен лимиты - позволяем OpenAI самому управлять размером
 
         # Загружаем промпт из файла
         prompt_template = load_prompt_from_file(self.config.prompts.code_analysis_prompt_file)
@@ -241,7 +237,6 @@ class OpenAIManager:
                         {"role": "user", "content": prompt},
                     ],
                     temperature=self.temperature,
-                    max_tokens=self.config.openai.max_response_tokens,
                 )
                 return response.choices[0].message.content
             except Exception as exc:
@@ -281,11 +276,27 @@ class OpenAIManager:
         )
 
     def get_token_usage_stats(self) -> Dict:
-        """Статистика использования токенов (заглушка)"""
+        """Статистика использования токенов с обратной совместимостью.
+        
+        Возвращает:
+            - used_today: суммарные токены за сегодня (синоним total_tokens)
+            - requests_today: количество запросов за сегодня (синоним total_requests)
+            - average_per_request: среднее число токенов на запрос (синоним average_tokens_per_request)
+            - total_requests, total_tokens, average_tokens_per_request: сохранены для обратной совместимости
+        """
+        # TODO: заменить заглушку реальными счётчиками при наличии телеметрии
+        total_requests = 0
+        total_tokens = 0
+        average_tokens_per_request = 0
+        
         return {
-            "total_requests": 0,
-            "total_tokens": 0,
-            "average_tokens_per_request": 0
+            "used_today": total_tokens,
+            "requests_today": total_requests,
+            "average_per_request": average_tokens_per_request,
+            # Обратная совместимость
+            "total_requests": total_requests,
+            "total_tokens": total_tokens,
+            "average_tokens_per_request": average_tokens_per_request,
         }
 
     def clear_cache(self) -> int:

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Главный модуль анализатора репозиториев с генерацией MD документации через OpenAI GPT.
+Теперь включает RAG систему для семантического поиска по коду.
 """
 
 import asyncio
@@ -26,6 +27,11 @@ from utils import (
     ensure_directory_exists, create_error_parsed_file, create_error_gpt_result,
     compute_file_hash, read_index, write_index
 )
+
+# RAG система
+from rag.indexer_service import IndexerService
+from rag.search_service import SearchService
+from rag.exceptions import VectorStoreException, VectorStoreConnectionError
 
 
 class RepositoryAnalyzer:
@@ -360,7 +366,21 @@ def cli(ctx, config, verbose, quiet):
 @click.option('--incremental/--no-incremental', default=True, help='Инкрементальный анализ только изменённых файлов')
 def analyze(repo_path, output, no_progress, incremental):
     """Анализирует репозиторий и создает MD документацию."""
-    analyzer = RepositoryAnalyzer()
+    console = Console()
+    
+    try:
+        # Fail-fast: проверяем что все компоненты могут быть инициализированы
+        analyzer = RepositoryAnalyzer()
+    except ValueError as e:
+        # Быстрый выход при ошибках конфигурации (например, отсутствие API ключа)
+        console.print(f"[bold red]Ошибка конфигурации: {e}[/bold red]")
+        sys.exit(1)
+    except Exception as e:
+        # Любая другая критическая ошибка инициализации
+        logger = logging.getLogger(__name__)
+        logger.error(f"Критическая ошибка инициализации: {e}", exc_info=True)
+        console.print(f"[bold red]Критическая ошибка инициализации: {e}[/bold red]")
+        sys.exit(1)
     
     try:
         result = asyncio.run(analyzer.analyze_repository(
@@ -462,22 +482,319 @@ def clear_cache():
 @cli.command()
 def token_stats():
     """Показывает статистику использования токенов OpenAI."""
+    console = Console()
     try:
+        # Предвалидация API ключа: считаем ключ без префикса "sk-" некорректным
+        import os as _os
+        api_key = _os.getenv("OPENAI_API_KEY", "")
+        if not api_key or not api_key.startswith("sk-"):
+            console.print("[bold red]Ошибка при получении статистики: OPENAI_API_KEY не задан или некорректен[/bold red]")
+            return
+
         manager = OpenAIManager()
         stats = manager.get_token_usage_stats()
-        
-        console = Console()
+
+        # Проверка совместимости формата статистики
+        if "used_today" not in stats:
+            raise ValueError("Несовместимый формат статистики токенов")
+
+        # Если все метрики равны нулю (заглушка/нет данных) — сообщаем об ошибке, но не падаем
+        used = int(stats.get("used_today", 0) or 0)
+        reqs = int(stats.get("requests_today", 0) or 0)
+        avg = float(stats.get("average_per_request", 0) or 0)
+        total_tokens = int(stats.get("total_tokens", 0) or 0)
+        total_requests = int(stats.get("total_requests", 0) or 0)
+        if used == 0 and reqs == 0 and avg == 0 and total_tokens == 0 and total_requests == 0:
+            console.print("[bold red]Ошибка при получении статистики: данные недоступны или несовместимый формат[/bold red]")
+
         table = Table(title="Статистика токенов OpenAI")
         table.add_column("Метрика", style="cyan")
         table.add_column("Значение", justify="right", style="green")
-        
-        table.add_row("Использовано сегодня", str(stats['used_today']))
-        
+
+        table.add_row("Использовано сегодня", str(used))
+
         console.print(table)
-        
+
     except Exception as e:
-        console = Console()
         console.print(f"[bold red]Ошибка при получении статистики: {e}[/bold red]")
+
+
+# RAG команды
+@cli.group()
+def rag():
+    """Команды RAG системы для семантического поиска по коду"""
+    pass
+
+
+@rag.command()
+@click.argument('repo_path', type=click.Path(exists=True))
+@click.option('--batch-size', default=512, help='Размер батча для индексации')
+@click.option('--recreate', is_flag=True, help='Пересоздать коллекцию')
+@click.option('--no-progress', is_flag=True, help='Отключить прогресс-бар')
+def index(repo_path, batch_size, recreate, no_progress):
+    """Индексация репозитория в векторную БД"""
+    console = Console()
+    
+    try:
+        # Получаем конфигурацию с проверкой RAG настроек
+        config = get_config()
+        
+        # Валидируем RAG конфигурацию
+        try:
+            config.validate(require_api_key=False)
+        except ValueError as e:
+            console.print(f"[bold red]Ошибка конфигурации RAG: {e}[/bold red]")
+            sys.exit(1)
+        
+        console.print(f"[bold blue]🔄 Индексация репозитория: {repo_path}[/bold blue]")
+        console.print(f"[dim]Qdrant: {config.rag.vector_store.host}:{config.rag.vector_store.port}[/dim]")
+        console.print(f"[dim]Коллекция: {config.rag.vector_store.collection_name}[/dim]")
+        console.print(f"[dim]Размер батча: {batch_size}[/dim]")
+        
+        if recreate:
+            console.print("[yellow]⚠️  Коллекция будет пересоздана[/yellow]")
+        
+        # Создаем сервис индексации
+        indexer = IndexerService(config)
+        
+        # Запускаем индексацию
+        result = asyncio.run(indexer.index_repository(
+            repo_path=repo_path,
+            batch_size=batch_size,
+            recreate=recreate,
+            show_progress=not no_progress
+        ))
+        
+        if result.get('success', False):
+            # Показываем результат индексации
+            table = Table(title="Результат индексации")
+            table.add_column("Метрика", style="cyan")
+            table.add_column("Значение", justify="right", style="green")
+            
+            table.add_row("Всего файлов", str(result.get('total_files', 0)))
+            table.add_row("Обработано файлов", str(result.get('processed_files', 0)))
+            table.add_row("Всего чанков", str(result.get('total_chunks', 0)))
+            table.add_row("Проиндексировано чанков", str(result.get('indexed_chunks', 0)))
+            table.add_row("Время выполнения", f"{result.get('total_time', 0):.1f}s")
+            table.add_row("Скорость обработки", f"{result.get('processing_rate', 0):.1f} файлов/с")
+            table.add_row("Скорость индексации", f"{result.get('indexing_rate', 0):.1f} чанков/с")
+            
+            if result.get('failed_files', 0) > 0:
+                table.add_row("С ошибками", str(result['failed_files']), style="red")
+            
+            console.print(table)
+            console.print(f"[bold green]✅ Индексация завершена успешно![/bold green]")
+        else:
+            console.print(f"[bold red]❌ Ошибка индексации: {result.get('error', 'Неизвестная ошибка')}[/bold red]")
+            sys.exit(1)
+            
+    except KeyboardInterrupt:
+        console.print("[yellow]⏹️ Индексация прервана пользователем[/yellow]")
+        sys.exit(1)
+    except VectorStoreConnectionError as e:
+        console.print(f"[bold red]❌ Ошибка подключения к Qdrant: {e}[/bold red]")
+        console.print("[dim]Проверьте, что Qdrant запущен и доступен[/dim]")
+        sys.exit(1)
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Критическая ошибка индексации: {e}", exc_info=True)
+        console.print(f"[bold red]❌ Критическая ошибка: {e}[/bold red]")
+        sys.exit(1)
+
+
+@rag.command()
+@click.argument('query')
+@click.option('--top-k', default=10, help='Количество результатов')
+@click.option('--lang', help='Фильтр по языку программирования')
+@click.option('--chunk-type', help='Фильтр по типу чанка (class, function, etc.)')
+@click.option('--min-score', type=float, help='Минимальный порог релевантности (0.0-1.0)')
+@click.option('--file-path', help='Фильтр по пути к файлу')
+@click.option('--no-content', is_flag=True, help='Не показывать содержимое')
+@click.option('--max-lines', default=10, help='Максимальное количество строк контента')
+def search(query, top_k, lang, chunk_type, min_score, file_path, no_content, max_lines):
+    """Семантический поиск по коду"""
+    console = Console()
+    
+    try:
+        # Получаем конфигурацию
+        config = get_config()
+        
+        console.print(f"[bold blue]🔍 Поиск: '{query}'[/bold blue]")
+        console.print(f"[dim]Результатов: {top_k}, Фильтры: язык={lang or 'все'}, тип={chunk_type or 'все'}[/dim]")
+        
+        # Создаем сервис поиска
+        searcher = SearchService(config)
+        
+        # Выполняем поиск
+        results = asyncio.run(searcher.search(
+            query=query,
+            top_k=top_k,
+            language_filter=lang,
+            chunk_type_filter=chunk_type,
+            min_score=min_score,
+            file_path_filter=file_path
+        ))
+        
+        # Форматируем и выводим результаты
+        searcher.format_search_results(
+            results=results,
+            show_content=not no_content,
+            max_content_lines=max_lines
+        )
+        
+        if results:
+            console.print()
+            console.print(f"[dim]Поиск завершен. Средний скор: {sum(r.score for r in results) / len(results):.3f}[/dim]")
+        
+    except KeyboardInterrupt:
+        console.print("[yellow]⏹️ Поиск прерван пользователем[/yellow]")
+        sys.exit(1)
+    except VectorStoreConnectionError as e:
+        console.print(f"[bold red]❌ Ошибка подключения к Qdrant: {e}[/bold red]")
+        console.print("[dim]Проверьте, что Qdrant запущен и коллекция проиндексирована[/dim]")
+        sys.exit(1)
+    except VectorStoreException as e:
+        console.print(f"[bold red]❌ Ошибка поиска: {e}[/bold red]")
+        sys.exit(1)
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Критическая ошибка поиска: {e}", exc_info=True)
+        console.print(f"[bold red]❌ Критическая ошибка: {e}[/bold red]")
+        sys.exit(1)
+
+
+@rag.command()
+@click.option('--detailed', is_flag=True, help='Подробная статистика')
+def status(detailed):
+    """Статус RAG системы и векторной БД"""
+    console = Console()
+    
+    try:
+        config = get_config()
+        
+        console.print("[bold blue]📊 Статус RAG системы[/bold blue]")
+        
+        # Health check индексера
+        indexer = IndexerService(config)
+        health = asyncio.run(indexer.health_check())
+        
+        # Общий статус
+        status_color = "green" if health['status'] == 'healthy' else "yellow" if health['status'] == 'degraded' else "red"
+        console.print(f"[bold]Общий статус: [{status_color}]{health['status'].upper()}[/{status_color}][/bold]")
+        console.print()
+        
+        # Статус компонентов
+        components_table = Table(title="Статус компонентов")
+        components_table.add_column("Компонент", style="cyan")
+        components_table.add_column("Статус", style="bold")
+        components_table.add_column("Детали", style="dim")
+        
+        # Vector Store
+        vs_health = health['components'].get('vector_store', {})
+        vs_status = vs_health.get('status', 'unknown')
+        vs_status_color = "green" if vs_status == 'connected' else "red"
+        
+        vs_details = ""
+        if vs_health.get('collection_info'):
+            coll_info = vs_health['collection_info']
+            vs_details = f"Документов: {coll_info.get('points_count', 0)}, Проиндексировано: {coll_info.get('indexed_vectors_count', 0)}"
+        
+        components_table.add_row(
+            "Qdrant Vector Store",
+            f"[{vs_status_color}]{vs_status}[/{vs_status_color}]",
+            vs_details
+        )
+        
+        # Embedder
+        embedder_health = health['components'].get('embedder', {})
+        embedder_status = embedder_health.get('status', 'unknown')
+        embedder_status_color = "green" if embedder_status == 'healthy' else "yellow"
+        embedder_details = f"Модель: {embedder_health.get('model', 'неизвестно')}, Провайдер: {embedder_health.get('provider', 'неизвестно')}"
+        
+        components_table.add_row(
+            "Embedder",
+            f"[{embedder_status_color}]{embedder_status}[/{embedder_status_color}]",
+            embedder_details
+        )
+        
+        console.print(components_table)
+        
+        # Конфигурация
+        console.print()
+        config_table = Table(title="Конфигурация")
+        config_table.add_column("Параметр", style="cyan")
+        config_table.add_column("Значение", style="green")
+        
+        config_table.add_row("Хост Qdrant", f"{config.rag.vector_store.host}:{config.rag.vector_store.port}")
+        config_table.add_row("Коллекция", config.rag.vector_store.collection_name)
+        config_table.add_row("Размерность векторов", str(config.rag.vector_store.vector_size))
+        config_table.add_row("Модель эмбеддингов", config.rag.embeddings.model_name)
+        config_table.add_row("Провайдер", config.rag.embeddings.provider)
+        config_table.add_row("Квантование", f"{config.rag.vector_store.quantization_type}" if config.rag.vector_store.enable_quantization else "отключено")
+        
+        console.print(config_table)
+        
+        # Подробная статистика
+        if detailed:
+            console.print()
+            stats = asyncio.run(indexer.get_indexing_stats())
+            
+            # Статистика индексации
+            if stats.get('indexer'):
+                indexer_stats = stats['indexer']
+                index_table = Table(title="Статистика индексации")
+                index_table.add_column("Метрика", style="cyan")
+                index_table.add_column("Значение", style="green")
+                
+                index_table.add_row("Всего файлов", str(indexer_stats.get('total_files', 0)))
+                index_table.add_row("Обработано файлов", str(indexer_stats.get('processed_files', 0)))
+                index_table.add_row("Всего чанков", str(indexer_stats.get('total_chunks', 0)))
+                index_table.add_row("Ошибок", str(indexer_stats.get('failed_files', 0)))
+                
+                console.print(index_table)
+            
+            # Статистика эмбеддера
+            if stats.get('embedder'):
+                embedder_stats = stats['embedder']
+                embed_table = Table(title="Статистика эмбеддера")
+                embed_table.add_column("Метрика", style="cyan")
+                embed_table.add_column("Значение", style="green")
+                
+                embed_table.add_row("Обработано текстов", str(embedder_stats.get('total_texts', 0)))
+                embed_table.add_row("Среднее время батча", f"{embedder_stats.get('avg_batch_time', 0):.3f}s")
+                embed_table.add_row("Текстов в секунду", f"{embedder_stats.get('avg_texts_per_second', 0):.1f}")
+                embed_table.add_row("Текущий размер батча", str(embedder_stats.get('current_batch_size', 0)))
+                embed_table.add_row("OOM fallbacks", str(embedder_stats.get('oom_fallbacks', 0)))
+                
+                console.print(embed_table)
+            
+            # Статистика поиска
+            searcher = SearchService(config)
+            search_stats = searcher.get_search_stats()
+            
+            search_table = Table(title="Статистика поиска")
+            search_table.add_column("Метрика", style="cyan")
+            search_table.add_column("Значение", style="green")
+            
+            search_table.add_row("Всего запросов", str(search_stats.get('total_queries', 0)))
+            search_table.add_row("Попаданий в кэш", str(search_stats.get('cache_hits', 0)))
+            search_table.add_row("Промахов кэша", str(search_stats.get('cache_misses', 0)))
+            search_table.add_row("Размер кэша", str(search_stats.get('cache_size', 0)))
+            search_table.add_row("Среднее время поиска", f"{search_stats.get('avg_search_time', 0):.3f}s")
+            
+            console.print(search_table)
+        
+        # Закрываем сервисы
+        asyncio.run(indexer.close())
+        
+    except KeyboardInterrupt:
+        console.print("[yellow]⏹️ Проверка статуса прервана пользователем[/yellow]")
+        sys.exit(1)
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Ошибка проверки статуса: {e}", exc_info=True)
+        console.print(f"[bold red]❌ Ошибка проверки статуса: {e}[/bold red]")
+        sys.exit(1)
 
 
 if __name__ == '__main__':
