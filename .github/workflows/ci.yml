@@ -7,11 +7,14 @@ on:
   pull_request:
 
 jobs:
-  tests:
+  tests_push:
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'dummy' }}
 
     steps:
       - name: Checkout
@@ -62,8 +65,6 @@ jobs:
           PY
 
       - name: Run unit tests (offline)
-        env:
-          OPENAI_API_KEY: dummy
         shell: bash
         run: |
           source .venv/bin/activate
@@ -71,39 +72,121 @@ jobs:
           # Запускаем только юнит-тесты: исключаем integration/functional/e2e
           pytest --disable-socket --allow-unix-socket -m "not integration and not functional and not e2e" -q
 
+
+
+
       - name: Run integration tests
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        if: ${{ github.event_name != 'pull_request' }}
         shell: bash
         run: |
           source .venv/bin/activate
-          # Если секрет недоступен (например, fork PR), запускаем с заглушкой.
-          if [ -z "${OPENAI_API_KEY:-}" ]; then
-            echo "OPENAI_API_KEY не передан — запускаем интеграционные тесты в режиме mock (без сети)."
-            export OPENAI_API_KEY=dummy
-          fi
           pytest -m "integration" -q
 
       - name: Run functional tests
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        if: ${{ github.event_name != 'pull_request' }}
         shell: bash
         run: |
           source .venv/bin/activate
-          # Для функциональных тестов ключ нужен только для инициализации менеджера; при отсутствии — ставим заглушку.
-          if [ -z "${OPENAI_API_KEY:-}" ]; then
-            export OPENAI_API_KEY=dummy
-          fi
           pytest -m "functional" -q
 
       - name: Run e2e tests
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        if: ${{ github.event_name != 'pull_request' }}
         shell: bash
         run: |
           source .venv/bin/activate
-          # E2E сценарии не требуют сети, но ключ нужен для инициализации; при отсутствии — ставим заглушку.
-          if [ -z "${OPENAI_API_KEY:-}" ]; then
-            export OPENAI_API_KEY=dummy
-          fi
           pytest -m "e2e" -q
+
+      - name: Run RAG tests
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          python tests/rag/run_rag_tests.py
+
+  tests_pr:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'dummy' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+ 
+      - name: Create venv and install deps
+        shell: bash
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install -U pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          if [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f setup.py ]; then pip install -e .; fi
+
+      - name: Ensure pytest-socket is installed
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          pip install -q "pytest-socket>=0.6"
+
+      - name: Warm up tiktoken cache (cl100k_base)
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          python - <<'PY'
+          try:
+              import tiktoken
+              # Разовая подгрузка и кеш, чтобы pytest не лез в сеть
+              tiktoken.get_encoding("cl100k_base")
+              print("tiktoken cache ready")
+          except Exception as e:
+              # Если tiktoken не установлен или не используется — просто пропускаем
+              print(f"tiktoken warmup skipped: {e}")
+          PY
+
+      - name: Run unit tests (offline)
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          # Сеть отключена, но UNIX-сокеты разрешены для event loop
+          # Запускаем только юнит-тесты: исключаем integration/functional/e2e
+          pytest --disable-socket --allow-unix-socket -m "not integration and not functional and not e2e" -q
+
+      - name: Run integration tests (PR, mock)
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          pytest -m "integration" -q
+
+      - name: Run functional tests (PR, mock)
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          pytest -m "functional" -q
+
+      - name: Run e2e tests (PR, mock)
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          pytest -m "e2e" -q
+
+      - name: Run RAG tests
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          python tests/rag/run_rag_tests.py
