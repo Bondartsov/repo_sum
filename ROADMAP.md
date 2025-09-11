@@ -2,7 +2,7 @@
 
 **Дата:** 10 сентября 2025  
 **Статус:** Production-Ready система + Активная roadmap развития  
-**Версия:** 1.8.0 (M2 завершён)  
+**Версия:** 0.5 (M2 завершён)  
 **Ветка:** main → feature/documentation-consolidation
 
 ---
@@ -350,7 +350,7 @@ pytest>=8.3.4
 ### Документация:
 - **Memory Bank**: `.clinerules/` - полный контекст проекта  
 - **Техническая архитектура**: `.clinerules/techContext.md`
-- **Пользовательские инструкции**: `AGENTS.md`
+- **Инструкции для агента**: `AGENTS.md`
 - **Quick Start**: `QUICK_START_RAG.md`
 
 ### Репозитории и инфраструктура:

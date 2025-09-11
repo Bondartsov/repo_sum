@@ -1,4 +1,4 @@
-# Cline's Memory Bank (.clinerules)
+# Project Memory Bank (.clinerules)
 I. Фаза Plan (Планирование)
 1. Загрузка и анализ контекста из Memory Bank (.clinerules)
 Чтение накопленной памяти:
