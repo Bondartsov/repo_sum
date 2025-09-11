@@ -73,7 +73,7 @@ st.set_page_config(
 )
 
 # Настройка логирования для веб-интерфейса
-setup_logging("DEBUG")
+setup_logging("INFO")
 
 
 def validate_uploaded_file(uploaded_file) -> Tuple[bool, str]:

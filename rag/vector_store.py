@@ -864,9 +864,9 @@ class QdrantVectorStore:
     async def health_check(self) -> Dict[str, Any]:
         """
         Проверяет состояние векторного хранилища и коллекции.
-        
-        Returns:
-            Информация о состоянии системы
+
+        Возвращает стабильный результат без рекурсивных вызовов и без использования
+        нестабильных API (например, get_cluster_info), совместимый с разными версиями клиента.
         """
         health_info = {
             'timestamp': datetime.now(timezone.utc).isoformat(),
@@ -875,46 +875,54 @@ class QdrantVectorStore:
             'collection_status': 'unknown',
             'error': None
         }
-        
-        try:
-            # Проверка подключения к Qdrant
-            cluster_info = self.active_client.get_cluster_info()
-            health_info['status'] = 'connected'
-            health_info['cluster_info'] = {
-                'peer_id': getattr(cluster_info, 'peer_id', 'unknown'),
-                'peers_count': len(getattr(cluster_info, 'peers', [])),
-                'raft_info': getattr(cluster_info, 'raft_info', {})
-            }
-            
-            # Проверка коллекции
-            collection_info = self.active_client.get_collection(self.config.collection_name)
-            if collection_info:
-                health_info['collection_status'] = 'exists'
-                health_info['collection_info'] = {
-                    'vectors_count': getattr(collection_info, 'vectors_count', 0),
-                    'indexed_vectors_count': getattr(collection_info, 'indexed_vectors_count', 0),
-                    'points_count': getattr(collection_info, 'points_count', 0),
-                    'status': getattr(collection_info, 'status', 'unknown')
-                }
-            else:
+
+        def _populate_collection_info():
+            """Безопасно наполняет информацию о коллекции (если доступна)."""
+            try:
+                collection_info = self.active_client.get_collection(self.config.collection_name)
+                if collection_info:
+                    health_info['collection_status'] = 'exists'
+                    health_info['collection_info'] = {
+                        'vectors_count': getattr(collection_info, 'vectors_count', 0),
+                        'indexed_vectors_count': getattr(collection_info, 'indexed_vectors_count', 0),
+                        'points_count': getattr(collection_info, 'points_count', 0),
+                        'status': getattr(collection_info, 'status', 'unknown')
+                    }
+                    self._collection_exists = True
+                else:
+                    health_info['collection_status'] = 'not_found'
+                    self._collection_exists = False
+            except Exception:
                 health_info['collection_status'] = 'not_found'
-            
+                self._collection_exists = False
+
+        try:
+            # Безопасная проверка подключения: доступна во всех версиях клиента
+            _ = self.active_client.get_collections()
+            health_info['status'] = 'connected'
+            _populate_collection_info()
             self._connected = True
-            
         except Exception as e:
             health_info['status'] = 'error'
             health_info['error'] = str(e)
             self._connected = False
-            
+
             logger.error(f"Health check не пройден: {e}")
-            
-            # Пытаемся переключить клиент и повторить
+
+            # Одно переключение клиента и одна повторная попытка без рекурсии
             if self._switch_client():
+                health_info['client_type'] = 'http' if self.active_client == self.http_client else 'grpc'
                 try:
-                    return await self.health_check()
+                    _ = self.active_client.get_collections()
+                    health_info['status'] = 'connected'
+                    health_info['error'] = None
+                    _populate_collection_info()
+                    self._connected = True
                 except Exception as retry_e:
                     logger.error(f"Health check после переключения клиента также не удался: {retry_e}")
-        
+                    health_info['error'] = str(retry_e)
+                    self._connected = False
+
         return health_info
     
     async def _collection_exists_check(self) -> bool:

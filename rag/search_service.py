@@ -152,7 +152,9 @@ class SearchService:
             if self.config.rag.query_engine.use_hybrid:
                 try:
                     from .sparse_encoder import SparseEncoder
-                    encoder = SparseEncoder()
+                    from config import get_config
+                    cfg = get_config().rag.sparse
+                    encoder = SparseEncoder(method=cfg.method)
                     sparse_vector = encoder.encode([query])[0]
                 except Exception as e:
                     logger.warning(f"Ошибка генерации sparse-вектора: {e}")

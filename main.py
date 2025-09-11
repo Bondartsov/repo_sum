@@ -730,6 +730,7 @@ def status(detailed):
         config_table.add_row("Размерность векторов", str(config.rag.vector_store.vector_size))
         config_table.add_row("Модель эмбеддингов", config.rag.embeddings.model_name)
         config_table.add_row("Провайдер", config.rag.embeddings.provider)
+        config_table.add_row("Sparse метод", getattr(config.rag.sparse, "method", "N/A"))
         config_table.add_row("Квантование", f"{config.rag.vector_store.quantization_type}" if config.rag.vector_store.enable_quantization else "отключено")
         
         console.print(config_table)

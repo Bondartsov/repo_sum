@@ -28,7 +28,8 @@
 
 ### 2. Production-ready RAG система:
 - **CPU-first архитектура**: FastEmbed + Qdrant, оптимизировано для серверов без GPU
-- **Гибридный поиск**: Dense embeddings (BAAI/bge-small-en-v1.5) + Sparse векторы (BM25/SPLADE)  
+- **Гибридный поиск**: Dense embeddings (BAAI/bge-small-en-v1.5) + Sparse векторы (BM25/SPLADE)
+  - Production Defaults: SPLADE по умолчанию (`rag.sparse.method = "SPLADE"`)
 - **Продвинутые алгоритмы**: RRF fusion, MMR re-ranking, LRU кэширование с TTL
 - **Enterprise масштабирование**: до 20 параллельных пользователей, <300ms латентность
 
@@ -275,7 +276,7 @@
 ### Контакты и ресурсы:
 - **GitHub Repository**: https://github.com/Bondartsov/repo_sum.git
 - **Production Qdrant**: 10.61.11.54:6333
-- **Документация**: README.md, QUICK_START_RAG.md
+- **Документация**: README.md, .clinerules/QUICK_START_RAG_ported.md, .clinerules/RAG_architecture.md
 
 ---
 

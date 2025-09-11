@@ -462,6 +462,15 @@ pytest -m "functional"
 
 ---
 
+### ✅ **НОВОЕ (11.09.2025): SPLADE интегрирован (финализация M2 Hybrid Search)**
+- Production Defaults: `rag.sparse.method = "SPLADE"` в `settings.json` (не экспонируется в UI/CLI)
+- Конфигурация: добавлен `SparseConfig` в `config.py`, обновлены `RagConfig.from_dict()` и `Config.validate()` (валидация `SPLADE|BM25`)
+- Реализация: `rag/sparse_encoder.py` — `SpladeModelWrapper` + `SparseEncoder(method="SPLADE")` с офлайн-friendly fallback на моки (`MockTokenizer`, `MockSparseModel`)
+- Интеграция: `rag/search_service.py` — выбор sparse-метода из `get_config().rag.sparse`, гибридный поиск учитывает SPLADE
+- Зависимости: `requirements.txt` — добавлены `transformers>=4.44.0`, `datasets>=2.21.0`
+- Тесты: добавлен `tests/rag/test_splade_encoder.py`, обновлён `tests/rag/test_search_service_min_score_zero.py` — unit-прогоны проходят офлайн
+- Документация: перенесён Quick Start в `.clinerules/QUICK_START_RAG_ported.md`, создан `.clinerules/RAG_architecture.md` (зафиксированы Production Defaults)
+
 ## 🏁 **ЗАКЛЮЧЕНИЕ ТЕКУЩЕГО СТАТУСА (Сентябрь 2025)**
 
 **repo_sum достиг полной production-готовности** с завершением всех критических milestone:

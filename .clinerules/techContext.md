@@ -49,6 +49,8 @@ cachetools>=5.3.0                 # LRU/TTL кэширование
 # Hybrid Search (M2)
 rank-bm25>=0.2.2                  # BM25 алгоритм
 nltk>=3.8                         # Токенизация
+transformers>=4.44.0              # Для SPLADE / AutoModelForMaskedLM
+datasets>=2.21.0                  # Вспомогательные утилиты для токенайзеров/датасетов
 
 # Testing & Development
 pytest>=8.3.4                     # Тестирование
@@ -340,6 +342,9 @@ def api_key(self) -> str:
 ```json
 {
   "rag": {
+    "sparse": {
+      "method": "SPLADE"
+    },
     "embeddings": {
       "provider": "fastembed",
       "model_name": "BAAI/bge-small-en-v1.5",
@@ -488,6 +493,16 @@ def health_check(self) -> dict:
         }
     }
 ```
+
+Дополнительно (11.09.2025): Реализация health_check в rag/vector_store.py:
+- Не используется нестабильный метод клиента `get_cluster_info`.
+- Проверка подключения выполняется через `get_collections()` — доступен во всех версиях qdrant-client.
+- Исключена рекурсия: допускается одно переключение клиента (gRPC↔HTTP) и одна повторная попытка.
+- Статусы:
+  - `status`: `connected` или `error`
+  - `collection_status`: `exists` или `not_found`
+  - `error`: текст ошибки (при наличии)
+- Флаги состояния выставляются консистентно: `self._connected`, `self._collection_exists`.
 
 ### Логируемые метрики:
 - Время анализа файла/проекта

@@ -200,12 +200,18 @@ class ParallelismConfig:
 
 
 @dataclass
+class SparseConfig:
+    """Конфигурация sparse поиска"""
+    method: str = field(default_factory=lambda: os.getenv("SPARSE_METHOD", "SPLADE"))
+
+@dataclass
 class RagConfig:
     """Конфигурация RAG системы"""
     embeddings: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
     query_engine: QueryEngineConfig = field(default_factory=QueryEngineConfig)
     parallelism: ParallelismConfig = field(default_factory=ParallelismConfig)
+    sparse: SparseConfig = field(default_factory=SparseConfig)
 
     @classmethod
     def from_dict(cls, data: dict) -> "RagConfig":
@@ -226,6 +232,7 @@ class RagConfig:
             embeddings=EmbeddingConfig(**embeddings_data),
             vector_store=VectorStoreConfig(**vector_store_data),
             query_engine=QueryEngineConfig(**query_engine_data),
+            sparse=SparseConfig(**data.get("sparse", {})),
             parallelism=ParallelismConfig(**data.get("parallelism", {}))
         )
 
@@ -403,6 +410,10 @@ class Config:
         
         if not 0 <= self.rag.query_engine.score_threshold <= 1:
             errors.append("query_engine.score_threshold должен быть в диапазоне 0-1")
+
+        # Валидация sparse конфигурации
+        if self.rag.sparse.method not in ["SPLADE", "BM25"]:
+            errors.append("sparse.method должен быть 'SPLADE' или 'BM25'")
         
         # Валидация parallelism
         if self.rag.parallelism.torch_num_threads <= 0:

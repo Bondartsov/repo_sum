@@ -22,13 +22,13 @@ streamlit>=1.46.0
 ############################
 # FastEmbed - основной эмбеддинг провайдер (ONNX, CPU-first)
 fastembed>=0.3.6
-qdrant-client[fastembed]>=1.15.1
+qdrant-client>=1.15.1
 
 # Sentence Transformers - альтернативный провайдер
 sentence-transformers>=5.1.0
 
 # PyTorch CPU-only
-torch>=2.4.0
+torch>=2.7.0
 
 # FAISS как локальная альтернатива векторной БД
 faiss-cpu>=1.7.4
@@ -43,7 +43,8 @@ rank-bm25>=0.2.2
 nltk>=3.8
 
 # Опционально для SPLADE (если GPU доступен)
-# transformers>=4.30.0
+transformers>=4.44.0
+datasets>=2.21.0
 
 ############################
 # Production infrastructure

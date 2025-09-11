@@ -351,7 +351,7 @@ pytest>=8.3.4
 - **Memory Bank**: `.clinerules/` - полный контекст проекта  
 - **Техническая архитектура**: `.clinerules/techContext.md`
 - **Инструкции для агента**: `AGENTS.md`
-- **Quick Start**: `QUICK_START_RAG.md`
+- **Quick Start**: `.clinerules/QUICK_START_RAG_ported.md`
 
 ### Репозитории и инфраструктура:
 - **GitHub**: `https://github.com/Bondartsov/repo_sum.git`

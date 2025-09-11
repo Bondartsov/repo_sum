@@ -44,6 +44,9 @@
     "code_analysis_prompt_file": "prompts/code_analysis_prompt.md"
   },
   "rag": {
+    "sparse": {
+      "method": "SPLADE"
+    },
     "embeddings": {
       "truncate_dim": 384,
       "normalize_embeddings": true,

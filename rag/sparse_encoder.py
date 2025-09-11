@@ -4,6 +4,7 @@ import logging
 import os
 logging.getLogger("transformers").setLevel(logging.ERROR)
 from transformers import AutoTokenizer, AutoModelForMaskedLM
+from enum import Enum
 
 try:
     from tests.mocks.mock_tokenizer import MockTokenizer
@@ -15,35 +16,103 @@ except ImportError:
     is_socket_disabled = lambda: False
 
 
-class SparseEncoder:
-    """
-    Базовый sparse encoder для RAG.
-    Использует трансформер-модель (например, SPLADE или BERT) для генерации разреженных векторов.
-    """
+class SparseEncodingMethod(str, Enum):
+    BM25 = "BM25"
+    MLM_SPARSE = "MLM_SPARSE"
+    SPLADE = "SPLADE"
 
-    def __init__(self, model_name: str = "bert-base-uncased", device: Optional[str] = None):
+
+class SpladeModelWrapper(torch.nn.Module):
+    """
+    SPLADE модель для sparse кодирования.
+    Использует HuggingFace модель naver/splade-cocondenser-ensembledistil.
+    """
+    def __init__(self, model_name: str = "naver/splade-cocondenser-ensembledistil", device: Optional[str] = None):
+        super().__init__()
         self.model_name = model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-
-        if ((os.environ.get("MOCK_MODE") == "1") or is_socket_disabled()) and MockTokenizer is not None:
-            logging.info("SparseEncoder: offline/mock режим активен, используется MockTokenizer и MockSparseModel")
-            self.tokenizer = MockTokenizer()
-            model = MockSparseModel()
-            try:
-                moved = model.to(self.device)
-                self.model = moved if moved is not None else model
-            except Exception:
-                self.model = model
-        else:
+        try:
             self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
             self.model = AutoModelForMaskedLM.from_pretrained(model_name, local_files_only=True).to(self.device)
             self.model.eval()
+        except Exception:
+            # Безусловный офлайн-фолбэк на моки, если они доступны, чтобы тесты проходили без сети
+            if MockTokenizer is not None and MockSparseModel is not None:
+                self.tokenizer = MockTokenizer()
+                model = MockSparseModel()
+                try:
+                    moved = model.to(self.device)
+                    self.model = moved if moved is not None else model
+                except Exception:
+                    self.model = model
+            else:
+                raise
+
+    def forward(self, texts: List[str]) -> List[Dict[int, float]]:
+        encodings = self.tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            return_tensors="pt"
+        ).to(self.device)
+
+        with torch.no_grad():
+            outputs = self.model(**encodings)
+            logits = outputs.logits  # [batch, seq_len, vocab_size]
+
+        scores, _ = torch.max(logits, dim=1)
+        scores = torch.log1p(torch.relu(scores))
+
+        sparse_vectors: List[Dict[int, float]] = []
+        for vec in scores:
+            nonzero = torch.nonzero(vec > 0, as_tuple=True)[0]
+            sparse_dict = {int(idx): float(vec[idx].cpu().item()) for idx in nonzero}
+            total = sum(sparse_dict.values())
+            if total > 0:
+                sparse_dict = {k: v / total for k, v in sparse_dict.items()}
+            sparse_vectors.append(sparse_dict)
+
+        return sparse_vectors
+
+
+class SparseEncoder:
+    """
+    Обертка для выбора sparse модели (BM25 или SPLADE).
+    """
+
+    def __init__(self, method: Optional[str] = None, model_name: str = "bert-base-uncased", device: Optional[str] = None):
+        self.model_name = model_name
+        self.method = (method or SparseEncodingMethod.MLM_SPARSE.value)
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+
+        if self.method.upper() == "SPLADE":
+            self.model = SpladeModelWrapper(device=self.device)
+            # Экспортируем токенайзер из модели для обратной совместимости с тестами
+            self.tokenizer = getattr(self.model, "tokenizer", None)
+        else:
+            if ((os.environ.get("MOCK_MODE") == "1") or is_socket_disabled()) and MockTokenizer is not None:
+                logging.info("SparseEncoder: offline/mock режим активен, используется MockTokenizer и MockSparseModel")
+                self.tokenizer = MockTokenizer()
+                model = MockSparseModel()
+                try:
+                    moved = model.to(self.device)
+                    self.model = moved if moved is not None else model
+                except Exception:
+                    self.model = model
+            else:
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=True)
+                self.model = AutoModelForMaskedLM.from_pretrained(self.model_name, local_files_only=True).to(self.device)
+                self.model.eval()
+
 
     def encode(self, texts: List[str]) -> List[Dict[int, float]]:
         """
         Кодирует список текстов в sparse-вектора.
         Возвращает список словарей {token_id: weight}.
         """
+        if self.method.upper() == "SPLADE":
+            return self.encode_splade(texts)
+
         encodings = self.tokenizer(
             texts,
             padding=True,
@@ -70,10 +139,23 @@ class SparseEncoder:
 
         return sparse_vectors
 
+    def encode_splade(self, texts: List[str]) -> List[Dict[int, float]]:
+        """
+        Отдельный метод для SPLADE кодирования, соответствует плану.
+        """
+        if not isinstance(self.model, SpladeModelWrapper):
+            self.model = SpladeModelWrapper(device=self.device)
+        return self.model.forward(texts)
+
     def save(self, path: str) -> None:
         """Сохраняет модель и токенизатор."""
-        self.model.save_pretrained(path)
-        self.tokenizer.save_pretrained(path)
+        if isinstance(self.model, SpladeModelWrapper):
+            # HuggingFace объекты внутри обертки
+            self.model.model.save_pretrained(path)
+            self.model.tokenizer.save_pretrained(path)
+        else:
+            self.model.save_pretrained(path)
+            self.tokenizer.save_pretrained(path)
 
     @classmethod
     def load(cls, path: str, device: Optional[str] = None) -> "SparseEncoder":

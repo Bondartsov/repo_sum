@@ -316,26 +316,54 @@ count_lines_in_text = count_lines
 
 
 def setup_logging(level: str = "INFO") -> None:
-    """Настройка логирования"""
+    """Настройка логирования.
+
+    Требования:
+    - В консоли отображать только INFO и ERROR (исключая WARNING и DEBUG).
+    - Файловый лог вести на заданном уровне (по умолчанию INFO).
+    - Не дублировать хендлеры при повторной инициализации (актуально для Streamlit).
+    """
     import logging
     import os
-    
-    # Создаем директорию для логов если её нет
+
+    # Директория для логов
     os.makedirs('logs', exist_ok=True)
-    
+
     level_map = {
         "DEBUG": logging.DEBUG,
         "INFO": logging.INFO,
         "WARNING": logging.WARNING,
         "ERROR": logging.ERROR,
-        "CRITICAL": logging.CRITICAL
+        "CRITICAL": logging.CRITICAL,
     }
-    
-    logging.basicConfig(
-        level=level_map.get(level.upper(), logging.INFO),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('logs/app.log', encoding='utf-8')
-        ]
-    )
+
+    root_level = level_map.get(level.upper(), logging.INFO)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(root_level)
+
+    # Удаляем существующие хендлеры, чтобы избежать дублирования в Streamlit
+    for h in list(root_logger.handlers):
+        root_logger.removeHandler(h)
+
+    # Единый форматтер
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    # Фильтр для консоли: пропускаем только INFO и ERROR
+    class InfoErrorFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            return record.levelno in (logging.INFO, logging.ERROR)
+
+    # Консольный хендлер
+    stream_handler = logging.StreamHandler()
+    # Уровень ставим INFO, а фильтр отсеет WARNING; DEBUG ниже хендлера и так не пройдет
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.addFilter(InfoErrorFilter())
+    stream_handler.setFormatter(formatter)
+
+    # Файловый хендлер (оставляем информативным на уровне root_level)
+    file_handler = logging.FileHandler('logs/app.log', encoding='utf-8')
+    file_handler.setLevel(root_level)
+    file_handler.setFormatter(formatter)
+
+    root_logger.addHandler(stream_handler)
+    root_logger.addHandler(file_handler)
