@@ -492,10 +492,25 @@ def main():
         
         if search_service is not None:
             st.success(f"✅ {rag_status}")
+            
+            # Информация о Jina v3 модели
+            try:
+                config = get_config(require_api_key=False)
+                model_name = config.rag.embeddings.model_name
+                vector_size = config.rag.embeddings.truncate_dim
+                
+                if "jinaai/jina-embeddings-v3" in model_name:
+                    st.info(f"🚀 **Jina v3 Architecture**: {model_name} ({vector_size}d векторы, dual task)")
+                else:
+                    st.info(f"📊 **Embedding Model**: {model_name} ({vector_size}d векторы)")
+            except:
+                st.info("📊 **RAG Model**: Активна")
+            
             if st.button("📊 Статистика RAG"):
                 try:
                     stats = search_service.get_search_stats()  # Убираем run_async для синхронной функции
                     with st.expander("📈 Подробная статистика", expanded=True):
+                        # Основные метрики поиска
                         col1, col2 = st.columns(2)
                         with col1:
                             st.metric("Всего запросов", stats.get('total_queries', 0))
@@ -513,6 +528,27 @@ def main():
                             if stats.get('last_query_time'):
                                 st.caption(f"Последний запрос: {stats['last_query_time'][:19].replace('T', ' ')}")
                             st.metric("Макс. размер кэша", stats.get('cache_max_size', 0))
+                        
+                        st.divider()
+                        
+                        # Техническая информация о модели (только для Jina v3)
+                        try:
+                            config = get_config(require_api_key=False)
+                            if "jinaai/jina-embeddings-v3" in config.rag.embeddings.model_name:
+                                st.markdown("**🔧 Jina v3 Technical Specs:**")
+                                
+                                tech_col1, tech_col2, tech_col3 = st.columns(3)
+                                with tech_col1:
+                                    st.metric("Параметры модели", "570M")
+                                    st.metric("Размерность", f"{config.rag.embeddings.truncate_dim}d")
+                                with tech_col2:
+                                    st.metric("Task Query", config.rag.embeddings.task_query)
+                                    st.metric("Task Passage", config.rag.embeddings.task_passage)
+                                with tech_col3:
+                                    st.metric("Trust Remote Code", "✅" if config.rag.embeddings.trust_remote_code else "❌")
+                                    st.metric("L2 Normalize", "✅" if config.rag.embeddings.get('normalize_embeddings', True) else "❌")
+                        except:
+                            pass  # Ignore config errors in sidebar
                 except Exception as e:
                     st.error(f"Ошибка получения статистики: {e}")
         else:

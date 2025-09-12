@@ -129,9 +129,10 @@ class SearchService:
             
             self._update_stats_safely(cache_misses_incr=1)
             
-            # Генерируем эмбеддинг для запроса
+            # Генерируем эмбеддинг для запроса с задачей retrieval.query (Jina v3)
             embed_start = time.time()
-            query_embeddings = self.embedder.embed_texts([query])
+            query_task = getattr(self.config.rag.embeddings, 'task_query', 'retrieval.query')
+            query_embeddings = self.embedder.embed_texts([query], task=query_task)
             embed_time = time.time() - embed_start
             
             if query_embeddings is None or len(query_embeddings) == 0:
@@ -139,7 +140,7 @@ class SearchService:
                 return []
             
             query_vector = query_embeddings[0]
-            logger.debug(f"Эмбеддинг сгенерирован за {embed_time:.3f}s")
+            logger.debug(f"Эмбеддинг сгенерирован с task='{query_task}' за {embed_time:.3f}s")
             
             # Строим фильтры для Qdrant
             filters = self._build_search_filters(

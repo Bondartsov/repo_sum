@@ -139,16 +139,21 @@ class PromptsConfig:
 @dataclass
 class EmbeddingConfig:
     """Конфигурация эмбеддингов"""
-    provider: str = field(default_factory=lambda: os.getenv("EMBEDDING_PROVIDER", "fastembed"))
-    model_name: str = field(default_factory=lambda: os.getenv("FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5"))
+    provider: str = field(default_factory=lambda: os.getenv("EMBEDDING_PROVIDER", "sentence-transformers"))
+    model_name: str = field(default_factory=lambda: os.getenv("EMB_MODEL_ID", "jinaai/jina-embeddings-v3"))
     precision: str = field(default_factory=lambda: os.getenv("FASTEMBED_PRECISION", "int8"))
-    truncate_dim: int = field(default_factory=lambda: safe_int("EMBEDDING_DIMENSION", "384"))
+    truncate_dim: int = field(default_factory=lambda: safe_int("EMB_DIM", "1024"))
     batch_size_min: int = field(default_factory=lambda: safe_int("EMBEDDING_BATCH_SIZE_MIN", "8"))
     batch_size_max: int = field(default_factory=lambda: safe_int("EMBEDDING_BATCH_SIZE_MAX", "128"))
-    normalize_embeddings: bool = field(default_factory=lambda: safe_bool("EMBEDDING_NORMALIZE", "true"))
+    normalize_embeddings: bool = field(default_factory=lambda: safe_bool("EMB_L2_NORMALIZE", "true"))
     device: str = field(default_factory=lambda: os.getenv("FASTEMBED_DEVICE", "cpu"))
     warmup_enabled: bool = field(default_factory=lambda: safe_bool("EMBEDDING_WARMUP", "true"))
     num_workers: int = field(default_factory=lambda: safe_int("EMBEDDING_WORKERS", "4"))
+    # Новые поля для Jina v3
+    task_query: str = field(default_factory=lambda: os.getenv("EMB_TASK_QUERY", "retrieval.query"))
+    task_passage: str = field(default_factory=lambda: os.getenv("EMB_TASK_PASSAGE", "retrieval.passage"))
+    trust_remote_code: bool = field(default_factory=lambda: safe_bool("EMB_TRUST_REMOTE_CODE", "true"))
+    pooling: str = field(default_factory=lambda: os.getenv("EMB_POOLING", "mean"))
 
 
 @dataclass
@@ -337,8 +342,18 @@ class Config:
         if self.rag.embeddings.precision not in ["int8", "float32"]:
             errors.append("embeddings.precision должен быть 'int8' или 'float32'")
         
-        if not 256 <= self.rag.embeddings.truncate_dim <= 384:
-            errors.append("embeddings.truncate_dim должен быть в диапазоне 256-384")
+        if not 256 <= self.rag.embeddings.truncate_dim <= 1024:
+            errors.append("embeddings.truncate_dim должен быть в диапазоне 256-1024")
+        
+        # Валидация новых полей Jina v3
+        if self.rag.embeddings.task_query.strip() == "":
+            errors.append("embeddings.task_query не может быть пустым")
+        
+        if self.rag.embeddings.task_passage.strip() == "":
+            errors.append("embeddings.task_passage не может быть пустым")
+        
+        if self.rag.embeddings.pooling not in ["mean", "cls", "max"]:
+            errors.append("embeddings.pooling должен быть 'mean', 'cls' или 'max'")
         
         if self.rag.embeddings.batch_size_min <= 0:
             errors.append("embeddings.batch_size_min должен быть положительным числом")

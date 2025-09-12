@@ -24,8 +24,8 @@ streamlit>=1.46.0
 fastembed>=0.3.6
 qdrant-client>=1.15.1
 
-# Sentence Transformers - альтернативный провайдер
-sentence-transformers>=5.1.0
+# Sentence Transformers - основной провайдер для Jina v3 (обновлено для миграции)
+sentence-transformers>=3.0.0
 
 # PyTorch CPU-only
 torch>=2.7.0
@@ -42,9 +42,12 @@ rank-bm25>=0.2.2
 # NLTK для токенизации кода
 nltk>=3.8
 
-# Опционально для SPLADE (если GPU доступен)
+# Transformers для SPLADE и Jina v3 (обновлено для миграции)
 transformers>=4.44.0
 datasets>=2.21.0
+
+# Дополнительные зависимости для Jina v3
+tokenizers>=0.15.0
 
 ############################
 # Production infrastructure

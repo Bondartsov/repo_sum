@@ -733,6 +733,13 @@ def status(detailed):
         config_table.add_row("Sparse метод", getattr(config.rag.sparse, "method", "N/A"))
         config_table.add_row("Квантование", f"{config.rag.vector_store.quantization_type}" if config.rag.vector_store.enable_quantization else "отключено")
         
+        # Дополнительная информация для Jina v3
+        if "jinaai/jina-embeddings-v3" in config.rag.embeddings.model_name:
+            config_table.add_row("🚀 Task Query", config.rag.embeddings.task_query)
+            config_table.add_row("🚀 Task Passage", config.rag.embeddings.task_passage)
+            config_table.add_row("🚀 Trust Remote Code", "✅ Enabled" if config.rag.embeddings.trust_remote_code else "❌ Disabled")
+            config_table.add_row("🚀 Dual Task Architecture", "✅ Active (570M параметров)")
+        
         console.print(config_table)
         
         # Подробная статистика
@@ -795,6 +802,116 @@ def status(detailed):
         logger = logging.getLogger(__name__)
         logger.error(f"Ошибка проверки статуса: {e}", exc_info=True)
         console.print(f"[bold red]❌ Ошибка проверки статуса: {e}[/bold red]")
+        sys.exit(1)
+
+
+@rag.command()
+@click.option('--backup/--no-backup', default=True, help='Создать backup перед миграцией')
+@click.option('--reindex-repo', type=click.Path(exists=True), help='Переиндексировать указанный репозиторий после миграции')
+@click.option('--batch-size', default=32, help='Размер батча для переиндексации')
+@click.option('--force', is_flag=True, help='Принудительная миграция без подтверждения')
+def migrate(backup, reindex_repo, batch_size, force):
+    """Миграция на Jina v3 с dual task архитектурой"""
+    console = Console()
+    
+    try:
+        console.print("[bold blue]🚀 Jina v3 Migration: BGE-small → Jina v3 (384d → 1024d)[/bold blue]")
+        console.print("[dim]Dual Task Architecture: retrieval.query + retrieval.passage[/dim]")
+        
+        if not force:
+            console.print()
+            console.print("[yellow]⚠️  ВНИМАНИЕ: Эта операция изменит векторную БД![/yellow]")
+            console.print("• Старая коллекция 'code_chunks' (384d) будет удалена")
+            console.print("• Новая коллекция 'repo_sum_v3' (1024d) будет создана")
+            console.print("• Потребуется полная переиндексация данных")
+            
+            if not click.confirm("\nПродолжить миграцию?"):
+                console.print("[yellow]Миграция отменена пользователем[/yellow]")
+                return
+        
+        # Создаем backup если нужно
+        if backup:
+            console.print()
+            console.print("[bold blue]📦 Создание backup настроек...[/bold blue]")
+            import subprocess
+            import sys
+            
+            backup_result = subprocess.run([
+                sys.executable, "scripts/backup_env_settings.py"
+            ], capture_output=True, text=True)
+            
+            if backup_result.returncode == 0:
+                console.print("[green]✅ Backup создан успешно[/green]")
+                console.print(f"[dim]{backup_result.stdout.strip()}[/dim]")
+            else:
+                console.print(f"[yellow]⚠️ Backup завершился с предупреждениями: {backup_result.stderr}[/yellow]")
+        
+        # Запускаем database migration
+        console.print()
+        console.print("[bold blue]🗄️ Database Migration: Qdrant коллекции...[/bold blue]")
+        
+        migration_args = [
+            sys.executable, "scripts/database_migration_jina_v3.py",
+            "--action", "migrate"
+        ]
+        
+        if not backup:
+            migration_args.append("--no-backup")
+        
+        if force:
+            migration_args.append("--force")
+        
+        if reindex_repo:
+            migration_args.extend(["--repo-path", str(reindex_repo)])
+            migration_args.extend(["--batch-size", str(batch_size)])
+        
+        migration_result = subprocess.run(migration_args)
+        
+        if migration_result.returncode == 0:
+            console.print()
+            console.print("[bold green]🎉 Миграция на Jina v3 завершена успешно![/bold green]")
+            
+            # Показываем новую конфигурацию
+            console.print()
+            console.print("[bold blue]📊 Новая конфигурация Jina v3:[/bold blue]")
+            
+            info_table = Table()
+            info_table.add_column("Параметр", style="cyan")
+            info_table.add_column("Старое значение", style="red")
+            info_table.add_column("Новое значение", style="green")
+            
+            info_table.add_row("Модель", "BAAI/bge-small-en-v1.5", "jinaai/jina-embeddings-v3")
+            info_table.add_row("Размерность", "384d", "1024d")
+            info_table.add_row("Параметры", "33M", "570M")
+            info_table.add_row("Коллекция", "code_chunks", "repo_sum_v3")
+            info_table.add_row("Архитектура", "Single task", "Dual task (query/passage)")
+            info_table.add_row("Trust Remote Code", "❌", "✅")
+            
+            console.print(info_table)
+            
+            # Рекомендации
+            console.print()
+            console.print("[bold blue]💡 Что дальше:[/bold blue]")
+            console.print("• Проверьте статус: [cyan]python main.py rag status --detailed[/cyan]")
+            console.print("• Протестируйте поиск: [cyan]python main.py rag search 'authentication'[/cyan]")
+            
+            if not reindex_repo:
+                console.print("• Переиндексируйте репозиторий: [cyan]python main.py rag index /path/to/repo[/cyan]")
+            
+            console.print("• В случае проблем: [cyan]bash backups/migration_backup_*/rollback_migration.sh[/cyan]")
+            
+        else:
+            console.print(f"[bold red]❌ Ошибка миграции (код: {migration_result.returncode})[/bold red]")
+            console.print("[dim]Проверьте логи выше для деталей ошибки[/dim]")
+            sys.exit(1)
+            
+    except KeyboardInterrupt:
+        console.print("[yellow]⏹️ Миграция прервана пользователем[/yellow]")
+        sys.exit(1)
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Критическая ошибка миграции: {e}", exc_info=True)
+        console.print(f"[bold red]❌ Критическая ошибка: {e}[/bold red]")
         sys.exit(1)
 
 

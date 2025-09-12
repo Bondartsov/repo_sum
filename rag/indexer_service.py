@@ -353,16 +353,19 @@ class IndexerService:
                 if progress:
                     progress.update(task, description=f"Батч {i//batch_size + 1}")
                 
-                # Генерируем эмбеддинги для батча
+                # Генерируем эмбеддинги для батча с задачей retrieval.passage (Jina v3)
                 texts = [chunk.content for chunk, _ in batch]
                 
                 embed_start = time.time()
-                embeddings = self.embedder.embed_texts(texts)
+                passage_task = getattr(self.config.rag.embeddings, 'task_passage', 'retrieval.passage')
+                embeddings = self.embedder.embed_texts(texts, task=passage_task)
                 self.stats['embedding_time'] += time.time() - embed_start
                 
                 if embeddings is None or len(embeddings) == 0:
                     logger.error(f"Не удалось сгенерировать эмбеддинги для батча {i//batch_size + 1}")
                     continue
+                
+                logger.debug(f"Сгенерированы эмбеддинги с task='{passage_task}' для батча {i//batch_size + 1}")
                 
                 # Подготавливаем точки для Qdrant
                 points = []

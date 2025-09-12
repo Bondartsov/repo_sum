@@ -1,4 +1,4 @@
-# 🏗️ Архитектура RAG системы (с SPLADE)
+# 🏗️ Архитектура RAG системы (Jina v3 + Dual Task)
 
 ## 📋 Общая схема потоков
 
@@ -6,14 +6,18 @@
 flowchart TD
     A[Исходный код] --> B[FileScanner]
     B --> C[CodeChunker]
-    C --> D[CPUEmbedder (FastEmbed)]
+    C --> D[CPUEmbedder (Jina v3 Dual Task)]
     C --> E[SparseEncoder (BM25/SPLADE)]
-    D --> F[Qdrant Vector Store]
-    E --> F[Qdrant Vector Store]
-    F --> G[QueryEngine (RRF + MMR)]
+    D --> F[Qdrant Vector Store (1024d)]
+    E --> F[Qdrant Vector Store (1024d)]
+    F --> G[QueryEngine (RRF + MMR + Adaptive HNSW)]
     G --> H[SearchService]
     H --> I[OpenAIManager (RAG-enhanced prompts)]
     I --> J[Документация / Web UI / CLI]
+    
+    D1[Query Task: retrieval.query] --> D
+    D2[Passage Task: retrieval.passage] --> D
+    D --> D3[570M параметров, 1024d векторы]
 ```
 
 ---
@@ -28,9 +32,11 @@ flowchart TD
 - Логическое чанкирование (по функциям/классам)
 - Поддержка AST для Python и других языков
 
-### 3. CPUEmbedder (FastEmbed)
-- Dense векторы (BAAI/bge-small-en-v1.5)
-- CPU-first оптимизация (int8, normalize_embeddings)
+### 3. CPUEmbedder (Jina v3 Dual Task)
+- **Jina v3 модель**: jinaai/jina-embeddings-v3 (570M параметров, 1024d векторы)
+- **Dual Task Architecture**: retrieval.query/passage с task-specific LoRA адаптерами
+- **CPU-First 1024d**: sentence-transformers>=3.0, trust_remote_code=True
+- **FastEmbed fallback**: BAAI/bge-small-en-v1.5 для совместимости
 
 ### 4. SparseEncoder
 - **BM25** (baseline sparse поиск)
@@ -39,14 +45,17 @@ flowchart TD
   - PyTorch + transformers
   - Expansion токенов для улучшения поиска
 
-### 5. Qdrant Vector Store
-- Хранение dense + sparse векторов
-- ScalarQuantization для оптимизации
-- Репликация и mmap режим
+### 5. Qdrant Vector Store (1024d)
+- **Adaptive HNSW**: динамические параметры (m=16, ef_construct=200 для 1024d)
+- Хранение dense + sparse векторов с поддержкой 1024d
+- ScalarQuantization для оптимизации high-dimensional векторов
+- Репликация и mmap режим для производительности
 
-### 6. QueryEngine
+### 6. QueryEngine (Enhanced)
+- **Adaptive HNSW Search**: оптимизированный поиск для 1024d векторов
 - Reciprocal Rank Fusion (RRF) для объединения dense + sparse
-- Maximum Marginal Relevance (MMR) для диверсификации
+- Maximum Marginal Relevance (MMR) для диверсификации результатов
+- Task-aware поиск с учётом dual task архитектуры
 
 ### 7. SearchService
 - Высокоуровневый API для поиска

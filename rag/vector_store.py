@@ -151,7 +151,8 @@ class QdrantVectorStore:
     
     def _create_collection_config(self) -> Dict[str, Any]:
         """
-        Создаёт CPU-оптимизированную конфигурацию коллекции.
+        Создаёт CPU-оптимизированную конфигурацию коллекции для любой размерности векторов.
+        Поддерживает как 384d (BGE-small), так и 1024d (Jina v3) векторы.
         
         Returns:
             Конфигурация коллекции для Qdrant
@@ -165,12 +166,32 @@ class QdrantVectorStore:
         
         distance = distance_map.get(self.config.distance, Distance.COSINE)
         
+        # Динамическая размерность векторов из конфигурации
+        vector_size = self.config.vector_size
+        logger.debug(f"Создание коллекции с размерностью векторов: {vector_size}d")
+        
+        # Адаптивные HNSW параметры в зависимости от размерности
+        if vector_size >= 1024:  # Jina v3 и другие большие модели
+            # Оптимизация для 1024d+ векторов
+            hnsw_m = max(16, self.config.hnsw_m)  # Минимум 16 для больших векторов
+            hnsw_ef_construct = max(200, self.config.hnsw_ef_construct)  # Минимум 200
+            full_scan_threshold = 8000  # Меньше порог для больших векторов
+            max_indexing_threads = 2    # Ограничиваем потоки для экономии RAM
+            logger.info(f"Используются параметры для больших векторов ({vector_size}d): m={hnsw_m}, ef_construct={hnsw_ef_construct}")
+        else:  # BGE-small и другие малые модели
+            # Стандартные параметры для 384d векторов
+            hnsw_m = self.config.hnsw_m
+            hnsw_ef_construct = self.config.hnsw_ef_construct
+            full_scan_threshold = 10000
+            max_indexing_threads = 4
+            logger.info(f"Используются стандартные параметры для малых векторов ({vector_size}d): m={hnsw_m}, ef_construct={hnsw_ef_construct}")
+        
         # CPU-friendly параметры HNSW
         hnsw_config = HnswConfigDiff(
-            m=self.config.hnsw_m,                    # 16-32 для CPU
-            ef_construct=self.config.hnsw_ef_construct,  # 64-128
-            full_scan_threshold=10000,                   # Полное сканирование для малых коллекций
-            max_indexing_threads=4                       # Ограничение потоков индексации
+            m=hnsw_m,
+            ef_construct=hnsw_ef_construct,
+            full_scan_threshold=full_scan_threshold,
+            max_indexing_threads=max_indexing_threads
         )
         
         # Настройки оптимизатора для CPU

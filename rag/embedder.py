@@ -176,17 +176,27 @@ class CPUEmbedder:
             raise
     
     def _initialize_sentence_transformers(self) -> None:
-        """Инициализирует Sentence Transformers модель"""
+        """Инициализирует Sentence Transformers модель с поддержкой Jina v3"""
         try:
             logger.info(f"Загрузка Sentence Transformers модели: {self.embedding_config.model_name}")
             
             # Параметры для Sentence Transformers
             device = "cpu"  # Принудительно CPU
             
+            # Jina v3 требует trust_remote_code=True для загрузки кастомного кода
+            model_kwargs = {
+                "device": device,
+                "cache_folder": os.path.expanduser("~/.cache/torch/sentence_transformers")
+            }
+            
+            # Добавляем trust_remote_code для Jina v3 и других моделей с кастомным кодом
+            if self.embedding_config.trust_remote_code:
+                model_kwargs["trust_remote_code"] = True
+                logger.info("Включен trust_remote_code для загрузки кастомного кода модели")
+            
             self.model = SentenceTransformer(
                 self.embedding_config.model_name,
-                device=device,
-                cache_folder=os.path.expanduser("~/.cache/torch/sentence_transformers")
+                **model_kwargs
             )
             
             # Настройка precision для SentenceTransformer v5.1.0+
@@ -197,6 +207,17 @@ class CPUEmbedder:
                     logger.info("Установлена int8 precision для Sentence Transformers")
                 except Exception as e:
                     logger.warning(f"Не удалось установить int8 precision: {e}")
+            
+            # Настройка дефолтной задачи для Jina v3 (если поддерживается)
+            try:
+                if hasattr(self.model, '_modules') and len(self.model._modules) > 0:
+                    first_module = self.model._modules[0] if hasattr(self.model, '_modules') else self.model[0]
+                    if hasattr(first_module, 'default_task'):
+                        # Устанавливаем дефолтную задачу для passage (индексация)
+                        first_module.default_task = self.embedding_config.task_passage
+                        logger.info(f"Установлена дефолтная задача: {self.embedding_config.task_passage}")
+            except Exception as e:
+                logger.warning(f"Не удалось установить дефолтную задачу: {e}")
             
             self.provider_name = "sentence-transformers"
             logger.info("Sentence Transformers модель успешно загружена")
@@ -323,13 +344,15 @@ class CPUEmbedder:
             logger.warning(f"Ошибка вычисления размера батча: {e}")
             return self.embedding_config.batch_size_min
     
-    def embed_texts(self, texts: List[str], deadline_ms: int = 1500) -> np.ndarray:
+    def embed_texts(self, texts: List[str], deadline_ms: int = 1500, task: Optional[str] = None) -> np.ndarray:
         """
-        Батчевое кодирование текстов в векторы с контролем времени отклика.
+        Батчевое кодирование текстов в векторы с контролем времени отклика и поддержкой задач.
         
         Args:
             texts: Список текстов для кодирования
             deadline_ms: Максимальное время на обработку в миллисекундах
+            task: Задача для кодирования ("retrieval.query", "retrieval.passage", etc.)
+                  Если None, используется дефолтная задача из конфигурации
             
         Returns:
             numpy массив эмбеддингов размером [len(texts), embedding_dim]
@@ -380,8 +403,8 @@ class CPUEmbedder:
                 batch_texts = texts[i:i + batch_size]
                 
                 try:
-                    # Кодирование батча
-                    batch_embeddings = self._encode_batch(batch_texts)
+                    # Кодирование батча с поддержкой задач
+                    batch_embeddings = self._encode_batch(batch_texts, task)
                     all_embeddings.append(batch_embeddings)
                     
                 except (RuntimeError, MemoryError) as e:
@@ -394,7 +417,7 @@ class CPUEmbedder:
                         self._current_batch_size = max(1, self._current_batch_size // 2)
                         
                         # Пытаемся обработать поэлементно
-                        batch_embeddings = self._encode_fallback(batch_texts)
+                        batch_embeddings = self._encode_fallback(batch_texts, task)
                         all_embeddings.append(batch_embeddings)
                     else:
                         raise
@@ -431,24 +454,47 @@ class CPUEmbedder:
             embedding_dim = self.embedding_config.truncate_dim or 384
             return np.zeros((len(texts), embedding_dim))
     
-    def _encode_batch(self, texts: List[str]) -> np.ndarray:
+    def _encode_batch(self, texts: List[str], task: Optional[str] = None) -> np.ndarray:
         """
-        Кодирование батча текстов с использованием текущего провайдера.
+        Кодирование батча текстов с использованием текущего провайдера и поддержкой задач.
         
         Args:
             texts: Список текстов для кодирования
+            task: Задача для кодирования ("retrieval.query", "retrieval.passage", etc.)
+                  Поддерживается только для sentence-transformers с Jina v3
             
         Returns:
             numpy массив эмбеддингов
         """
         try:
             if self.provider_name == "fastembed":
-                # FastEmbed возвращает generator
+                # FastEmbed не поддерживает task switching - используем как есть
+                if task and task != self.embedding_config.task_passage:
+                    logger.debug(f"FastEmbed не поддерживает task switching, игнорируем task='{task}'")
+                
                 embeddings_gen = self.model.embed(texts)
                 embeddings = list(embeddings_gen)
                 return np.array(embeddings)
                 
             else:  # sentence-transformers
+                # Dual task support для Jina v3 и других моделей с task switching
+                current_task = task or self.embedding_config.task_passage  # дефолт для индексации
+                
+                # Переключение задачи если поддерживается и отличается от текущей
+                task_switched = False
+                if hasattr(self.model, '_modules') and len(self.model._modules) > 0:
+                    try:
+                        first_module = self.model._modules[0] if hasattr(self.model, '_modules') else self.model[0]
+                        if hasattr(first_module, 'default_task'):
+                            previous_task = getattr(first_module, 'default_task', None)
+                            if previous_task != current_task:
+                                first_module.default_task = current_task
+                                task_switched = True
+                                logger.debug(f"Task switched: {previous_task} → {current_task}")
+                    except Exception as e:
+                        logger.warning(f"Не удалось переключить задачу на '{current_task}': {e}")
+                
+                # Кодирование с учетом установленной задачи
                 embeddings = self.model.encode(
                     texts,
                     normalize_embeddings=self.embedding_config.normalize_embeddings,
@@ -456,23 +502,28 @@ class CPUEmbedder:
                     show_progress_bar=False,
                     convert_to_numpy=True
                 )
+                
+                if task_switched:
+                    logger.debug(f"Закодировано {len(texts)} текстов с задачей '{current_task}'")
+                
                 return embeddings
                 
         except Exception as e:
             logger.error(f"Ошибка кодирования батча с {self.provider_name}: {e}")
             raise
     
-    def _encode_fallback(self, texts: List[str]) -> np.ndarray:
+    def _encode_fallback(self, texts: List[str], task: Optional[str] = None) -> np.ndarray:
         """
-        Fallback кодирование - поэлементная обработка при OOM.
+        Fallback кодирование - поэлементная обработка при OOM с поддержкой задач.
         
         Args:
             texts: Список текстов для кодирования
+            task: Задача для кодирования ("retrieval.query", "retrieval.passage", etc.)
             
         Returns:
             numpy массив эмбеддингов
         """
-        logger.info(f"Fallback к поэлементной обработке для {len(texts)} текстов")
+        logger.info(f"Fallback к поэлементной обработке для {len(texts)} текстов с задачей '{task or 'default'}'")
         
         embeddings = []
         for text in texts:
@@ -481,7 +532,8 @@ class CPUEmbedder:
                 if len(embeddings) % 10 == 0:
                     gc.collect()
                 
-                embedding = self._encode_batch([text])
+                # Передаем task в _encode_batch
+                embedding = self._encode_batch([text], task)
                 embeddings.append(embedding)
                 
             except Exception as e:

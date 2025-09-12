@@ -48,16 +48,24 @@
       "method": "SPLADE"
     },
     "embeddings": {
-      "truncate_dim": 384,
+      "model_name": "jinaai/jina-embeddings-v3",
+      "provider": "sentence-transformers",
+      "truncate_dim": 1024,
       "normalize_embeddings": true,
       "warmup_enabled": true,
-      "num_workers": 4
+      "num_workers": 4,
+      "task_query": "retrieval.query",
+      "task_passage": "retrieval.passage",
+      "trust_remote_code": true,
+      "pooling": "mean"
     },
     "vector_store": {
-      "vector_size": 384,
+      "collection_name": "repo_sum_v3",
+      "vector_size": 1024,
       "distance": "cosine",
-      "hnsw_m": 24,
-      "hnsw_ef_construct": 128,
+      "hnsw_m": 16,
+      "hnsw_ef_construct": 200,
+      "search_hnsw_ef": 128,
       "quantization_type": "SQ",
       "enable_quantization": true,
       "mmap": true

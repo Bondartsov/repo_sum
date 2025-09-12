@@ -73,7 +73,7 @@ class MockCPUEmbedder:
         self._is_warmed_up = False
         self._current_batch_size = embedding_config.batch_size_min
         
-        # Вычисляем размерность эмбеддингов
+        # Вычисляем размерность эмбеддингов с поддержкой Jina v3
         if embedding_config.truncate_dim > 0:
             self.embedding_dim = embedding_config.truncate_dim
         else:
@@ -82,8 +82,10 @@ class MockCPUEmbedder:
                 'BAAI/bge-small-en-v1.5': 384,
                 'all-MiniLM-L6-v2': 384,
                 'all-mpnet-base-v2': 768,
+                'jinaai/jina-embeddings-v3': 1024,  # Jina v3 поддержка
+                'sentence-transformers/all-MiniLM-L6-v2': 384,
             }
-            self.embedding_dim = model_dimensions.get(embedding_config.model_name, 384)
+            self.embedding_dim = model_dimensions.get(embedding_config.model_name, 1024)  # Дефолт 1024d для Jina v3
         
         # Статистика производительности (имитируем реальную)
         self.stats = {
@@ -122,13 +124,14 @@ class MockCPUEmbedder:
         
         return embedding
     
-    def embed_texts(self, texts: List[str], deadline_ms: int = 1500) -> np.ndarray:
+    def embed_texts(self, texts: List[str], deadline_ms: int = 1500, task: Optional[str] = None) -> np.ndarray:
         """
-        Генерирует фиктивные эмбеддинги для списка текстов.
+        Генерирует фиктивные эмбеддинги для списка текстов с поддержкой dual task (Jina v3).
         
         Args:
             texts: Список текстов для кодирования
             deadline_ms: Максимальное время на обработку (имитируется)
+            task: Задача для специализированных эмбеддингов (retrieval.query/passage)
             
         Returns:
             numpy массив эмбеддингов размером [len(texts), embedding_dim]
@@ -142,10 +145,17 @@ class MockCPUEmbedder:
         if self.embedding_config.warmup_enabled and not self._is_warmed_up:
             self.warmup()
         
-        # Генерируем эмбеддинги для всех текстов
+        # Имитируем dual task switching для Jina v3
+        effective_task = task or getattr(self.embedding_config, 'task_passage', 'retrieval.passage')
+        if hasattr(self.embedding_config, 'model_name') and 'jina' in self.embedding_config.model_name.lower():
+            logger.debug(f"Mock Jina v3 dual task switching: {effective_task}")
+        
+        # Генерируем эмбеддинги для всех текстов с учетом task
         embeddings = []
         for text in texts:
-            embedding = self._generate_deterministic_embedding(text)
+            # Добавляем task в hash для различных эмбеддингов query vs passage
+            text_with_task = f"{text}|task:{effective_task}" if effective_task else text
+            embedding = self._generate_deterministic_embedding(text_with_task)
             embeddings.append(embedding)
         
         # Имитируем время обработки (пропорционально количеству текстов)
@@ -161,9 +171,10 @@ class MockCPUEmbedder:
         self.stats['total_time'] += total_time
         self.stats['batch_count'] += 1
         
+        task_info = f" (task: {effective_task})" if effective_task else ""
         logger.debug(
             f"MockEmbedder обработал {len(texts)} текстов за {total_time:.3f}s "
-            f"(размерность: {result.shape})"
+            f"(размерность: {result.shape}){task_info}"
         )
         
         return result
