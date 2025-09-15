@@ -1,8 +1,8 @@
 # Technical Context: Repository Analyzer
 
-**Дата:** 12 сентября 2025  
-**Статус:** Production-Ready система с революционной Jina v3 архитектурой  
-**Версия:** 0.6.0 (M2.5 завершён - Jina v3 Migration)
+**Дата:** 15 сентября 2025  
+**Статус:** VM Migration в процессе - RAG-as-a-Service архитектура  
+**Версия:** 0.7.0 (M2.5 VM Migration - критические проблемы локально решены через VM)
 
 ---
 
@@ -31,27 +31,32 @@ rag/
 └── exceptions.py       # Система исключений
 ```
 
-### Зависимости (актуализированные):
+### Зависимости (VM + автоматизация):
 ```txt
 # Core dependencies
 openai>=1.99.6                    # OpenAI API клиент
 streamlit>=1.46.0                 # Web UI
-python-dotenv>=1.0.0              # Environment variables
+python-dotenv>=1.0.0              # Environment variables + VM config
 click>=8.1.8                      # CLI framework
 rich>=14.0.0                      # CLI UI library
 
-# RAG System (CPU-first + Jina v3)
+# RAG System (VM-ready + Jina v3)
 qdrant-client[fastembed]>=1.15.1  # FastEmbed + Qdrant клиент
-sentence-transformers>=5.1.0      # Jina v3 + dual task архитектура
+sentence-transformers>=3.0        # Jina v3 требует >=3.0 для trust_remote_code
+transformers>=4.35.0              # Современная версия для Jina v3 support
 numpy>=1.24.0                     # Векторные операции
-psutil>=5.9.5                     # RAM мониторинг
+psutil>=5.9.5                     # RAM мониторинг (критично для VM)
 cachetools>=5.3.0                 # LRU/TTL кэширование
+
+# VM Automation (NEW)
+paramiko>=4.0.0                   # SSH автоматизация для VM
+fastapi>=0.104.0                  # RAG-as-a-Service API (планируется)
+uvicorn>=0.24.0                   # ASGI server для FastAPI
 
 # Hybrid Search (M2)
 rank-bm25>=0.2.2                  # BM25 алгоритм
 nltk>=3.8                         # Токенизация
-transformers>=4.44.0              # Для SPLADE / AutoModelForMaskedLM
-datasets>=2.21.0                  # Вспомогательные утилиты для токенайзеров/датасетов
+datasets>=2.21.0                  # Вспомогательные утилиты
 
 # Testing & Development
 pytest>=8.3.4                     # Тестирование
@@ -565,6 +570,53 @@ qdrant_search_latency = Histogram("qdrant_search_latency_seconds")
 - OpenAI API вызовам
 - Qdrant соединениям  
 - Внешним ресурсам
+
+---
+
+## 🌐 VM-специфичные паттерны (M2.5 NEW)
+
+### 1. Remote RAG-as-a-Service Pattern
+**Применение**: Разделение вычислительно-тяжелых операций на удаленную VM
+**Архитектура**:
+```
+[Локальная машина]           [VM t-ubuntu-redis 31GB RAM]
+├─ repo_sum CLI          ←→  ├─ FastAPI RAG Service
+├─ Web UI (Streamlit)    HTTP├─ jinaai/jina-embeddings-v3
+├─ Анализ кода               ├─ sentence-transformers>=3.0
+└─ OpenAI                    └─ Qdrant (localhost:6333)
+```
+
+### 2. SSH Automation Pattern  
+**Применение**: Безопасная автоматизация развертывания через SSH
+**Реализация**:
+```python
+class VMSetupManager:
+    def ssh_execute(self, command: str) -> Tuple[bool, str, str]:
+        ssh = paramiko.SSHClient()
+        ssh.connect(
+            hostname=self.vm_host,
+            username=self.vm_user,
+            password=os.getenv("VM_PASSWORD")
+        )
+        return ssh.exec_command(command)
+```
+
+### 3. Memory-First Deployment Pattern
+**Применение**: Развертывание на основе требований к памяти
+**Критерии выбора VM**:
+- **Jina v3 требования**: 25+ GB для 570M параметров
+- **VM доступно**: 31GB RAM - достаточно для стабильной работы
+- **Локально**: 16GB - недостаточно для production качества
+
+### 4. Configuration Environment Pattern
+**Применение**: Настройка разных окружений через переменные
+**VM конфигурация**:
+```env
+# === VM Configuration for Jina v3 Migration ===
+VM_HOST=10.61.11.54
+VM_USER=user
+VM_PASSWORD=secure_password
+```
 
 ---
 

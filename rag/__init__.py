@@ -7,7 +7,9 @@ RAG (Retrieval-Augmented Generation) система для анализатор�
 - QueryEngine: Движок поиска с поддержкой гибридного поиска и MMR
 """
 
-from .embedder import CPUEmbedder
+# ✅ ИСПРАВЛЕНО: Импортируем REMOTE версии с алиасами для обратной совместимости
+from .remote_embedder import RemoteVMEmbedder as CPUEmbedder
+from .remote_vector_store import RemoteVMVectorStore as QdrantVectorStore
 from .exceptions import (
     RagException,
     EmbeddingException,
@@ -18,14 +20,8 @@ from .exceptions import (
     OutOfMemoryException
 )
 
-# Импорт основных модулей
-try:
-    from .vector_store import QdrantVectorStore
-    VectorStore = None  # Базовый класс пока не реализован
-except ImportError:
-    # Модуль еще не реализован
-    VectorStore = None
-    QdrantVectorStore = None
+# Базовые классы
+VectorStore = None  # Базовый класс пока не реализован
 
 try:
     from .query_engine import CPUQueryEngine

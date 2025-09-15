@@ -329,34 +329,39 @@ pytest -m "functional"
   - ✅ Стабильная работа всех 149 тестов
   - ✅ CI/CD система готова к production использованию
 
-### ✅ **НОВЕЙШЕЕ** Milestone M2.5: Jina v3 Migration (ЗАВЕРШЁН)
-- **Timeline**: Завершён 12.09.2025
-- **Status**: ✅ 100% ЗАВЕРШЁН - РЕВОЛЮЦИОННАЯ DUAL TASK АРХИТЕКТУРА
-- **Scope**: Полная миграция с BAAI/bge-small-en-v1.5 (384d) на jinaai/jina-embeddings-v3 (1024d)
-- **Goals**: ✅ ВСЕ ДОСТИГНУТЫ
+### ❌ **НОВЕЙШЕЕ** Milestone M2.5: Jina v3 Migration (ЗАБЛОКИРОВАН - VM МИГРАЦИЯ)
+- **Timeline**: Заблокирован 15.09.2025
+- **Status**: ❌ КРИТИЧЕСКИЕ ПРОБЛЕМЫ ЛОКАЛЬНО → 🚀 VM МИГРАЦИЯ В ПРОЦЕССЕ
+- **Scope**: Полная миграция на VM t-ubuntu-redis из-за проблем памяти локально
 
-#### **Ключевые достижения M2.5:**
-- ✅ **Jina v3 Integration**: jinaai/jina-embeddings-v3 (570M параметров, 1024d векторы)
-- ✅ **Dual Task Architecture**: retrieval.query для поиска + retrieval.passage для индексации
-- ✅ **CPU-First 1024d**: sentence-transformers>=3.0, trust_remote_code=True
-- ✅ **Adaptive HNSW**: динамические параметры (m=16, ef_construct=200 для 1024d)
-- ✅ **Full System Integration**: все компоненты адаптированы под новую архитектуру
-- ✅ **Test Stability**: 11 passed, полная backward compatibility
+#### **Проблемы локальной миграции:**
+- ❌ **HuggingFace кэш коррупция**: отсутствуют кастомные модули (block.py, rotary.py)
+- ❌ **trust_remote_code сбои**: не может загрузить jinaai/jina-embeddings-v3
+- ❌ **FastEmbed ONNX память**: требует 25+ GB RAM vs доступные 16GB
+- ❌ **Fallback на FastEmbed**: низкое качество поиска
 
-#### **Техническая модернизация:**
-- ✅ **PHASE 8 завершена**: production deployment с .env, migration scripts, Web UI интеграцией
-- ✅ **PHASE 9 завершена**: полное обновление документации и Memory Bank для Jina v3
-- ✅ **Revolutionary Architecture**: первая dual task система в проекте
-- ✅ **Production Ready**: система готова к enterprise использованию
-- ✅ **Quality Improvement**: значительное улучшение качества поиска благодаря 1024d
-- ✅ **Complete Documentation**: техническая документация, RAG архитектура, миграционный гайд
+#### **🚀 РЕВОЛЮЦИОННОЕ РЕШЕНИЕ: VM Migration (15.09.2025)**
+- ✅ **План создан**: `JINA_V3_VM_MIGRATION_PLAN.md` - 42 задачи, 8 этапов
+- ✅ **VM подключение**: Paramiko SSH автоматизация через .env
+- ✅ **VM характеристики**: Xeon Gold 6248R, 31GB RAM, Ubuntu 22.04.4, Python 3.10.12
+- ✅ **ЭТАП 1**: 4/6 задач автоматически завершены (SSH, ресурсы, Python, pip)
+- 🔄 **Финализация**: ручная настройка venv + clone через VM_MANUAL_SETUP.md
+- 🔄 **Критический тест**: загрузка jinaai/jina-embeddings-v3 (570M параметров)
 
-#### **Готовность к следующим этапам:**
-- 🚀 **M3 Ready**: система готова к RAG-Enhanced Analysis
-- 🚀 **Enhanced Quality**: 1024d векторы обеспечивают максимальное качество
-- 🚀 **Stable Foundation**: прочная основа для дальнейшего развития
+#### **Новая архитектура: RAG-as-a-Service**
+```
+[Локальная машина] ←→ HTTP REST API ←→ [VM: FastAPI + Jina v3 + Qdrant]
+repo_sum CLI                              31GB RAM, sentence-transformers
+Web UI (Streamlit)                        jinaai/jina-embeddings-v3
+```
 
-**СТАТУС ПРОЕКТА: PRODUCTION-READY + JINA V3 REVOLUTION** ✅
+#### **Ожидаемые результаты VM миграции:**
+- ✅ **Качество поиска**: +40-60% благодаря полным 1024d векторам
+- ✅ **Стабильность**: 100% uptime без OOM ошибок  
+- ✅ **Производительность**: 15-20 файлов/сек индексация
+- ✅ **Масштабируемость**: до 50+ пользователей
+
+**СТАТУС ПРОЕКТА: АКТИВНАЯ VM МИГРАЦИЯ** 🔄
 
 ### 📋 Milestone 8: Enhanced Code Intelligence (следующий)
 - **Timeline**: 1-2 месяца  

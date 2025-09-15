@@ -19,8 +19,8 @@ from rich.syntax import Syntax
 from rich.panel import Panel
 
 from config import Config
-from .embedder import CPUEmbedder
-from .vector_store import QdrantVectorStore
+# ✅ ИСПРАВЛЕНО: Используем remote версии через алиасы
+from . import CPUEmbedder, QdrantVectorStore
 from .exceptions import VectorStoreException
 
 logger = logging.getLogger(__name__)

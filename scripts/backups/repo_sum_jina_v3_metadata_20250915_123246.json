@@ -1,0 +1,12 @@
+{
+  "collection_name": "repo_sum_jina_v3",
+  "backup_timestamp": "2025-09-15T12:32:46.772488+00:00",
+  "status": "green",
+  "vectors_count": null,
+  "points_count": 418,
+  "indexed_vectors_count": 0,
+  "config": {
+    "vector_size": 384,
+    "distance": "Cosine"
+  }
+}

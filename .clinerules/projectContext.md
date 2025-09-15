@@ -1,8 +1,8 @@
 # Project Context: Repository Analyzer
 
-**Дата:** 11 сентября 2025  
-**Версия:** 1.8.0 (M2 завершён)  
-**Статус:** Production-Ready с активной roadmap развития
+**Дата:** 15 сентября 2025  
+**Версия:** 1.9.0 (M2.5 VM Migration в процессе)  
+**Статус:** VM Migration - революционный переход к RAG-as-a-Service
 
 ---
 

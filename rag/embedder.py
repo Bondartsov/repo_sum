@@ -474,7 +474,10 @@ class CPUEmbedder:
                 
                 embeddings_gen = self.model.embed(texts)
                 embeddings = list(embeddings_gen)
-                return np.array(embeddings)
+                embeddings_array = np.array(embeddings)
+                
+                # Применяем Matryoshka сжатие и нормализацию для FastEmbed
+                return self._apply_matryoshka_and_normalize(embeddings_array)
                 
             else:  # sentence-transformers
                 # Dual task support для Jina v3 и других моделей с task switching
@@ -494,10 +497,11 @@ class CPUEmbedder:
                     except Exception as e:
                         logger.warning(f"Не удалось переключить задачу на '{current_task}': {e}")
                 
-                # Кодирование с учетом установленной задачи
+                # ВАЖНО: Для Jina v3 Matryoshka - кодируем БЕЗ нормализации,
+                # затем применяем MRL сжатие, потом L2-нормализация
                 embeddings = self.model.encode(
                     texts,
-                    normalize_embeddings=self.embedding_config.normalize_embeddings,
+                    normalize_embeddings=False,  # Нормализуем вручную после MRL
                     batch_size=len(texts),
                     show_progress_bar=False,
                     convert_to_numpy=True
@@ -506,12 +510,52 @@ class CPUEmbedder:
                 if task_switched:
                     logger.debug(f"Закодировано {len(texts)} текстов с задачей '{current_task}'")
                 
-                return embeddings
+                # Применяем Matryoshka сжатие и нормализацию
+                return self._apply_matryoshka_and_normalize(embeddings)
                 
         except Exception as e:
             logger.error(f"Ошибка кодирования батча с {self.provider_name}: {e}")
             raise
     
+    def _apply_matryoshka_and_normalize(self, embeddings: np.ndarray) -> np.ndarray:
+        """
+        Применяет Matryoshka сжатие и L2-нормализацию к эмбеддингам.
+        
+        ВАЖНО: Порядок операций для Jina v3 MRL:
+        1. Matryoshka truncation (1024d → 384d)
+        2. L2 normalization
+        
+        Args:
+            embeddings: numpy массив эмбеддингов размером [batch_size, original_dim]
+            
+        Returns:
+            numpy массив эмбеддингов размером [batch_size, truncate_dim] с L2-нормализацией
+        """
+        if embeddings.size == 0:
+            return embeddings
+            
+        try:
+            # 1. Matryoshka truncation (если необходимо)
+            if (self.embedding_config.truncate_dim > 0 and 
+                embeddings.shape[1] > self.embedding_config.truncate_dim):
+                embeddings = embeddings[:, :self.embedding_config.truncate_dim]
+                logger.debug(f"Применено Matryoshka сжатие: {embeddings.shape[1]}d → {self.embedding_config.truncate_dim}d")
+            
+            # 2. L2 normalization (если включено в конфигурации)
+            if self.embedding_config.normalize_embeddings:
+                norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+                # Избегаем деления на ноль
+                norms[norms == 0.0] = 1.0
+                embeddings = embeddings / norms
+                logger.debug(f"Применена L2-нормализация для {embeddings.shape[0]} эмбеддингов")
+                
+            return embeddings
+            
+        except Exception as e:
+            logger.error(f"Ошибка применения Matryoshka и нормализации: {e}")
+            # Возвращаем исходные эмбеддинги в случае ошибки
+            return embeddings
+
     def _encode_fallback(self, texts: List[str], task: Optional[str] = None) -> np.ndarray:
         """
         Fallback кодирование - поэлементная обработка при OOM с поддержкой задач.

@@ -859,17 +859,31 @@ class QdrantVectorStore:
         search_filter: Optional[Filter]
     ) -> List[Dict]:
         """
-        Выполняет sparse поиск (BM25/TF-IDF).
+        Выполняет sparse поиск (BM25/TF-IDF) с правильным форматом для qdrant-client >= 1.15.1.
         """
         try:
+            # Конвертируем sparse_vector в правильный формат для Qdrant API
+            # В новых версиях qdrant-client нужен SparseVector объект
+            from qdrant_client.models import SparseVector
+            
+            # Создаем SparseVector объект из Dict[int, float]
+            indices = list(sparse_vector.keys())
+            values = list(sparse_vector.values())
+            
+            sparse_vector_obj = SparseVector(
+                indices=indices,
+                values=values
+            )
+            
             results = self.active_client.search(
                 collection_name=self.config.collection_name,
-                query_vector={"sparse": sparse_vector},
+                query_vector=sparse_vector_obj,  # Используем SparseVector объект
                 query_filter=search_filter,
                 limit=top_k,
                 with_payload=True,
                 with_vectors=False
             )
+            
             formatted_results = []
             for result in results:
                 formatted_results.append({
@@ -878,8 +892,13 @@ class QdrantVectorStore:
                     "payload": result.payload or {}
                 })
             return formatted_results
+            
+        except ImportError as ie:
+            logger.warning(f"SparseVector не найден в qdrant-client, отключаем sparse поиск: {ie}")
+            return []
         except Exception as e:
             logger.error(f"Ошибка sparse поиска: {e}")
+            # Fallback: возвращаем пустой список вместо ошибки
             return []
     
     async def health_check(self) -> Dict[str, Any]:

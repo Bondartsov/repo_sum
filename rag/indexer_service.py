@@ -21,8 +21,8 @@ from file_scanner import FileScanner
 from code_chunker import CodeChunker
 from parsers.base_parser import ParserRegistry
 from utils import FileInfo, ParsedFile, CodeChunk
-from .embedder import CPUEmbedder
-from .vector_store import QdrantVectorStore
+# ✅ ИСПРАВЛЕНО: Используем remote версии через алиасы
+from . import CPUEmbedder, QdrantVectorStore
 from .exceptions import VectorStoreException, VectorStoreConnectionError
 
 logger = logging.getLogger(__name__)

@@ -1,0 +1,370 @@
+"""
+FastAPI сервис для RAG-as-a-Service на VM с Jina v3.
+
+Основные эндпоинты:
+- POST /embeddings - получение эмбеддингов от Jina v3
+- POST /search - гибридный поиск по векторам
+- POST /index - индексация документов
+- GET /health - проверка состояния
+"""
+
+import os
+import sys
+import asyncio
+import logging
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+import numpy as np
+import uvicorn
+
+# Добавляем текущую директорию в Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Импортируем оригинальные (локальные) версии для VM
+try:
+    from rag.embedder import CPUEmbedder
+    from rag.vector_store import QdrantVectorStore
+    from rag.search_service import SearchService
+    from rag.indexer_service import IndexerService
+    from config import get_config
+except ImportError as e:
+    print(f"Ошибка импорта: {e}")
+    print("Убедитесь, что все зависимости установлены на VM")
+    sys.exit(1)
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Pydantic модели для API
+class EmbeddingRequest(BaseModel):
+    texts: List[str] = Field(..., description="Список текстов для эмбеддинга")
+    task: Optional[str] = Field("retrieval.passage", description="Задача для dual task архитектуры")
+    truncate_dim: Optional[int] = Field(384, description="Размерность для Matryoshka сжатия")
+    normalize: bool = Field(True, description="Применять L2 нормализацию")
+
+class SearchRequest(BaseModel):
+    query: str = Field(..., description="Поисковый запрос")
+    top_k: int = Field(10, description="Количество результатов")
+    use_hybrid: bool = Field(True, description="Использовать гибридный поиск")
+    filters: Dict[str, Any] = Field(default_factory=dict, description="Фильтры по метаданным")
+    task: str = Field("retrieval.query", description="Задача для query эмбеддинга")
+
+class IndexRequest(BaseModel):
+    documents: List[Dict[str, Any]] = Field(..., description="Документы для индексации")
+    batch_size: int = Field(512, description="Размер батча для обработки")
+    recreate: bool = Field(False, description="Пересоздать коллекцию")
+
+class EmbeddingResponse(BaseModel):
+    embeddings: List[List[float]]
+    model_name: str
+    embedding_dim: int
+    processing_time: float
+
+class SearchResponse(BaseModel):
+    results: List[Dict[str, Any]]
+    query_time: float
+    total_found: int
+    hybrid_used: bool
+
+class IndexResponse(BaseModel):
+    indexed_count: int
+    status: str
+    processing_time: float
+    collection_info: Dict[str, Any]
+
+# Глобальные сервисы
+services = {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Инициализация и очистка сервисов"""
+    logger.info("🚀 Инициализация RAG-as-a-Service на VM...")
+    
+    try:
+        # Получаем конфигурацию
+        config = get_config()
+        
+        # Инициализируем эмбеддер с Jina v3
+        logger.info("Инициализация Jina v3 эмбеддера...")
+        services['embedder'] = CPUEmbedder(
+            embedding_config=config.rag.embeddings,
+            parallelism_config=config.rag.parallelism
+        )
+        
+        # Прогрев модели
+        if config.rag.embeddings.warmup_enabled:
+            services['embedder'].warmup()
+        
+        # Инициализируем векторное хранилище
+        logger.info("Инициализация Qdrant...")
+        services['vector_store'] = QdrantVectorStore(config.rag.vector_store)
+        await services['vector_store'].initialize_collection()
+        
+        # Инициализируем сервисы поиска и индексации
+        services['search_service'] = SearchService(
+            embedder=services['embedder'],
+            vector_store=services['vector_store'],
+            query_config=config.rag.query_engine
+        )
+        
+        services['indexer_service'] = IndexerService(
+            embedder=services['embedder'],
+            vector_store=services['vector_store']
+        )
+        
+        logger.info("✅ Все сервисы успешно инициализированы")
+        
+        yield
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации сервисов: {e}")
+        raise
+    
+    finally:
+        # Очистка ресурсов
+        logger.info("Очистка ресурсов...")
+        if 'vector_store' in services:
+            await services['vector_store'].close()
+        if 'indexer_service' in services:
+            await services['indexer_service'].close()
+
+# Создаем FastAPI приложение
+app = FastAPI(
+    title="RAG-as-a-Service VM",
+    description="Сервис эмбеддингов и поиска на базе Jina v3 и Qdrant",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+@app.get("/")
+async def root():
+    """Корневой эндпоинт"""
+    return {
+        "service": "RAG-as-a-Service VM",
+        "version": "1.0.0",
+        "model": "jinaai/jina-embeddings-v3",
+        "status": "running"
+    }
+
+@app.get("/health")
+async def health_check():
+    """Проверка состояния сервиса"""
+    try:
+        health_info = {
+            "status": "healthy",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "services": {}
+        }
+        
+        # Проверка эмбеддера
+        if 'embedder' in services:
+            embedder_stats = services['embedder'].get_stats()
+            health_info['services']['embedder'] = {
+                "status": "ready" if embedder_stats.get('is_warmed_up') else "warming_up",
+                "model": embedder_stats.get('model_name'),
+                "provider": embedder_stats.get('provider')
+            }
+        
+        # Проверка векторного хранилища
+        if 'vector_store' in services:
+            vs_health = await services['vector_store'].health_check()
+            health_info['services']['vector_store'] = vs_health
+            health_info['collection_status'] = 'exists' if vs_health.get('status') == 'connected' else 'unknown'
+            health_info['qdrant_status'] = vs_health.get('status', 'unknown')
+            health_info['vector_count'] = vs_health.get('collection_info', {}).get('vectors_count', 0)
+        
+        return health_info
+        
+    except Exception as e:
+        logger.error(f"Ошибка health check: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy", 
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        )
+
+@app.post("/embeddings", response_model=EmbeddingResponse)
+async def get_embeddings(request: EmbeddingRequest):
+    """Получение эмбеддингов от Jina v3"""
+    if 'embedder' not in services:
+        raise HTTPException(status_code=503, detail="Embedder не инициализирован")
+    
+    try:
+        start_time = asyncio.get_event_loop().time()
+        
+        # Получаем эмбеддинги с поддержкой dual task
+        embeddings = services['embedder'].embed_texts(
+            texts=request.texts,
+            task=request.task,
+            deadline_ms=30000
+        )
+        
+        # Применяем Matryoshka сжатие если нужно
+        if request.truncate_dim and request.truncate_dim < embeddings.shape[1]:
+            embeddings = embeddings[:, :request.truncate_dim]
+        
+        processing_time = asyncio.get_event_loop().time() - start_time
+        
+        return EmbeddingResponse(
+            embeddings=embeddings.tolist(),
+            model_name="jinaai/jina-embeddings-v3",
+            embedding_dim=embeddings.shape[1],
+            processing_time=processing_time
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения эмбеддингов: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка эмбеддинга: {str(e)}")
+
+@app.post("/search", response_model=SearchResponse)
+async def search_documents(request: SearchRequest):
+    """Гибридный поиск по документам"""
+    if 'search_service' not in services:
+        raise HTTPException(status_code=503, detail="Search service не инициализирован")
+    
+    try:
+        start_time = asyncio.get_event_loop().time()
+        
+        # Выполняем поиск через SearchService
+        results = await services['search_service'].search(
+            query_text=request.query,
+            top_k=request.top_k,
+            filters=request.filters,
+            use_hybrid=request.use_hybrid,
+            task=request.task
+        )
+        
+        query_time = asyncio.get_event_loop().time() - start_time
+        
+        return SearchResponse(
+            results=results,
+            query_time=query_time,
+            total_found=len(results),
+            hybrid_used=request.use_hybrid
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка поиска: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка поиска: {str(e)}")
+
+@app.post("/index", response_model=IndexResponse)
+async def index_documents(request: IndexRequest, background_tasks: BackgroundTasks):
+    """Индексация документов"""
+    if 'indexer_service' not in services:
+        raise HTTPException(status_code=503, detail="Indexer service не инициализирован")
+    
+    try:
+        start_time = asyncio.get_event_loop().time()
+        
+        # Подготавливаем документы для индексации
+        points = []
+        for doc in request.documents:
+            point = {
+                'id': doc.get('id'),
+                'text': doc.get('text', ''),
+                'metadata': doc.get('metadata', {}),
+                'timestamp': doc.get('timestamp', datetime.now(timezone.utc).isoformat())
+            }
+            points.append(point)
+        
+        # Выполняем индексацию
+        indexed_count = await services['indexer_service'].index_documents(
+            documents=points,
+            batch_size=request.batch_size,
+            recreate_collection=request.recreate
+        )
+        
+        processing_time = asyncio.get_event_loop().time() - start_time
+        
+        # Получаем информацию о коллекции
+        collection_info = {}
+        if 'vector_store' in services:
+            vs_health = await services['vector_store'].health_check()
+            collection_info = vs_health.get('collection_info', {})
+        
+        return IndexResponse(
+            indexed_count=indexed_count,
+            status="success",
+            processing_time=processing_time,
+            collection_info=collection_info
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка индексации: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка индексации: {str(e)}")
+
+@app.post("/collection/recreate")
+async def recreate_collection():
+    """Пересоздание коллекции"""
+    if 'vector_store' not in services:
+        raise HTTPException(status_code=503, detail="Vector store не инициализирован")
+    
+    try:
+        await services['vector_store'].initialize_collection(recreate=True)
+        return {"status": "success", "message": "Коллекция пересоздана"}
+    except Exception as e:
+        logger.error(f"Ошибка пересоздания коллекции: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка пересоздания: {str(e)}")
+
+@app.get("/collection/info")
+async def get_collection_info():
+    """Информация о коллекции"""
+    if 'vector_store' not in services:
+        raise HTTPException(status_code=503, detail="Vector store не инициализирован")
+    
+    try:
+        health_info = await services['vector_store'].health_check()
+        return {
+            "collection_info": health_info.get('collection_info', {}),
+            "status": health_info.get('status'),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Ошибка получения информации о коллекции: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+
+@app.get("/stats")
+async def get_stats():
+    """Статистика всех сервисов"""
+    try:
+        stats = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "services": {}
+        }
+        
+        if 'embedder' in services:
+            stats['services']['embedder'] = services['embedder'].get_stats()
+        
+        if 'vector_store' in services:
+            stats['services']['vector_store'] = services['vector_store'].get_stats()
+        
+        if 'search_service' in services:
+            stats['services']['search_service'] = services['search_service'].get_stats()
+        
+        return stats
+    except Exception as e:
+        logger.error(f"Ошибка получения статистики: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+
+if __name__ == "__main__":
+    # Запуск сервиса
+    logger.info("🚀 Запуск RAG-as-a-Service на VM...")
+    uvicorn.run(
+        app,
+        host="0.0.0.0",  # Слушаем на всех интерфейсах
+        port=8000,
+        log_level="info",
+        access_log=True
+    )

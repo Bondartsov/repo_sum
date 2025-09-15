@@ -1,3 +1,10 @@
+# 🔄 Обновление конфигурации для Jina v3 на VM
+
+**Jina v3 успешно работает! Теперь обновим конфигурацию repo_sum:**
+
+## Команда 1: Создание правильного settings.json
+```bash
+cat > settings.json << 'EOF'
 {
   "analysis": {
     "chunk_strategy": "logical",
@@ -44,48 +51,63 @@
     "code_analysis_prompt_file": "prompts/code_analysis_prompt.md"
   },
   "rag": {
-    "remote_service": {
-      "host": "10.61.11.54",
-      "port": 8000,
-      "endpoints": {
-        "embeddings": "/embeddings",
-        "search": "/search", 
-        "index": "/index",
-        "health": "/health"
-      },
-      "timeout_seconds": 60,
-      "max_retries": 3,
-      "retry_delay": 2.0
-    },
     "sparse": {
       "method": "SPLADE"
     },
     "embeddings": {
-      "provider": "sentence-transformers",
       "model_name": "jinaai/jina-embeddings-v3",
-      "truncate_dim": 384,
+      "provider": "sentence-transformers",
       "normalize_embeddings": true,
-      "task_query": "retrieval.query",
-      "task_passage": "retrieval.passage",
-      "trust_remote_code": true,
-      "batch_size_min": 16,
-      "batch_size_max": 128
+      "warmup_enabled": true,
+      "batch_size_min": 8,
+      "batch_size_max": 64
     },
     "vector_store": {
-      "collection_name": "code_chunks",
+      "collection_name": "repo_sum_jina_v3_vm",
       "vector_size": 1024,
-      "distance": "cosine"
+      "distance": "cosine",
+      "hnsw_m": 16,
+      "hnsw_ef_construct": 200,
+      "search_hnsw_ef": 128,
+      "quantization_type": "SQ",
+      "enable_quantization": true,
+      "mmap": true
     },
     "query_engine": {
       "rrf_enabled": true,
       "use_hybrid": true,
       "mmr_enabled": true,
       "mmr_lambda": 0.7,
-      "concurrent_users_target": 20,
+      "concurrent_users_target": 50,
+      "search_workers": 8,
+      "embed_workers": 8,
       "cache_ttl_seconds": 300,
       "cache_max_entries": 1000,
       "max_results": 10,
       "score_threshold": 0.0
+    },
+    "parallelism": {
+      "torch_num_threads": 8,
+      "omp_num_threads": 8,
+      "mkl_num_threads": 8
     }
   }
 }
+EOF
+```
+
+## Команда 2: Тест обновленной конфигурации
+```bash
+python3 main.py rag status
+```
+
+## Команда 3: Если все правильно - тест индексации
+```bash
+python3 main.py rag index ../test_files --batch-size 16
+```
+
+---
+
+**Ожидаемый результат:**
+- Система покажет: "jinaai/jina-embeddings-v3", "1024d", "sentence-transformers"
+- ✅ Полные 1024d векторы вместо сжатых 384d!

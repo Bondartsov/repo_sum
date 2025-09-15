@@ -45,6 +45,7 @@ nltk>=3.8
 # Transformers для SPLADE и Jina v3 (обновлено для миграции)
 transformers>=4.44.0
 datasets>=2.21.0
+einops>=0.8.0
 
 # Дополнительные зависимости для Jina v3
 tokenizers>=0.15.0
@@ -52,6 +53,8 @@ tokenizers>=0.15.0
 ############################
 # Production infrastructure
 ############################
+# HTTP клиенты и серверы
+aiohttp>=3.10.0                   # HTTP клиент для удаленных запросов к VM
 fastapi>=0.115.0
 uvicorn>=0.30.0
 prometheus-client>=0.21.0
