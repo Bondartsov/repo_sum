@@ -111,9 +111,8 @@ async def lifespan(app: FastAPI):
         
         # Инициализируем сервисы поиска и индексации
         services['search_service'] = SearchService(
-            embedder=services['embedder'],
-            vector_store=services['vector_store'],
-            query_config=config.rag.query_engine
+            config=config,
+            silent_mode=True  # Отключаем консольный вывод для VM сервиса
         )
         
         services['indexer_service'] = IndexerService(
