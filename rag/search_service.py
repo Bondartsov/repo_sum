@@ -7,6 +7,7 @@
 
 import logging
 import time
+import asyncio
 import threading
 from typing import List, Dict, Optional, Any, Union
 from datetime import datetime
@@ -68,8 +69,15 @@ class SearchService:
         self.silent_mode = silent_mode
         
         # Инициализация компонентов
-        self.embedder = CPUEmbedder(config.rag.embeddings, config.rag.parallelism)
-        self.vector_store = QdrantVectorStore(config.rag.vector_store)
+        self.embedder = CPUEmbedder(
+            config.rag.embeddings,
+            config.rag.parallelism,
+            config.rag.remote_service
+        )
+        self.vector_store = QdrantVectorStore(
+            config.rag.vector_store,
+            config.rag.remote_service
+        )
         
         # Thread-safe кэш запросов с блокировками
         self._query_cache = {}
@@ -132,7 +140,11 @@ class SearchService:
             # Генерируем эмбеддинг для запроса с задачей retrieval.query (Jina v3)
             embed_start = time.time()
             query_task = getattr(self.config.rag.embeddings, 'task_query', 'retrieval.query')
-            query_embeddings = self.embedder.embed_texts([query], task=query_task)
+            query_embeddings = await asyncio.to_thread(
+                self.embedder.embed_texts,
+                [query],
+                task=query_task
+            )
             embed_time = time.time() - embed_start
             
             if query_embeddings is None or len(query_embeddings) == 0:
@@ -159,12 +171,13 @@ class SearchService:
                     sparse_vector = encoder.encode([query])[0]
                 except Exception as e:
                     logger.warning(f"Ошибка генерации sparse-вектора: {e}")
-            raw_results = await self.vector_store.search(
-                query_vector=query_vector,
-                top_k=top_k * 2,  # Берем больше результатов для фильтрации
-                filters=filters,
-                use_hybrid=self.config.rag.query_engine.use_hybrid,
-                sparse_vector=sparse_vector
+            raw_results = await asyncio.to_thread(
+                self.vector_store.search,
+                query_vector,
+                top_k * 2,  # запросим больше результатов для reranking
+                filters,
+                self.config.rag.query_engine.use_hybrid,
+                sparse_vector
             )
             search_time = time.time() - search_start
             

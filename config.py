@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # Загружаем переменные из .env файла
 try:
@@ -205,12 +205,27 @@ class ParallelismConfig:
 
 
 @dataclass
+class RemoteServiceConfig:
+    """Настройки удалённого RAG сервиса"""
+    host: str = '10.61.11.54'
+    port: int = 8000
+    embeddings_endpoint: str = '/embeddings'
+    search_endpoint: str = '/search'
+    index_endpoint: str = '/index'
+    health_endpoint: str = '/health'
+    timeout_seconds: int = 60
+    max_retries: int = 3
+    retry_delay: float = 2.0
+
+
+@dataclass
 class SparseConfig:
     """Конфигурация sparse поиска"""
     method: str = field(default_factory=lambda: os.getenv("SPARSE_METHOD", "SPLADE"))
 
 @dataclass
 class RagConfig:
+    remote_service: RemoteServiceConfig = field(default_factory=RemoteServiceConfig)
     """Конфигурация RAG системы"""
     embeddings: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
@@ -218,28 +233,46 @@ class RagConfig:
     parallelism: ParallelismConfig = field(default_factory=ParallelismConfig)
     sparse: SparseConfig = field(default_factory=SparseConfig)
 
+
     @classmethod
     def from_dict(cls, data: dict) -> "RagConfig":
         """Создает экземпляр RagConfig из словаря"""
-        # Маппинг для совместимости с settings.json
         embeddings_data = data.get("embeddings", {}).copy()
-        # Удаляем поле vector_size из embeddings (оно принадлежит vector_store)
         embeddings_data.pop("vector_size", None)
-        
+
         vector_store_data = data.get("vector_store", data.get("qdrant", {})).copy()
-        # Маппинг distance_metric -> distance для совместимости
         if "distance_metric" in vector_store_data:
             vector_store_data["distance"] = vector_store_data.pop("distance_metric")
-        
+
         query_engine_data = data.get("query_engine", data.get("search", {})).copy()
-        
+
+        remote_service_data = data.get("remote_service", {}).copy()
+        endpoints = remote_service_data.pop("endpoints", {})
+        if endpoints:
+            remote_service_data.setdefault("embeddings_endpoint", endpoints.get("embeddings", "/embeddings"))
+            remote_service_data.setdefault("search_endpoint", endpoints.get("search", "/search"))
+            remote_service_data.setdefault("index_endpoint", endpoints.get("index", "/index"))
+            remote_service_data.setdefault("health_endpoint", endpoints.get("health", "/health"))
+        if "port" in remote_service_data:
+            remote_service_data["port"] = int(remote_service_data["port"])
+        if "timeout_seconds" in remote_service_data:
+            remote_service_data["timeout_seconds"] = int(remote_service_data["timeout_seconds"])
+        if "max_retries" in remote_service_data:
+            remote_service_data["max_retries"] = int(remote_service_data["max_retries"])
+        if "retry_delay" in remote_service_data:
+            remote_service_data["retry_delay"] = float(remote_service_data["retry_delay"])
+
+        remote_service = RemoteServiceConfig(**remote_service_data) if remote_service_data else RemoteServiceConfig()
+
         return cls(
+            remote_service=remote_service,
             embeddings=EmbeddingConfig(**embeddings_data),
             vector_store=VectorStoreConfig(**vector_store_data),
             query_engine=QueryEngineConfig(**query_engine_data),
             sparse=SparseConfig(**data.get("sparse", {})),
             parallelism=ParallelismConfig(**data.get("parallelism", {}))
         )
+
 
 
 @dataclass
@@ -379,6 +412,14 @@ class Config:
         
         if self.rag.vector_store.vector_size <= 0:
             errors.append("vector_store.vector_size должен быть положительным числом")
+        if self.rag.embeddings.truncate_dim <= 0 or self.rag.embeddings.embedding_dim <= 0:
+            errors.append("embeddings dimensions must be positive")
+        elif self.rag.embeddings.truncate_dim > self.rag.embeddings.embedding_dim:
+            errors.append("embeddings.truncate_dim cannot be greater than embeddings.embedding_dim")
+
+        if self.rag.vector_store.vector_size != self.rag.embeddings.embedding_dim:
+            errors.append("vector_store.vector_size must equal embeddings.embedding_dim (1024d for Jina v3)")
+
         
         if self.rag.vector_store.distance not in ["cosine", "dot", "euclidean"]:
             errors.append("vector_store.distance должен быть 'cosine', 'dot' или 'euclidean'")
@@ -400,6 +441,17 @@ class Config:
         
         if self.rag.vector_store.write_consistency_factor <= 0:
             errors.append("vector_store.write_consistency_factor должен быть положительным числом")
+        if not self.rag.remote_service.host:
+            errors.append("remote_service.host must not be empty")
+        if self.rag.remote_service.port <= 0:
+            errors.append("remote_service.port must be a positive integer")
+        if self.rag.remote_service.timeout_seconds <= 0:
+            errors.append("remote_service.timeout_seconds must be positive")
+        if self.rag.remote_service.max_retries < 0:
+            errors.append("remote_service.max_retries cannot be negative")
+        if self.rag.remote_service.retry_delay < 0:
+            errors.append("remote_service.retry_delay cannot be negative")
+
         
         # Валидация query engine
         if self.rag.query_engine.max_results <= 0:

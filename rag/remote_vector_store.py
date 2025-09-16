@@ -7,14 +7,29 @@ HTTP клиент для удалённого векторного хранил�
 
 import os
 import logging
+import concurrent.futures
 import time
 import aiohttp
 import asyncio
 from typing import List, Dict, Optional, Any
+from config import RemoteServiceConfig
 import numpy as np
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_message(message: str) -> str:
+    if not isinstance(message, str):
+        return str(message)
+    try:
+        message.encode('ascii')
+        return message
+    except UnicodeEncodeError:
+        return message.encode('ascii', 'ignore').decode('ascii')
+
+def _log(logger_method, message: str, *args, **kwargs):
+    logger_method(_safe_message(message), *args, **kwargs)
 
 
 class RemoteVMVectorStore:
@@ -28,7 +43,7 @@ class RemoteVMVectorStore:
     - Health check удалённого сервиса
     """
     
-    def __init__(self, vector_store_config=None):
+    def __init__(self, vector_store_config=None, remote_service_config: Optional[RemoteServiceConfig] = None):
         """
         Инициализация удалённого векторного хранилища.
         
@@ -36,16 +51,22 @@ class RemoteVMVectorStore:
             vector_store_config: Конфигурация векторного хранилища (игнорируется, для совместимости)
         """
         # Читаем конфигурацию из переменных окружения
-        self.search_endpoint = os.getenv("RAG_SEARCH_ENDPOINT", "http://10.61.11.54:8000/search")
-        self.index_endpoint = os.getenv("RAG_INDEX_ENDPOINT", "http://10.61.11.54:8000/index")
-        self.service_host = os.getenv("RAG_SERVICE_HOST", "10.61.11.54")
-        self.service_port = int(os.getenv("RAG_SERVICE_PORT", "8000"))
-        
-        # HTTP клиент настройки
-        self.timeout = aiohttp.ClientTimeout(total=60, connect=10)  # Увеличены таймауты для индексации
-        self.max_retries = 3
-        self.retry_delay = 2.0
-        
+        self.remote_config = remote_service_config or RemoteServiceConfig()
+        env_host = os.getenv("RAG_SERVICE_HOST")
+        env_port = os.getenv("RAG_SERVICE_PORT")
+        host = env_host or self.remote_config.host
+        port = int(env_port) if env_port is not None else self.remote_config.port
+        base_url = f"http://{host}:{port}"
+        self.search_endpoint = os.getenv("RAG_SEARCH_ENDPOINT", base_url + self.remote_config.search_endpoint)
+        self.index_endpoint = os.getenv("RAG_INDEX_ENDPOINT", base_url + self.remote_config.index_endpoint)
+        self.service_host = host
+        self.service_port = port
+
+        timeout_total = int(os.getenv("RAG_TIMEOUT_SECONDS", str(self.remote_config.timeout_seconds)))
+        self.timeout = aiohttp.ClientTimeout(total=timeout_total, connect=10)
+        self.max_retries = int(os.getenv("RAG_MAX_RETRIES", str(self.remote_config.max_retries)))
+        self.retry_delay = float(os.getenv("RAG_RETRY_DELAY", str(self.remote_config.retry_delay)))
+
         # Статистика
         self.stats = {
             'total_searches': 0,
@@ -59,9 +80,91 @@ class RemoteVMVectorStore:
         self._connected = False
         self._collection_exists = False
         
-        logger.info(f"RemoteVMVectorStore инициализирован: поиск={self.search_endpoint}, индексация={self.index_endpoint}")
+        _log(logger.info, f"RemoteVMVectorStore инициализирован: поиск={self.search_endpoint}, индексация={self.index_endpoint}")
+    def _run_async(self, coro_factory, timeout=None, op_name="operation"):
+        """Запускает корутину в синхронном контексте."""
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+
+        try:
+            if loop and loop.is_running():
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(asyncio.run, coro_factory())
+                    return future.result(timeout=timeout)
+            return asyncio.run(coro_factory())
+        except (asyncio.TimeoutError, concurrent.futures.TimeoutError):
+            _log(logger.warning, f"Timeout during {op_name}")
+            raise
+        except Exception as exc:
+            _log(logger.warning, f"Exception during {op_name}: {exc}", exc_info=True)
+            raise
+
+    def initialize_collection(self, recreate: bool = False) -> None:
+        """Синхронная инициализация коллекции на VM."""
+        return self._run_async(
+            lambda: self._async_initialize_collection(recreate=recreate),
+            op_name="initialize_collection"
+        )
+
+    def index_documents(self, points: List[Dict]) -> int:
+        """Синхронная индексация документов."""
+        return self._run_async(
+            lambda: self._async_index_documents(points),
+            op_name="index_documents"
+        )
+
+    def search(
+        self,
+        query_vector: np.ndarray,
+        top_k: int,
+        filters: Optional[Dict] = None,
+        use_hybrid: bool = True,
+        sparse_vector: Optional[Dict[int, float]] = None
+    ) -> List[Dict]:
+        """Синхронный поиск в удалённом хранилище."""
+        return self._run_async(
+            lambda: self._async_search(query_vector, top_k, filters, use_hybrid, sparse_vector),
+            op_name="search"
+        )
+
+    def search_by_text(
+        self,
+        query_text: str,
+        top_k: int,
+        filters: Optional[Dict] = None,
+        use_hybrid: bool = True
+    ) -> List[Dict]:
+        """Синхронный поиск по тексту."""
+        return self._run_async(
+            lambda: self._async_search_by_text(query_text, top_k, filters, use_hybrid),
+            op_name="search_by_text"
+        )
+
+    def health_check(self) -> Dict[str, Any]:
+        """Синхронный health-check удалённого сервиса."""
+        return self._run_async(
+            self._async_health_check,
+            op_name="health_check"
+        )
+
+    def get_collection_info(self) -> Dict[str, Any]:
+        """Синхронное получение сведений о коллекции."""
+        return self._run_async(
+            self._async_get_collection_info,
+            op_name="get_collection_info"
+        )
+
+    def close_sync(self) -> None:
+        """Синхронно закрывает соединение."""
+        return self._run_async(
+            self._async_close,
+            op_name="close"
+        )
+
     
-    async def initialize_collection(self, recreate: bool = False) -> None:
+    async def _async_initialize_collection(self, recreate: bool = False) -> None:
         """
         Инициализирует коллекцию через удалённый сервис.
         
@@ -69,23 +172,23 @@ class RemoteVMVectorStore:
             recreate: Пересоздать коллекцию если она уже существует
         """
         try:
-            health_info = await self.health_check()
+            health_info = await self._async_health_check()
             
             if health_info['status'] == 'connected':
                 self._connected = True
                 self._collection_exists = health_info.get('collection_status') == 'exists'
                 
                 if recreate and self._collection_exists:
-                    logger.info("Пересоздание коллекции через удалённый сервис...")
+                    _log(logger.info, "Пересоздание коллекции через удалённый сервис...")
                     # Пересоздание будет обработано на стороне VM сервиса
                     await self._recreate_collection()
                 
-                logger.info(f"Коллекция {'существует' if self._collection_exists else 'будет создана'} на VM")
+                _log(logger.info, f"Коллекция {'существует' if self._collection_exists else 'будет создана'} на VM")
             else:
                 raise ConnectionError(f"Не удалось подключиться к VM сервису: {health_info.get('error')}")
                 
         except Exception as e:
-            logger.error(f"Ошибка инициализации коллекции через VM: {e}")
+            _log(logger.error, f"Ошибка инициализации коллекции через VM: {e}")
             raise
     
     async def _recreate_collection(self) -> None:
@@ -97,17 +200,17 @@ class RemoteVMVectorStore:
                 async with session.post(recreate_endpoint) as response:
                     if response.status == 200:
                         result = await response.json()
-                        logger.info(f"Коллекция пересоздана: {result}")
+                        _log(logger.info, f"Коллекция пересоздана: {result}")
                         self._collection_exists = True
                     else:
                         error_text = await response.text()
-                        logger.error(f"Ошибка пересоздания коллекции: HTTP {response.status}: {error_text}")
+                        _log(logger.error, f"Ошибка пересоздания коллекции: HTTP {response.status}: {error_text}")
                         
         except Exception as e:
-            logger.error(f"Ошибка пересоздания коллекции через VM: {e}")
+            _log(logger.error, f"Ошибка пересоздания коллекции через VM: {e}")
             raise
     
-    async def index_documents(self, points: List[Dict]) -> int:
+    async def _async_index_documents(self, points: List[Dict]) -> int:
         """
         Индексирует документы через удалённый сервис.
         
@@ -146,7 +249,7 @@ class RemoteVMVectorStore:
             self.stats['total_indexed'] += indexed_count
             self.stats['total_index_time'] += elapsed_time
             
-            logger.info(
+            _log(logger.info, 
                 f"Индексация через VM завершена: {indexed_count}/{len(points)} документов "
                 f"за {elapsed_time:.3f}s ({indexed_count/elapsed_time:.1f} док/с)"
             )
@@ -155,7 +258,7 @@ class RemoteVMVectorStore:
             
         except Exception as e:
             self.stats['error_count'] += 1
-            logger.error(f"Ошибка индексации документов через VM: {e}")
+            _log(logger.error, f"Ошибка индексации документов через VM: {e}")
             raise
     
     async def _make_index_request_with_retry(self, payload: Dict[str, Any]) -> int:
@@ -193,7 +296,7 @@ class RemoteVMVectorStore:
                             )
             
             except Exception as e:
-                logger.warning(f"Ошибка индексации (попытка {attempt + 1}): {e}")
+                _log(logger.warning, f"Ошибка индексации (попытка {attempt + 1}): {e}")
                 self.stats['retry_count'] += 1
                 
                 if attempt < self.max_retries - 1:
@@ -202,7 +305,7 @@ class RemoteVMVectorStore:
                 else:
                     raise  # Последняя попытка - пробрасываем ошибку
     
-    async def search(
+    async def _async_search(
         self,
         query_vector: np.ndarray,
         top_k: int,
@@ -245,16 +348,16 @@ class RemoteVMVectorStore:
             self.stats['total_searches'] += 1
             self.stats['total_search_time'] += elapsed_time
             
-            logger.debug(f"Поиск через VM завершён: {len(results)} результатов за {elapsed_time:.3f}s")
+            _log(logger.debug, f"Поиск через VM завершён: {len(results)} результатов за {elapsed_time:.3f}s")
             
             return results
             
         except Exception as e:
             self.stats['error_count'] += 1
-            logger.error(f"Ошибка поиска через VM: {e}")
+            _log(logger.error, f"Ошибка поиска через VM: {e}")
             return []  # Возвращаем пустой результат при ошибке
-    
-    async def search_by_text(
+
+    async def _async_search_by_text(
         self,
         query_text: str,
         top_k: int,
@@ -291,13 +394,13 @@ class RemoteVMVectorStore:
             self.stats['total_searches'] += 1
             self.stats['total_search_time'] += elapsed_time
             
-            logger.debug(f"Текстовый поиск через VM: '{query_text[:50]}...' -> {len(results)} результатов за {elapsed_time:.3f}s")
+            _log(logger.debug, f"Текстовый поиск через VM: '{query_text[:50]}...' -> {len(results)} результатов за {elapsed_time:.3f}s")
             
             return results
             
         except Exception as e:
             self.stats['error_count'] += 1
-            logger.error(f"Ошибка текстового поиска через VM: {e}")
+            _log(logger.error, f"Ошибка текстового поиска через VM: {e}")
             return []
     
     async def _make_search_request_with_retry(self, payload: Dict[str, Any]) -> List[Dict]:
@@ -335,7 +438,7 @@ class RemoteVMVectorStore:
                             )
             
             except Exception as e:
-                logger.warning(f"Ошибка поиска (попытка {attempt + 1}): {e}")
+                _log(logger.warning, f"Ошибка поиска (попытка {attempt + 1}): {e}")
                 self.stats['retry_count'] += 1
                 
                 if attempt < self.max_retries - 1:
@@ -344,7 +447,7 @@ class RemoteVMVectorStore:
                 else:
                     raise  # Последняя попытка - пробрасываем ошибку
     
-    async def health_check(self) -> Dict[str, Any]:
+    async def _async_health_check(self) -> Dict[str, Any]:
         """
         Проверяет состояние удалённого векторного хранилища.
         
@@ -362,7 +465,7 @@ class RemoteVMVectorStore:
         }
         
         try:
-            health_endpoint = f"http://{self.service_host}:{self.service_port}/health"
+            health_endpoint = f"http://{self.service_host}:{self.service_port}{self.remote_config.health_endpoint}"
             
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
                 async with session.get(health_endpoint) as response:
@@ -392,7 +495,7 @@ class RemoteVMVectorStore:
             
         return health_info
     
-    async def get_collection_info(self) -> Dict[str, Any]:
+    async def _async_get_collection_info(self) -> Dict[str, Any]:
         """
         Получает информацию о коллекции через удалённый сервис.
         
@@ -455,12 +558,15 @@ class RemoteVMVectorStore:
             'error_count': 0,
             'retry_count': 0
         }
-        logger.info("Статистика RemoteVMVectorStore сброшена")
-    
+        _log(logger.info, "Статистика RemoteVMVectorStore сброшена")
     async def close(self) -> None:
+        """Асинхронная совместимость для существующих вызовов."""
+        await self._async_close()
+
+    async def _async_close(self) -> None:
         """Закрывает соединения (для удалённого клиента не требуется)"""
         self._connected = False
-        logger.info("RemoteVMVectorStore закрыт")
+        _log(logger.info, "RemoteVMVectorStore закрыт")
 
 
 # Обратная совместимость: алиас для старого класса

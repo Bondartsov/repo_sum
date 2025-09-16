@@ -55,8 +55,15 @@ class IndexerService:
         self.file_scanner = FileScanner()
         self.parser_registry = ParserRegistry()
         self.code_chunker = CodeChunker()
-        self.embedder = CPUEmbedder(config.rag.embeddings, config.rag.parallelism)
-        self.vector_store = QdrantVectorStore(config.rag.vector_store)
+        self.embedder = CPUEmbedder(
+            config.rag.embeddings,
+            config.rag.parallelism,
+            config.rag.remote_service
+        )
+        self.vector_store = QdrantVectorStore(
+            config.rag.vector_store,
+            config.rag.remote_service
+        )
         
         # Статистика индексации
         self.stats = {
@@ -81,7 +88,7 @@ class IndexerService:
             recreate: Пересоздать коллекцию если она существует
         """
         try:
-            await self.vector_store.initialize_collection(recreate=recreate)
+            await asyncio.to_thread(self.vector_store.initialize_collection, recreate=recreate)
             logger.info("Векторное хранилище готово к работе")
         except Exception as e:
             logger.error(f"Ошибка инициализации векторного хранилища: {e}")
@@ -358,7 +365,7 @@ class IndexerService:
                 
                 embed_start = time.time()
                 passage_task = getattr(self.config.rag.embeddings, 'task_passage', 'retrieval.passage')
-                embeddings = self.embedder.embed_texts(texts, task=passage_task)
+                embeddings = await asyncio.to_thread(self.embedder.embed_texts, texts, task=passage_task)
                 self.stats['embedding_time'] += time.time() - embed_start
                 
                 if embeddings is None or len(embeddings) == 0:
@@ -384,7 +391,7 @@ class IndexerService:
                 
                 # Индексируем в Qdrant
                 index_start = time.time()
-                batch_indexed = await self.vector_store.index_documents(points)
+                batch_indexed = await asyncio.to_thread(self.vector_store.index_documents, points)
                 self.stats['indexing_time'] += time.time() - index_start
                 
                 indexed_count += batch_indexed
@@ -440,7 +447,7 @@ class IndexerService:
         
         try:
             # Проверка векторного хранилища
-            vs_health = await self.vector_store.health_check()
+            vs_health = await asyncio.to_thread(self.vector_store.health_check)
             health_info['components']['vector_store'] = vs_health
             
             # Проверка эмбеддера

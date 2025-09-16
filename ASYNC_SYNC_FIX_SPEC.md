@@ -284,3 +284,8 @@ def test_search_service_no_coroutine():
 **Дата создания:** 16 сентября 2025  
 **Статус:** Ready for implementation  
 **Ответственный:** Lead Developer
+
+## ✅ 16.09.2025 Дополнительно
+- Добавлены ASCII-safe логгеры _log/_safe_message для RemoteVMEmbedder/VectorStore.
+- Новые sync-wrapper тесты: 	ests/test_remote_clients.py.
+

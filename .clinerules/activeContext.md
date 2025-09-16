@@ -251,3 +251,4 @@ def embed_texts(self, texts: List[str], task: str = None) -> np.ndarray:
 ---
 
 **Следующий фокус**: Завершение async/sync исправлений для полной функциональности VM Migration, затем переход к M3 RAG-Enhanced Analysis.
+

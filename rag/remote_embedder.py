@@ -7,14 +7,29 @@ HTTP клиент для удалённых эмбеддингов через RA
 
 import os
 import logging
+import concurrent.futures
 import time
 import aiohttp
 import asyncio
 from typing import List, Optional, Dict, Any
+from config import EmbeddingConfig, ParallelismConfig, RemoteServiceConfig
 import numpy as np
 import json
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_message(message: str) -> str:
+    if not isinstance(message, str):
+        return str(message)
+    try:
+        message.encode('ascii')
+        return message
+    except UnicodeEncodeError:
+        return message.encode('ascii', 'ignore').decode('ascii')
+
+def _log(logger_method, message: str, *args, **kwargs):
+    logger_method(_safe_message(message), *args, **kwargs)
 
 
 class RemoteVMEmbedder:
@@ -29,7 +44,9 @@ class RemoteVMEmbedder:
     - Fallback и retry логика
     """
     
-    def __init__(self, embedding_config=None, parallelism_config=None):
+    def __init__(self, embedding_config: Optional[EmbeddingConfig] = None, 
+                 parallelism_config: Optional[ParallelismConfig] = None, 
+                 remote_service_config: Optional[RemoteServiceConfig] = None):
         """
         Инициализация удалённого эмбеддера.
         
@@ -38,19 +55,27 @@ class RemoteVMEmbedder:
             parallelism_config: Конфигурация параллелизма (игнорируется, для совместимости)
         """
         # Читаем конфигурацию из переменных окружения
-        self.embeddings_endpoint = os.getenv("RAG_EMBEDDINGS_ENDPOINT", "http://10.61.11.54:8000/embeddings")
-        self.service_host = os.getenv("RAG_SERVICE_HOST", "10.61.11.54")
-        self.service_port = int(os.getenv("RAG_SERVICE_PORT", "8000"))
-        
-        # Конфигурация эмбеддингов
-        self.model_name = os.getenv("EMB_MODEL_ID", "jinaai/jina-embeddings-v3")
-        self.embedding_dim = int(os.getenv("EMB_DIM", "1024"))
-        self.truncate_dim = int(os.getenv("EMB_TRUNCATE_DIM", "384"))
-        
-        # HTTP клиент настройки
-        self.timeout = aiohttp.ClientTimeout(total=30, connect=5)
-        self.max_retries = 3
-        self.retry_delay = 1.0
+        # Настройки удалённого сервиса
+        self.remote_config = remote_service_config or RemoteServiceConfig()
+        env_host = os.getenv("RAG_SERVICE_HOST")
+        env_port = os.getenv("RAG_SERVICE_PORT")
+        host = env_host or self.remote_config.host
+        port = int(env_port) if env_port is not None else self.remote_config.port
+        base_url = f"http://{host}:{port}"
+        self.embeddings_endpoint = os.getenv("RAG_EMBEDDINGS_ENDPOINT", base_url + self.remote_config.embeddings_endpoint)
+        self.service_host = host
+        self.service_port = port
+
+        # Параметры эмбеддера
+        self.model_name = embedding_config.model_name if embedding_config else os.getenv("EMB_MODEL_ID", "jinaai/jina-embeddings-v3")
+        self.embedding_dim = getattr(embedding_config, "embedding_dim", int(os.getenv("EMB_DIM", "1024")))
+        self.truncate_dim = getattr(embedding_config, "truncate_dim", int(os.getenv("EMB_TRUNCATE_DIM", str(self.embedding_dim))))
+
+        # HTTP параметры
+        timeout_total = int(os.getenv("RAG_TIMEOUT_SECONDS", str(self.remote_config.timeout_seconds)))
+        self.timeout = aiohttp.ClientTimeout(total=timeout_total, connect=5)
+        self.max_retries = int(os.getenv("RAG_MAX_RETRIES", str(self.remote_config.max_retries)))
+        self.retry_delay = float(os.getenv("RAG_RETRY_DELAY", str(self.remote_config.retry_delay)))
         
         # Статистика
         self.stats = {
@@ -63,67 +88,86 @@ class RemoteVMEmbedder:
         }
         
         self._is_warmed_up = False
-        logger.info(f"RemoteVMEmbedder инициализирован: {self.embeddings_endpoint}")
+        _log(logger.info, f"RemoteVMEmbedder инициализирован: {self.embeddings_endpoint}")
     
-    async def embed_texts(
-        self, 
-        texts: List[str], 
+
+    def embed_texts(
+        self,
+        texts: List[str],
         task: Optional[str] = None,
         deadline_ms: int = 30000
     ) -> np.ndarray:
-        """
-        Получает эмбеддинги текстов от удалённого Jina v3 сервиса.
-        
-        Args:
-            texts: Список текстов для эмбеддинга
-            task: Задача для dual task ("retrieval.query" или "retrieval.passage")
-            deadline_ms: Максимальное время ожидания в миллисекундах
-            
-        Returns:
-            numpy массив эмбеддингов размером [len(texts), truncate_dim]
-        """
+        """Синхронная обёртка над запросом embeddings к VM."""
         if not texts:
             return np.array([])
-        
-        start_time = time.time()
-        
+
+        async def runner() -> np.ndarray:
+            return await self._async_embed_texts(texts, task=task, deadline_ms=deadline_ms)
+
         try:
-            # Подготовка запроса
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+
+        deadline_seconds = deadline_ms / 1000.0 if deadline_ms else None
+
+        try:
+            if loop and loop.is_running():
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(asyncio.run, runner())
+                    return future.result(timeout=deadline_seconds)
+            return asyncio.run(runner())
+        except (asyncio.TimeoutError, concurrent.futures.TimeoutError):
+            _log(logger.warning, "Timeout while requesting embeddings from VM")
+        except Exception as exc:
+            _log(logger.error, f"Error requesting embeddings from VM: {exc}", exc_info=True)
+
+        self.stats['error_count'] += 1
+        return np.zeros((len(texts), self.truncate_dim), dtype=np.float32)
+
+    async def _async_embed_texts(
+        self,
+        texts: List[str],
+        task: Optional[str] = None,
+        deadline_ms: int = 30000
+    ) -> np.ndarray:
+        """Выполняет фактический HTTP запрос к VM и обновляет статистику."""
+        if not texts:
+            return np.array([])
+
+        start_time = time.time()
+
+        try:
             payload = {
                 "texts": texts,
-                "task": task or "retrieval.passage",  # По умолчанию для индексации
+                "task": task or "retrieval.passage",
                 "truncate_dim": self.truncate_dim,
                 "normalize": True
             }
-            
-            # HTTP запрос к VM сервису
+
             embeddings = await self._make_request_with_retry(payload, deadline_ms)
-            
-            # Конвертируем в numpy массив
+
             embeddings_array = np.array(embeddings, dtype=np.float32)
-            
-            # Обновляем статистику
+
             elapsed_time = time.time() - start_time
             self.stats['total_requests'] += 1
             self.stats['total_texts'] += len(texts)
             self.stats['total_time'] += elapsed_time
             self.stats['avg_response_time'] = self.stats['total_time'] / self.stats['total_requests']
-            
-            logger.debug(
-                f"Получены эмбеддинги от VM: {len(texts)} текстов, "
-                f"размерность: {embeddings_array.shape}, время: {elapsed_time:.3f}s"
+
+            _log(logger.debug, 
+                f"Получены embeddings с VM: {len(texts)} элементов, "
+                f"shape={embeddings_array.shape}, time={elapsed_time:.3f}s"
             )
-            
+
             return embeddings_array
-            
+
         except Exception as e:
             self.stats['error_count'] += 1
-            logger.error(f"Ошибка получения эмбеддингов от VM: {e}")
-            
-            # Fallback: возвращаем нулевые векторы
-            logger.warning(f"Используем fallback нулевые векторы для {len(texts)} текстов")
+            _log(logger.error, f"Ошибка получения embeddings с VM: {e}")
+
             return np.zeros((len(texts), self.truncate_dim), dtype=np.float32)
-    
+
     async def _make_request_with_retry(
         self, 
         payload: Dict[str, Any], 
@@ -166,11 +210,11 @@ class RemoteVMEmbedder:
                             )
             
             except asyncio.TimeoutError:
-                logger.warning(f"Timeout при запросе к VM (попытка {attempt + 1})")
+                _log(logger.warning, f"Timeout при запросе к VM (попытка {attempt + 1})")
                 self.stats['retry_count'] += 1
                 
             except Exception as e:
-                logger.warning(f"Ошибка HTTP запроса (попытка {attempt + 1}): {e}")
+                _log(logger.warning, f"Ошибка HTTP запроса (попытка {attempt + 1}): {e}")
                 self.stats['retry_count'] += 1
                 
                 if attempt < self.max_retries - 1:
@@ -241,7 +285,7 @@ class RemoteVMEmbedder:
         if self._is_warmed_up:
             return
             
-        logger.info("Прогрев удалённого VM сервиса...")
+        _log(logger.info, "Прогрев удалённого VM сервиса...")
         
         try:
             # Асинхронный прогрев в синхронном контексте
@@ -254,7 +298,7 @@ class RemoteVMEmbedder:
                 loop.run_until_complete(self._async_warmup())
                 
         except Exception as e:
-            logger.warning(f"Ошибка прогрева VM сервиса: {e}")
+            _log(logger.warning, f"Ошибка прогрева VM сервиса: {e}")
             # Не критично, продолжаем работу
             
     async def _async_warmup(self) -> None:
@@ -264,12 +308,12 @@ class RemoteVMEmbedder:
             
             if health_info['status'] == 'healthy':
                 self._is_warmed_up = True
-                logger.info(f"VM сервис готов: {health_info.get('actual_embedding_dim', 'N/A')}d векторы")
+                _log(logger.info, f"VM сервис готов: {health_info.get('actual_embedding_dim', 'N/A')}d векторы")
             else:
-                logger.warning(f"VM сервис не готов: {health_info.get('error', 'Unknown error')}")
+                _log(logger.warning, f"VM сервис не готов: {health_info.get('error', 'Unknown error')}")
                 
         except Exception as e:
-            logger.error(f"Ошибка асинхронного прогрева: {e}")
+            _log(logger.error, f"Ошибка асинхронного прогрева: {e}")
     
     def get_stats(self) -> Dict[str, Any]:
         """Возвращает статистику использования"""
@@ -294,8 +338,11 @@ class RemoteVMEmbedder:
             'retry_count': 0,
             'avg_response_time': 0.0
         }
-        logger.info("Статистика RemoteVMEmbedder сброшена")
+        _log(logger.info, "Статистика RemoteVMEmbedder сброшена")
 
 
 # Обратная совместимость: алиас для старого класса
 CPUEmbedder = RemoteVMEmbedder
+
+
+

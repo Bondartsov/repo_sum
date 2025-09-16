@@ -650,3 +650,9 @@ Jina v3 архитектура создает революционную осн�
 **Дата создания:** 12 сентября 2025  
 **Статус:** Production-Ready Architecture + M2.5 Jina v3 Revolution  
 **Следующий пересмотр:** При реализации M3-M4 milestone
+
+### ✅ Remote Service Integration (16.09.2025)
+- Добавлен RemoteServiceConfig и загрузка секции emote_service из settings.json.
+- Обновлены RemoteVMEmbedder и RemoteVMVectorStore: берут host/port/endpoints, таймауты и ретраи из конфигурации.
+- Новые sync-wrapper тесты (	ests/test_remote_clients.py) фиксируют корректное поведение без coroutine warning’ов.
+

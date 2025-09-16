@@ -530,3 +530,4 @@ pytest -m "functional"
 - Milestone M4 (Production deployment) - готов к старту
 
 **Система полностью готова к production использованию и дальнейшему развитию** 🎉
+
