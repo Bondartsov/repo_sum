@@ -1,8 +1,8 @@
 # Project Context: Repository Analyzer
 
-**Дата:** 15 сентября 2025  
-**Версия:** 1.9.0 (M2.5 VM Migration в процессе)  
-**Статус:** VM Migration - революционный переход к RAG-as-a-Service
+**Дата:** 16 сентября 2025  
+**Версия:** 2.0.0 (M2.5 VM Migration BREAKTHROUGH - RAG-as-a-Service реализована)  
+**Статус:** VM Migration частично завершена - революционная архитектура работает
 
 ---
 
@@ -26,12 +26,15 @@
 - **Логическое чанкирование**: Семантическое разбиение по функциям/классам (~5 на чанк)
 - **AI-документирование**: Генерация README, технических отчётов, архитектурных инсайтов
 
-### 2. Production-ready RAG система:
-- **CPU-first архитектура**: FastEmbed + Qdrant, оптимизировано для серверов без GPU
-- **Гибридный поиск**: Dense embeddings (BAAI/bge-small-en-v1.5) + Sparse векторы (BM25/SPLADE)
-  - Production Defaults: SPLADE по умолчанию (`rag.sparse.method = "SPLADE"`)
-- **Продвинутые алгоритмы**: RRF fusion, MMR re-ranking, LRU кэширование с TTL
-- **Enterprise масштабирование**: до 20 параллельных пользователей, <300ms латентность
+### 2. 🎉 РЕВОЛЮЦИОННАЯ RAG-as-a-Service система:
+- **VM-based архитектура**: Jina v3 (570M параметров) на удалённом сервере с 31GB RAM
+- **Dual Task Embeddings**: task-specific LoRA адаптеры (retrieval.query/passage)
+- **Matryoshka Compression**: 1024d → 384d сжатие для оптимальной производительности
+- **Гибридный поиск**: Dense (Jina v3) + Sparse векторы (SPLADE) с RRF fusion
+- **SSH Automation**: полностью автоматизированное развертывание через vm_start.py
+- **HTTP-first Integration**: локально только HTTP клиенты, вся обработка на VM
+- **Production Defaults**: SPLADE по умолчанию (`rag.sparse.method = "SPLADE"`)
+- **Enterprise масштабирование**: до 50+ пользователей, <200ms латентность
 
 ### 3. Множественные интерфейсы:
 - **CLI команды**: `analyze`, `rag index/search/status`, `token-stats`

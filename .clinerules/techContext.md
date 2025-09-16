@@ -1,8 +1,8 @@
 # Technical Context: Repository Analyzer
 
-**Дата:** 15 сентября 2025  
-**Статус:** VM Migration в процессе - RAG-as-a-Service архитектура  
-**Версия:** 0.7.0 (M2.5 VM Migration - критические проблемы локально решены через VM)
+**Дата:** 16 сентября 2025  
+**Статус:** VM Migration частично завершена - RAG-as-a-Service развернута  
+**Версия:** 0.7.1 (M2.5 VM Migration SUCCESS + async/sync fixes required)
 
 ---
 
