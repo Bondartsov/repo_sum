@@ -116,8 +116,7 @@ async def lifespan(app: FastAPI):
         )
         
         services['indexer_service'] = IndexerService(
-            embedder=services['embedder'],
-            vector_store=services['vector_store']
+            config=config
         )
         
         logger.info("✅ Все сервисы успешно инициализированы")
