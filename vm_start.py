@@ -364,8 +364,82 @@ OPENAI_API_KEY={openai_key}
             self.console.print(f"[red]❌ Ошибка создания .env: {error}[/red]")
             return False
     
+    def diagnose_rag_service(self) -> dict:
+        """Диагностика проблем с RAG сервисом"""
+        self.console.print("[blue]🔍 Диагностика RAG сервиса...[/blue]")
+        
+        diagnostics = {
+            'process_running': False,
+            'port_available': True,
+            'logs_exist': False,
+            'python_imports_ok': False,
+            'service_logs': "",
+            'error_details': []
+        }
+        
+        # Проверка процесса
+        success, output, _ = self.execute_command("ps aux | grep vm_rag_service | grep -v grep")
+        if success and output.strip():
+            diagnostics['process_running'] = True
+            self.console.print("[green]✅ Процесс vm_rag_service запущен[/green]")
+        else:
+            self.console.print("[red]❌ Процесс vm_rag_service не найден[/red]")
+        
+        # Проверка порта 8000
+        success, output, _ = self.execute_command("netstat -tulnp | grep :8000")
+        if success and output.strip():
+            diagnostics['port_available'] = False
+            self.console.print(f"[yellow]⚠️ Порт 8000 занят: {output.strip()}[/yellow]")
+        else:
+            self.console.print("[green]✅ Порт 8000 свободен[/green]")
+        
+        # Проверка логов
+        success, logs, _ = self.execute_command(f"cd {self.vm_repo_dir} && cat rag_service.log 2>/dev/null | tail -20")
+        if success and logs.strip():
+            diagnostics['logs_exist'] = True
+            diagnostics['service_logs'] = logs.strip()
+            self.console.print("[green]✅ Логи RAG сервиса найдены[/green]")
+            self.console.print(f"[dim]Последние строки логов:[/dim]\n{logs}")
+        else:
+            self.console.print("[red]❌ Логи RAG сервиса не найдены[/red]")
+        
+        # Проверка Python imports
+        import_test = """
+try:
+    import sys
+    sys.path.append('.')
+    from vm_rag_service import app
+    print('IMPORTS_OK')
+except Exception as e:
+    print(f'IMPORT_ERROR: {e}')
+"""
+        
+        success, output, error = self.execute_command(
+            f"cd {self.vm_repo_dir} && source venv/bin/activate && python3 -c \"{import_test}\""
+        )
+        
+        if success and "IMPORTS_OK" in output:
+            diagnostics['python_imports_ok'] = True
+            self.console.print("[green]✅ Python imports работают[/green]")
+        else:
+            diagnostics['python_imports_ok'] = False
+            diagnostics['error_details'].append(f"Import error: {output} {error}")
+            self.console.print(f"[red]❌ Ошибка импорта: {output} {error}[/red]")
+        
+        # Попытка ручного запуска с детальной ошибкой
+        if not diagnostics['process_running']:
+            self.console.print("[blue]🧪 Тест ручного запуска...[/blue]")
+            success, output, error = self.execute_command(
+                f"cd {self.vm_repo_dir} && source venv/bin/activate && timeout 10s python vm_rag_service.py"
+            )
+            if not success:
+                diagnostics['error_details'].append(f"Manual start error: {output} {error}")
+                self.console.print(f"[red]❌ Ошибка ручного запуска: {output} {error}[/red]")
+        
+        return diagnostics
+    
     def start_rag_service(self) -> bool:
-        """Запуск RAG сервиса"""
+        """Запуск RAG сервиса с улучшенной диагностикой"""
         self.console.print("[blue]🚀 Запуск RAG сервиса...[/blue]")
         
         # Проверка не запущен ли уже
@@ -373,6 +447,10 @@ OPENAI_API_KEY={openai_key}
         if success:
             self.console.print("[green]✅ RAG сервис уже запущен[/green]")
             return True
+        
+        # Очистка старых процессов и логов
+        self.execute_command(f"cd {self.vm_repo_dir} && kill $(cat rag_service.pid 2>/dev/null) 2>/dev/null || true")
+        self.execute_command(f"cd {self.vm_repo_dir} && rm -f rag_service.log rag_service.pid")
         
         # Запуск в фоновом режиме
         start_command = (
@@ -386,21 +464,71 @@ OPENAI_API_KEY={openai_key}
         
         if not success:
             self.console.print(f"[red]❌ Ошибка запуска сервиса: {error}[/red]")
+            # Диагностика при ошибке запуска
+            self.diagnose_rag_service()
             return False
         
-        # Ждем запуска сервиса
-        self.console.print("[blue]⏳ Ожидание запуска RAG сервиса...[/blue]")
-        for i in range(60):  # 60 секунд максимум
-            time.sleep(1)
-            success, _, _ = self.execute_command("curl -s http://localhost:8000/health >/dev/null 2>&1")
-            if success:
-                self.console.print("[green]✅ RAG сервис успешно запущен[/green]")
-                return True
+        # Ждем запуска сервиса с детальным прогресс-баром
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=self.console
+        ) as progress:
             
-            if i % 10 == 9:  # Каждые 10 секунд
-                self.console.print(f"[dim]Ожидание... ({i+1}/60s)[/dim]")
+            task = progress.add_task("Запуск RAG сервиса...", total=60)
+            
+            for i in range(60):  # 60 секунд максимум
+                time.sleep(1)
+                success, _, _ = self.execute_command("curl -s http://localhost:8000/health >/dev/null 2>&1")
+                if success:
+                    progress.update(task, description="✅ RAG сервис запущен!")
+                    self.console.print("[green]✅ RAG сервис успешно запущен[/green]")
+                    return True
+                
+                # Обновляем описание прогресса
+                if i < 10:
+                    desc = f"Загрузка Jina v3 модели... ({i+1}/60s)"
+                elif i < 20:
+                    desc = f"Инициализация компонентов... ({i+1}/60s)"
+                elif i < 30:
+                    desc = f"Подключение к Qdrant... ({i+1}/60s)"
+                else:
+                    desc = f"Ожидание запуска сервиса... ({i+1}/60s)"
+                
+                progress.update(task, description=desc, advance=1)
+                
+                # Диагностика каждые 15 секунд без остановки прогресса
+                if i % 15 == 14:
+                    progress.update(task, description=f"🔍 Проверка статуса... ({i+1}/60s)")
+                    success_proc, output, _ = self.execute_command("ps aux | grep vm_rag_service | grep -v grep")
+                    if success_proc and output.strip():
+                        progress.update(task, description=f"✅ Процесс найден, ждем готовности... ({i+1}/60s)")
+                    else:
+                        # Проверяем логи для диагностики
+                        log_success, logs, _ = self.execute_command(f"cd {self.vm_repo_dir} && tail -3 rag_service.log 2>/dev/null")
+                        if log_success and "ERROR" in logs:
+                            progress.stop()
+                            self.console.print("[red]❌ Обнаружена ошибка в логах[/red]")
+                            self.console.print(f"[dim]Последние строки: {logs.strip()}[/dim]")
+                            break
         
         self.console.print("[red]❌ RAG сервис не запустился в течение 60 секунд[/red]")
+        
+        # Полная диагностика при неудаче
+        self.console.print("[blue]🔍 Запуск полной диагностики...[/blue]")
+        diagnostics = self.diagnose_rag_service()
+        
+        # Вывод рекомендаций на основе диагностики
+        if not diagnostics['python_imports_ok']:
+            self.console.print("[yellow]💡 Рекомендация: Проблема с импортами Python модулей[/yellow]")
+        elif diagnostics['service_logs']:
+            self.console.print("[yellow]💡 Рекомендация: Проверьте логи выше для деталей ошибки[/yellow]")
+        else:
+            self.console.print("[yellow]💡 Рекомендация: Попробуйте ручной запуск на VM для диагностики[/yellow]")
+        
         return False
     
     def test_full_system(self) -> bool:
@@ -504,6 +632,34 @@ OPENAI_API_KEY={openai_key}
             if self.ssh_client:
                 self.ssh_client.close()
     
+    def update_code_on_vm(self) -> bool:
+        """Обновление кода на VM из репозитория"""
+        self.console.print("[blue]📥 Обновление кода на VM...[/blue]")
+        
+        try:
+            # Переход в папку и обновление кода
+            commands = [
+                f"cd {self.vm_repo_dir}",
+                "git fetch --all",
+                "git reset --hard origin/jina-embeddings-v3",
+                "git branch --show-current"
+            ]
+            
+            combined_command = " && ".join(commands)
+            success, output, error = self.execute_command(combined_command)
+            
+            if success:
+                self.console.print("[green]✅ Код на VM обновлен[/green]")
+                logger.info(f"Обновление: {output.strip()}")
+                return True
+            else:
+                self.console.print(f"[red]❌ Ошибка обновления: {error}[/red]")
+                return False
+                
+        except Exception as e:
+            self.console.print(f"[red]❌ Критическая ошибка обновления: {e}[/red]")
+            return False
+    
     def stop_services(self) -> bool:
         """Остановка сервисов на VM"""
         self.console.print("[blue]🛑 Остановка сервисов...[/blue]")
@@ -529,8 +685,8 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Автоматическая настройка VM для Jina v3 RAG")
-    parser.add_argument("action", choices=["start", "stop", "status"], 
-                       help="Действие: start (настройка и запуск), stop (остановка), status (проверка)")
+    parser.add_argument("action", choices=["start", "stop", "status", "diagnose", "update"], 
+                       help="Действие: start (настройка и запуск), stop (остановка), status (проверка), diagnose (диагностика), update (обновление кода)")
     
     args = parser.parse_args()
     
@@ -548,6 +704,18 @@ def main():
         elif args.action == "status":
             if manager.connect_ssh():
                 manager.check_vm_status()
+                manager.ssh_client.close()
+            sys.exit(0)
+            
+        elif args.action == "diagnose":
+            if manager.connect_ssh():
+                manager.diagnose_rag_service()
+                manager.ssh_client.close()
+            sys.exit(0)
+            
+        elif args.action == "update":
+            if manager.connect_ssh():
+                manager.update_code_on_vm()
                 manager.ssh_client.close()
             sys.exit(0)
             

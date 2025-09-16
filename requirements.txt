@@ -71,3 +71,7 @@ pytest-benchmark
 # Опциональные ускорители CPU
 ############################
 onnxruntime>=1.19.0
+
+
+paramiko>=3.0.0 
+rich>=13.0.0
