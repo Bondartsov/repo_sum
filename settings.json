@@ -3,18 +3,32 @@
     "chunk_strategy": "logical",
     "min_chunk_size": 100,
     "enable_fallback": true,
-    "languages_priority": ["python", "javascript", "java"],
+    "languages_priority": [
+      "python",
+      "javascript",
+      "java"
+    ],
     "sanitize_enabled": true
   },
   "file_scanner": {
     "max_file_size": 10485760,
     "excluded_directories": [
-      ".git", ".svn", ".hg",
-      "node_modules", "venv", ".venv",
-      "__pycache__", ".pytest_cache",
-      "target", "build", "dist",
-      ".idea", ".vscode",
-      "logs", "tmp", "temp"
+      ".git",
+      ".svn",
+      ".hg",
+      "node_modules",
+      "venv",
+      ".venv",
+      "__pycache__",
+      ".pytest_cache",
+      "target",
+      "build",
+      "dist",
+      ".idea",
+      ".vscode",
+      "logs",
+      "tmp",
+      "temp"
     ],
     "supported_extensions": {
       ".py": "python",
@@ -49,7 +63,7 @@
       "port": 8000,
       "endpoints": {
         "embeddings": "/embeddings",
-        "search": "/search", 
+        "search": "/search",
         "index": "/index",
         "health": "/health"
       },
@@ -61,9 +75,9 @@
       "method": "SPLADE"
     },
     "embeddings": {
-      "provider": "sentence-transformers",
+      "provider": "remote-vm",
       "model_name": "jinaai/jina-embeddings-v3",
-      "truncate_dim": 384,
+      "truncate_dim": 768,
       "normalize_embeddings": true,
       "task_query": "retrieval.query",
       "task_passage": "retrieval.passage",

@@ -33,6 +33,11 @@ from rag.indexer_service import IndexerService
 from rag.search_service import SearchService
 from rag.exceptions import VectorStoreException, VectorStoreConnectionError
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='ignore')
+    sys.stderr.reconfigure(encoding='utf-8', errors='ignore')
+except Exception:
+    pass
 
 class RepositoryAnalyzer:
     """Главный класс анализатора репозиториев"""
