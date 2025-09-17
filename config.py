@@ -367,7 +367,7 @@ class Config:
         
         # Валидация RAG конфигурации
         # Валидация эмбеддингов
-        if self.rag.embeddings.provider not in ["sentence-transformers", "fastembed"]:
+        if self.rag.embeddings.provider not in ["sentence-transformers", "fastembed", "remote-vm"]:
             errors.append("embeddings.provider должен быть 'sentence-transformers' или 'fastembed'")
         
         if not self.rag.embeddings.model_name.strip():

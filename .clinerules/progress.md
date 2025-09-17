@@ -1,5 +1,9 @@
 # Progress: Repository Analyzer
 
+## 2025-09-17 — Config validation update
+- Added support for `embeddings.provider=remote-vm` in `config.py` validation to align with remote RAG service (VM) mode.
+- Updated `.env.example` to include `EMBEDDING_DIMENSION=1024` for consistency with Jina v3 (1024d) and avoid vector size mismatches.
+
 ## 🚀 История развития проекта
 
 ### Phase 1: MVP Foundation (завершен ✅)
