@@ -351,7 +351,24 @@ def setup_logging(level: str = "INFO") -> None:
     # Фильтр для консоли: пропускаем только INFO и ERROR
     class InfoErrorFilter(logging.Filter):
         def filter(self, record: logging.LogRecord) -> bool:
-            return record.levelno in (logging.INFO, logging.ERROR)
+            # Показываем только INFO и ERROR
+            if record.levelno not in (logging.INFO, logging.ERROR):
+                return False
+            # Не пугаем пользователя штатным failover'ом Qdrant (gRPC->HTTP):
+            # начальный ERROR "Health check ..." скрываем в консоли,
+            # а реальную ошибку после неудачного failover оставляем.
+            try:
+                msg = record.getMessage()
+            except Exception:
+                msg = str(record.msg)
+            if (
+                record.name.startswith('rag.vector_store')
+                and record.levelno == logging.ERROR
+                and 'Health check' in msg
+                and 'после failover' not in msg
+            ):
+                return False
+            return True
 
     # Консольный хендлер
     try:
