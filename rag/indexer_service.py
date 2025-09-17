@@ -70,10 +70,16 @@ class IndexerService:
             config.rag.parallelism,
             config.rag.remote_service
         )
-        self.vector_store = QdrantVectorStore(
-            config.rag.vector_store,
-            config.rag.remote_service
-        )
+        try:
+            self.vector_store = QdrantVectorStore(
+                config.rag.vector_store,
+                config.rag.remote_service
+            )
+        except TypeError:
+            # Local QdrantVectorStore expects only one argument
+            self.vector_store = QdrantVectorStore(
+                config.rag.vector_store
+            )
         
         # Статистика индексации
         self.stats = {
@@ -457,7 +463,11 @@ class IndexerService:
         
         try:
             # Проверка векторного хранилища
-            vs_health = await asyncio.to_thread(self.vector_store.health_check)
+            _vh = self.vector_store.health_check
+            if asyncio.iscoroutinefunction(_vh):
+                vs_health = await _vh()
+            else:
+                vs_health = await asyncio.to_thread(_vh)
             health_info['components']['vector_store'] = vs_health
             
             # Проверка эмбеддера

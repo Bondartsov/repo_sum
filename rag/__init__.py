@@ -20,6 +20,27 @@ from .exceptions import (
     OutOfMemoryException
 )
 
+# Dynamic provider selection via environment variables
+import os as _os
+_emb_provider = (_os.getenv('EMBEDDING_PROVIDER') or '').lower().strip()
+_vs_provider = (_os.getenv('VECTOR_STORE_PROVIDER') or '').lower().strip()
+
+try:
+    if _emb_provider != 'remote-vm':
+        from .embedder import CPUEmbedder as _LocalCPU  # type: ignore
+        CPUEmbedder = _LocalCPU  # type: ignore
+except Exception:
+    # keep remote embedder as default
+    pass
+
+try:
+    if _vs_provider != 'remote-vm':
+        from .vector_store import QdrantVectorStore as _LocalVS  # type: ignore
+        QdrantVectorStore = _LocalVS  # type: ignore
+except Exception:
+    # keep remote vector store as default
+    pass
+
 # Базовые классы
 VectorStore = None  # Базовый класс пока не реализован
 

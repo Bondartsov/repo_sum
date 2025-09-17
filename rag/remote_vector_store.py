@@ -490,7 +490,8 @@ class RemoteVMVectorStore:
         
         except Exception as e:
             health_info['status'] = 'error'
-            health_info['error'] = str(e)
+            # include exception type to aid diagnostics (timeouts often have empty str)
+            health_info['error'] = f"{type(e).__name__}: {e}"
             self._connected = False
             
         return health_info

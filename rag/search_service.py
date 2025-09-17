@@ -75,10 +75,16 @@ class SearchService:
             config.rag.parallelism,
             config.rag.remote_service
         )
-        self.vector_store = QdrantVectorStore(
-            config.rag.vector_store,
-            config.rag.remote_service
-        )
+        try:
+            self.vector_store = QdrantVectorStore(
+                config.rag.vector_store,
+                config.rag.remote_service
+            )
+        except TypeError:
+            # Local QdrantVectorStore expects only one argument
+            self.vector_store = QdrantVectorStore(
+                config.rag.vector_store
+            )
         
         # Thread-safe кэш запросов с блокировками
         self._query_cache = {}
