@@ -68,6 +68,9 @@ class RemoteVMEmbedder:
 
         # Параметры эмбеддера
         self.model_name = embedding_config.model_name if embedding_config else os.getenv("EMB_MODEL_ID", "jinaai/jina-embeddings-v3")
+        self.provider_name = (
+            embedding_config.provider if embedding_config and getattr(embedding_config, "provider", None) else os.getenv("EMBEDDING_PROVIDER", "remote-vm")
+        )
         self.embedding_dim = getattr(embedding_config, "embedding_dim", int(os.getenv("EMB_DIM", "1024")))
         self.truncate_dim = getattr(embedding_config, "truncate_dim", int(os.getenv("EMB_TRUNCATE_DIM", str(self.embedding_dim))))
 
@@ -233,6 +236,7 @@ class RemoteVMEmbedder:
         health_info = {
             'status': 'unknown',
             'service_url': self.embeddings_endpoint,
+            'provider': self.provider_name,
             'model_name': self.model_name,
             'embedding_dim': self.embedding_dim,
             'truncate_dim': self.truncate_dim,
@@ -320,6 +324,7 @@ class RemoteVMEmbedder:
         stats = self.stats.copy()
         stats.update({
             'service_url': self.embeddings_endpoint,
+            'provider': self.provider_name,
             'model_name': self.model_name,
             'is_warmed_up': self._is_warmed_up,
             'embedding_dim': self.embedding_dim,
