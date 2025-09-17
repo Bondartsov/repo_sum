@@ -20,9 +20,9 @@ import logging
 from pathlib import Path
 from typing import Tuple, Optional
 import paramiko
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 from rich.panel import Panel
 from rich.table import Table
 
@@ -43,6 +43,11 @@ class VMSetupManager:
     def __init__(self):
         # Загрузка конфигурации
         load_dotenv()
+        try:
+            sys.stdout.reconfigure(encoding='utf-8', errors='ignore')
+            sys.stderr.reconfigure(encoding='utf-8', errors='ignore')
+        except Exception:
+            pass
         self.console = Console()
         
         # VM параметры из .env
@@ -54,6 +59,8 @@ class VMSetupManager:
         # Пути на VM
         self.vm_work_dir = "~/repo_sum_rag"
         self.vm_repo_dir = f"{self.vm_work_dir}/repo_sum"
+        self.repo_url = os.getenv("VM_REPO_URL", "https://github.com/Bondartsov/repo_sum.git")
+        self.repo_branch = os.getenv("VM_REPO_BRANCH", "jina-embeddings-v3")
         
         # SSH клиент
         self.ssh_client = None
@@ -113,114 +120,127 @@ class VMSetupManager:
             logger.error(f"Ошибка выполнения команды '{command}': {e}")
             return False, "", str(e)
     
-    def check_vm_status(self) -> dict:
+    def check_vm_status(self, show_banner: bool = True) -> dict:
         """Проверка текущего состояния VM"""
-        self.console.print("[blue]🔍 Проверка состояния VM...[/blue]")
-        
+        if show_banner:
+            self.console.print("[blue]🔍 Проверка состояния VM...[/blue]")
+
         status = {
             'python_version': None,
             'memory_gb': None,
             'repo_exists': False,
+            'env_exists': False,
             'venv_exists': False,
             'qdrant_running': False,
             'rag_service_running': False
         }
-        
-        # Проверка Python
+
         success, output, _ = self.execute_command("python3 --version")
         if success:
             status['python_version'] = output.strip()
-        
-        # Проверка памяти
+
         success, output, _ = self.execute_command("free -h | grep 'Mem:' | awk '{print $2}'")
         if success:
             status['memory_gb'] = output.strip()
-        
-        # Проверка репозитория
+
         success, _, _ = self.execute_command(f"test -d {self.vm_repo_dir}")
         status['repo_exists'] = success
-        
-        # Проверка venv
+
+        success, _, _ = self.execute_command(f"test -f {self.vm_repo_dir}/.env")
+        status['env_exists'] = success
+
         success, _, _ = self.execute_command(f"test -d {self.vm_repo_dir}/venv")
         status['venv_exists'] = success
-        
-        # Проверка Qdrant
+
         success, _, _ = self.execute_command("curl -s http://localhost:6333 >/dev/null 2>&1")
         status['qdrant_running'] = success
-        
-        # Проверка RAG сервиса
+
         success, _, _ = self.execute_command("curl -s http://localhost:8000/health >/dev/null 2>&1")
         status['rag_service_running'] = success
-        
-        # Показываем статус
+
         self._show_vm_status(status)
-        
+
         return status
-    
+
     def _show_vm_status(self, status: dict):
-        """Отображение статуса VM"""
+        """Отрисовать текущий статус VM."""
         table = Table(title="Статус VM")
         table.add_column("Компонент", style="cyan")
-        table.add_column("Статус", style="bold")
+        table.add_column("Состояние", style="bold")
         table.add_column("Детали")
-        
-        # Python версия
-        python_status = "✅ Готов" if status['python_version'] else "❌ Не найден"
+
+        python_status = "✅ Установлен" if status['python_version'] else "❌ Отсутствует"
         table.add_row("Python", python_status, status['python_version'] or "")
-        
-        # Память
-        memory_status = "✅ Достаточно" if status['memory_gb'] else "❌ Неизвестно"
+
+        memory_status = "✅ Доступно" if status['memory_gb'] else "❌ Нет данных"
         table.add_row("Память", memory_status, status['memory_gb'] or "")
-        
-        # Репозиторий
-        repo_status = "✅ Клонирован" if status['repo_exists'] else "❌ Отсутствует"
+
+        repo_status = "✅ Синхронизирован" if status['repo_exists'] else "❌ Отсутствует"
         table.add_row("Репозиторий", repo_status, self.vm_repo_dir)
-        
-        # Venv
-        venv_status = "✅ Создан" if status['venv_exists'] else "❌ Отсутствует"
-        table.add_row("Virtual Env", venv_status, "")
-        
-        # Qdrant
+
+        env_status = "✅ Найден" if status['env_exists'] else "❌ Нет"
+        table.add_row(".env", env_status, f"{self.vm_repo_dir}/.env")
+
+        venv_status = "✅ Готов" if status['venv_exists'] else "❌ Нет"
+        table.add_row("Virtual Env", venv_status, f"{self.vm_repo_dir}/venv")
+
         qdrant_status = "✅ Запущен" if status['qdrant_running'] else "❌ Остановлен"
         table.add_row("Qdrant", qdrant_status, "localhost:6333")
-        
-        # RAG сервис
+
         rag_status = "✅ Запущен" if status['rag_service_running'] else "❌ Остановлен"
         table.add_row("RAG Service", rag_status, "localhost:8000")
-        
+
         self.console.print(table)
-    
+
     def setup_repository(self) -> bool:
-        """Настройка репозитория на VM"""
-        self.console.print("[blue]📁 Настройка репозитория...[/blue]")
-        
-        # Создание рабочей папки
+        """Manage repository on the VM by cloning or syncing."""
+        self.console.print("[blue]📁 Настраиваю репозиторий...[/blue]")
+
         success, _, _ = self.execute_command(f"mkdir -p {self.vm_work_dir}")
         if not success:
             self.console.print("[red]❌ Не удалось создать рабочую папку[/red]")
             return False
-        
-        # Переход в рабочую папку и клонирование
-        commands = [
-            f"cd {self.vm_work_dir}",
-            "git clone https://github.com/Bondartsov/repo_sum.git 2>/dev/null || echo 'Репозиторий уже существует'",
-            f"cd {self.vm_repo_dir}",
-            "git fetch --all 2>/dev/null || true",
-            "git checkout jina-embeddings-v3 2>/dev/null || echo 'Используем текущую ветку'",
-            "git branch --show-current"
-        ]
-        
-        combined_command = " && ".join(commands)
-        success, output, error = self.execute_command(combined_command)
-        
-        if success:
-            self.console.print("[green]✅ Репозиторий настроен[/green]")
-            logger.info(f"Репозиторий: {output.strip()}")
+
+        repo_ready, _, _ = self.execute_command(f"test -d {self.vm_repo_dir}/.git")
+        if repo_ready:
+            action = "update"
+            commands = [
+                f"cd {self.vm_repo_dir}",
+                "git fetch --all --prune",
+                f"git reset --hard origin/{self.repo_branch}",
+                "git clean -fd"
+            ]
         else:
-            self.console.print(f"[yellow]⚠️ Частичная настройка репозитория: {error}[/yellow]")
-        
-        return True
-    
+            action = "clone"
+            commands = [
+                f"cd {self.vm_work_dir}",
+                f"git clone --branch {self.repo_branch} --single-branch {self.repo_url} repo_sum",
+                f"cd {self.vm_repo_dir}"
+            ]
+
+        commands.extend([
+            "git submodule update --init --recursive",
+            "git rev-parse --abbrev-ref HEAD",
+            "git rev-parse --short HEAD"
+        ])
+
+        combined_command = " && ".join(commands)
+        success, output, error = self.execute_command(combined_command, timeout=600)
+
+        if success:
+            lines = [line.strip() for line in output.strip().splitlines() if line.strip()]
+            branch = lines[-2] if len(lines) >= 2 else self.repo_branch
+            commit = lines[-1] if lines else ""
+            status_label = "склонирован" if action == "clone" else "обновлён"
+            self.console.print(f"[green]✅ Репозиторий {status_label}: {branch} @ {commit}[/green]")
+            logger.info(f"Repository {action} -> {branch}@{commit}")
+            return True
+
+        self.console.print(f"[red]❌ Ошибка синхронизации репозитория: {error}")
+        if output.strip():
+            logger.error(f"Git output: {output.strip()}")
+        return False
+
     def check_critical_files(self) -> bool:
         """Проверка критических файлов"""
         self.console.print("[blue]🔍 Проверка критических файлов...[/blue]")
@@ -251,28 +271,37 @@ class VMSetupManager:
         return True
     
     def setup_python_environment(self) -> bool:
-        """Настройка Python окружения"""
-        self.console.print("[blue]🐍 Настройка Python окружения...[/blue]")
-        
-        commands = [
-            f"cd {self.vm_repo_dir}",
-            "python3 -m venv venv",
+        """Ensure the Python virtual environment exists and dependencies are installed."""
+        self.console.print("[blue]🐍 Настраиваю Python окружение...[/blue]")
+
+        venv_path = f"{self.vm_repo_dir}/venv"
+        venv_exists, _, _ = self.execute_command(f"test -d {venv_path}")
+
+        commands = [f"cd {self.vm_repo_dir}"]
+        if not venv_exists:
+            commands.append("python3 -m venv venv")
+
+        commands.extend([
             "source venv/bin/activate",
             "pip install --upgrade pip setuptools wheel",
             "pip install -r requirements.txt",
             "pip install sentence-transformers>=3.0 transformers>=4.35.0"
-        ]
-        
+        ])
+
         combined_command = " && ".join(commands)
-        success, output, error = self.execute_command(combined_command, timeout=600)  # 10 минут
-        
+        success, output, error = self.execute_command(combined_command, timeout=900)
+
         if success:
-            self.console.print("[green]✅ Python окружение готово[/green]")
+            state = "создано" if not venv_exists else "обновлено"
+            self.console.print(f"[green]✅ Python окружение {state}[/green]")
+            logger.info(f"Python environment {state}: {output.strip()}")
             return True
-        else:
-            self.console.print(f"[red]❌ Ошибка настройки Python: {error}[/red]")
-            return False
-    
+
+        self.console.print(f"[red]❌ Ошибка установки Python окружения: {error}")
+        if output.strip():
+            logger.error(f"Venv output: {output.strip()}")
+        return False
+
     def test_jina_v3(self) -> bool:
         """Тестирование загрузки Jina v3"""
         self.console.print("[blue]🧪 Тестирование Jina v3...[/blue]")
@@ -342,28 +371,79 @@ except Exception as e:
         return False
     
     def create_env_file(self) -> bool:
-        """Создание .env файла на VM"""
+        """Create or refresh .env on the VM using the local template and secrets."""
         self.console.print("[blue]⚙️ Создание .env файла...[/blue]")
-        
-        # Получаем OpenAI ключ из локального .env
-        openai_key = os.getenv("OPENAI_API_KEY", "your_openai_key_here")
-        
-        env_content = f"""QDRANT_HOST=localhost
-QDRANT_PORT=6333
-OPENAI_API_KEY={openai_key}
-"""
-        
-        # Создаем .env файл
-        command = f"cd {self.vm_repo_dir} && cat > .env << 'EOF'\n{env_content}EOF"
-        success, _, error = self.execute_command(command)
-        
-        if success:
-            self.console.print("[green]✅ .env файл создан[/green]")
-            return True
+
+        template_path = Path(".env.example")
+        local_env_path = Path(".env")
+
+        template_lines = []
+        if template_path.exists():
+            template_lines = template_path.read_text(encoding="utf-8").splitlines()
         else:
-            self.console.print(f"[red]❌ Ошибка создания .env: {error}[/red]")
+            self.console.print("[yellow]⚠️ .env.example не найден, используем только .env[/yellow]")
+
+        local_values = {}
+        if local_env_path.exists():
+            local_values = {k: v for k, v in dotenv_values(local_env_path).items() if v is not None}
+
+        rendered_lines = []
+        template_keys = []
+        missing_keys = []
+
+        if template_lines:
+            for line in template_lines:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or "=" not in line:
+                    rendered_lines.append(line)
+                    continue
+
+                key, _, default_value = line.partition("=")
+                key = key.strip()
+                template_keys.append(key)
+
+                value = local_values.get(key)
+                if value is None:
+                    value = os.getenv(key)
+                if value is None:
+                    value = default_value.strip()
+                    missing_keys.append(key)
+
+                rendered_lines.append(f"{key}={value}")
+        elif local_values:
+            rendered_lines = [f"{key}={value}" for key, value in local_values.items()]
+        else:
+            self.console.print("[red]❌ Нет данных для генерации .env[/red]")
             return False
-    
+
+        additional_keys = [key for key in local_values.keys() if key not in template_keys]
+        if additional_keys:
+            rendered_lines.append("")
+            rendered_lines.append("# === Additional Variables ===")
+            for key in sorted(additional_keys):
+                rendered_lines.append(f"{key}={local_values[key]}")
+
+        env_content = "\n".join(rendered_lines) + "\n"
+
+        self.execute_command(f"cd {self.vm_repo_dir} && cp .env .env.backup 2>/dev/null || true")
+
+        command = (
+            f"cd {self.vm_repo_dir} && cat > .env <<'EOF'\n"
+            f"{env_content}EOF\n"
+        )
+        success, _, error = self.execute_command(command)
+
+        if success:
+            self.console.print("[green]✅ .env файл обновлён[/green]")
+            if missing_keys:
+                pretty_missing = ", ".join(sorted(set(missing_keys)))
+                self.console.print(f"[yellow]ℹ️ Использованы значения по умолчанию для: {pretty_missing}[/yellow]")
+            logger.info("Remote .env refreshed with %d keys", len([line for line in rendered_lines if line and not line.startswith('#')]))
+            return True
+
+        self.console.print(f"[red]❌ Ошибка при записи .env: {error}")
+        return False
+
     def diagnose_rag_service(self) -> dict:
         """Диагностика проблем с RAG сервисом"""
         self.console.print("[blue]🔍 Диагностика RAG сервиса...[/blue]")
@@ -532,29 +612,48 @@ except Exception as e:
         return False
     
     def test_full_system(self) -> bool:
-        """Полное тестирование системы"""
+        """Заключительная проверка, что весь стек работает."""
         self.console.print("[blue]🧪 Тестирование полной системы...[/blue]")
-        
+
         tests = [
-            ("Health check", "curl -s http://localhost:8000/health"),
-            ("Qdrant status", "curl -s http://localhost:6333"),
-            ("RAG status", f"cd {self.vm_repo_dir} && source venv/bin/activate && python main.py rag status")
+            ("Health check", "curl -s http://localhost:8000/health", 30),
+            ("Qdrant status", "curl -s http://localhost:6333", 30),
+            (
+                "RAG status",
+                f"cd {self.vm_repo_dir} && source venv/bin/activate && python main.py rag status",
+                90,
+            ),
         ]
-        
+
         all_passed = True
-        
-        for test_name, command in tests:
+
+        for test_name, command, timeout in tests:
             self.console.print(f"[blue]🔍 {test_name}...[/blue]")
-            success, output, error = self.execute_command(command, timeout=30)
-            
+            success, output, error = self.execute_command(command, timeout=timeout)
+
             if success:
                 self.console.print(f"[green]✅ {test_name} прошел[/green]")
-            else:
-                self.console.print(f"[red]❌ {test_name} не прошел: {error}[/red]")
-                all_passed = False
-        
+                continue
+
+            all_passed = False
+            self.console.print(f"[red]❌ {test_name} не прошел[/red]")
+            if output.strip():
+                self.console.print(Panel.fit(output.strip(), title="STDOUT", border_style="yellow"))
+            if error.strip():
+                self.console.print(Panel.fit(error.strip(), title="STDERR", border_style="red"))
+
+            if "python main.py rag status" in command:
+                self.console.print(
+                    "[yellow]ℹ️ На VM можно выполнить: source venv/bin/activate && python main.py rag status --verbose[/yellow]"
+                )
+                self.console.print(
+                    "[yellow]ℹ️ Для логов: tail -n 20 rag_service.log или tail -n 20 rag_service.err 2>/dev/null[/yellow]"
+                )
+                self.console.print("[blue]🔎 Запускаю встроенную диагностику RAG сервиса...[/blue]")
+                self.diagnose_rag_service()
+
         return all_passed
-    
+
     def run_full_setup(self) -> bool:
         """Запуск полной настройки VM"""
         try:
@@ -562,55 +661,44 @@ except Exception as e:
                 "[bold blue]🚀 Автоматическая настройка VM для Jina v3 RAG[/bold blue]\n"
                 f"VM: {self.vm_user}@{self.vm_host}:{self.vm_port}"
             ))
-            
-            # Подключение
+
             if not self.connect_ssh():
                 return False
-            
-            # Проверка статуса
+
             status = self.check_vm_status()
-            
-            # Настройка репозитория
-            if not status['repo_exists']:
-                if not self.setup_repository():
-                    return False
-            else:
-                self.console.print("[green]✅ Репозиторий уже клонирован[/green]")
-            
-            # Проверка критических файлов
+
+            if not self.setup_repository():
+                return False
+            status['repo_exists'] = True
+
             if not self.check_critical_files():
                 return False
-            
-            # Настройка Python окружения
-            if not status['venv_exists']:
-                if not self.setup_python_environment():
-                    return False
-            else:
-                self.console.print("[green]✅ Python окружение уже настроено[/green]")
-            
-            # Тест Jina v3
+
+            if not self.setup_python_environment():
+                return False
+            status['venv_exists'] = True
+
             if not self.test_jina_v3():
                 return False
-            
-            # Настройка Qdrant
+
             if not status['qdrant_running']:
                 if not self.setup_qdrant():
                     return False
-            
-            # Создание .env
+
             if not self.create_env_file():
                 return False
-            
-            # Запуск RAG сервиса
+            status['env_exists'] = True
+
             if not status['rag_service_running']:
                 if not self.start_rag_service():
                     return False
-            
-            # Финальное тестирование
+
             if not self.test_full_system():
                 return False
-            
-            # Успех!
+
+            self.console.print("[blue]🔁 Обновляю таблицу статуса после настройки...[/blue]")
+            self.check_vm_status(show_banner=False)
+
             self.console.print(Panel.fit(
                 "[bold green]🎉 VM настройка завершена успешно![/bold green]\n\n"
                 "✅ Jina v3 загружается корректно\n"
@@ -620,46 +708,31 @@ except Exception as e:
                 "[bold]Для проверки локально выполните:[/bold]\n"
                 "[cyan]python main.py rag status[/cyan]"
             ))
-            
+
             return True
-            
+
         except Exception as e:
             self.console.print(f"[red]❌ Критическая ошибка: {e}[/red]")
             logger.error(f"Критическая ошибка настройки: {e}")
             return False
-        
+
         finally:
             if self.ssh_client:
                 self.ssh_client.close()
-    
+
     def update_code_on_vm(self) -> bool:
-        """Обновление кода на VM из репозитория"""
-        self.console.print("[blue]📥 Обновление кода на VM...[/blue]")
-        
+        """Sync repository state on the VM with the configured branch."""
+        self.console.print("[blue]🔄 Обновляю код на VM...[/blue]")
+
         try:
-            # Переход в папку и обновление кода
-            commands = [
-                f"cd {self.vm_repo_dir}",
-                "git fetch --all",
-                "git reset --hard origin/jina-embeddings-v3",
-                "git branch --show-current"
-            ]
-            
-            combined_command = " && ".join(commands)
-            success, output, error = self.execute_command(combined_command)
-            
-            if success:
-                self.console.print("[green]✅ Код на VM обновлен[/green]")
-                logger.info(f"Обновление: {output.strip()}")
-                return True
-            else:
-                self.console.print(f"[red]❌ Ошибка обновления: {error}[/red]")
-                return False
-                
+            repo_sync = self.setup_repository()
+            if repo_sync:
+                self.console.print("[green]✅ Код на VM синхронизирован[/green]")
+            return repo_sync
         except Exception as e:
             self.console.print(f"[red]❌ Критическая ошибка обновления: {e}[/red]")
             return False
-    
+
     def stop_services(self) -> bool:
         """Остановка сервисов на VM"""
         self.console.print("[blue]🛑 Остановка сервисов...[/blue]")
@@ -685,9 +758,14 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Автоматическая настройка VM для Jina v3 RAG")
-    parser.add_argument("action", choices=["start", "stop", "status", "diagnose", "update"], 
-                       help="Действие: start (настройка и запуск), stop (остановка), status (проверка), diagnose (диагностика), update (обновление кода)")
-    
+    parser.add_argument(
+        "action",
+        nargs='?',
+        default="start",
+        choices=["start", "stop", "status", "diagnose", "update"],
+        help="Режимы: start (по умолчанию, запуск и проверка), stop (остановка), status (проверка), diagnose (диагностика), update (обновление кода)"
+    )
+
     args = parser.parse_args()
     
     try:
