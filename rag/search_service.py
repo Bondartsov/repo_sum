@@ -65,7 +65,8 @@ class SearchService:
             silent_mode: Отключить консольный вывод (для web UI)
         """
         self.config = config
-        self.console = Console() if not silent_mode else None
+        # Use Rich console without emojis to avoid Windows charmap issues
+        self.console = Console(emoji=False) if not silent_mode else None
         self.silent_mode = silent_mode
         
         # Инициализация компонентов

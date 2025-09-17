@@ -136,6 +136,11 @@ def main() -> None:
     print("-" * 50)
 
     try:
+        # Force UTF-8 mode for the Streamlit subprocess to avoid Windows charmap issues
+        env = os.environ.copy()
+        env.setdefault("PYTHONUTF8", "1")
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+
         subprocess.run([
             sys.executable,
             "-m",
@@ -148,7 +153,7 @@ def main() -> None:
             str(port),
             "--browser.gatherUsageStats",
             "false",
-        ], check=False)
+        ], check=False, env=env)
     except KeyboardInterrupt:
         print("[INFO] Web interface stopped")
     except Exception as exc:

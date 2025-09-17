@@ -304,7 +304,8 @@ def init_rag_components():
         vector_store = QdrantVectorStore(config.rag.vector_store)
         search_service = SearchService(config, silent_mode=True)
         query_engine = CPUQueryEngine(embedder, vector_store, config.rag.query_engine)
-        indexer_service = IndexerService(config)
+        # Run indexer in silent mode to avoid console encoding issues under Streamlit
+        indexer_service = IndexerService(config, silent_mode=True)
         
         logger.info("RAG компоненты успешно инициализированы")
         return search_service, query_engine, indexer_service, "RAG система готова"

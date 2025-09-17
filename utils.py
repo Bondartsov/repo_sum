@@ -354,7 +354,16 @@ def setup_logging(level: str = "INFO") -> None:
             return record.levelno in (logging.INFO, logging.ERROR)
 
     # Консольный хендлер
-    stream_handler = logging.StreamHandler()
+    try:
+        import sys, io
+        stdout_buffer = getattr(sys.stdout, "buffer", None)
+        if stdout_buffer is not None:
+            utf8_stdout = io.TextIOWrapper(stdout_buffer, encoding="utf-8", errors="backslashreplace")
+            stream_handler = logging.StreamHandler(stream=utf8_stdout)
+        else:
+            stream_handler = logging.StreamHandler()
+    except Exception:
+        stream_handler = logging.StreamHandler()
     # Уровень ставим INFO, а фильтр отсеет WARNING; DEBUG ниже хендлера и так не пройдет
     stream_handler.setLevel(logging.INFO)
     stream_handler.addFilter(InfoErrorFilter())

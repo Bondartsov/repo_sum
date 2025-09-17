@@ -41,7 +41,7 @@ class IndexerService:
     - Статистика и мониторинг производительности
     """
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, silent_mode: bool = False):
         """
         Инициализация сервиса индексации.
         
@@ -49,7 +49,17 @@ class IndexerService:
             config: Конфигурация системы
         """
         self.config = config
-        self.console = Console()
+        # Console with emojis disabled to prevent Windows 'charmap' errors; 
+        # in silent mode, route output to devnull.
+        if silent_mode:
+            import io, sys, os
+            try:
+                devnull = open(os.devnull, 'w', encoding='utf-8')
+            except Exception:
+                devnull = None
+            self.console = Console(emoji=False, file=devnull, force_terminal=False, color_system=None) if devnull else None
+        else:
+            self.console = Console(emoji=False)
         
         # Инициализация компонентов
         self.file_scanner = FileScanner()
