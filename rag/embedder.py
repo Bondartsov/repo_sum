@@ -60,7 +60,7 @@ try:
 except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
 
-from config import EmbeddingConfig, ParallelismConfig
+from config import EmbeddingConfig, ParallelismConfig, RemoteServiceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,12 @@ class CPUEmbedder:
     - Graceful degradation при нехватке ресурсов
     """
     
-    def __init__(self, embedding_config: EmbeddingConfig, parallelism_config: ParallelismConfig):
+    def __init__(
+        self,
+        embedding_config: EmbeddingConfig,
+        parallelism_config: ParallelismConfig,
+        remote_service_config: Optional[RemoteServiceConfig] = None
+    ):
         """
         Инициализация эмбеддера.
         
