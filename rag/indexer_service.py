@@ -439,6 +439,71 @@ class IndexerService:
         
         return indexed_count
     
+    async def index_documents(
+        self,
+        documents: List[Dict[str, Any]],
+        batch_size: int = 512,
+        recreate_collection: bool = False
+    ) -> int:
+        """Индексация произвольных документов (id, text, metadata) напрямую в хранилище.
+
+        Используется VM API эндпоинтом /index.
+        """
+        if not documents:
+            return 0
+
+        await self.initialize_vector_store(recreate=recreate_collection)
+
+        passage_task = getattr(self.config.rag.embeddings, 'task_passage', 'retrieval.passage')
+        total_indexed = 0
+
+        for i in range(0, len(documents), batch_size):
+            batch_docs = documents[i:i + batch_size]
+            texts = [doc.get('text', '') for doc in batch_docs]
+
+            embeddings = await asyncio.to_thread(self.embedder.embed_texts, texts, task=passage_task)
+            try:
+                embeddings = np.asarray(embeddings)
+                if embeddings.ndim == 1 and len(texts) == 1:
+                    embeddings = embeddings.reshape(1, -1)
+            except Exception as e:
+                logger.error(f"Ошибка приведения формы эмбеддингов: {e}")
+                continue
+
+            if embeddings.ndim != 2 or embeddings.shape[0] != len(texts):
+                logger.error(
+                    f"Некорректная форма эмбеддингов: shape={getattr(embeddings, 'shape', None)}, texts={len(texts)}"
+                )
+                continue
+
+            points = []
+            for j, doc in enumerate(batch_docs):
+                point_id = str(doc.get('id') or uuid.uuid4())
+                metadata = dict(doc.get('metadata') or {})
+                ts = doc.get('timestamp') or datetime.utcnow().isoformat()
+
+                vec = embeddings[j]
+                vec = vec.tolist() if hasattr(vec, 'tolist') else vec
+
+                points.append({
+                    'id': point_id,
+                    'vector': vec,
+                    'payload': {
+                        **metadata,
+                        'content': doc.get('text', ''),
+                        'point_id': point_id,
+                        'indexed_at': ts,
+                    }
+                })
+
+            try:
+                batch_indexed = await asyncio.to_thread(self.vector_store.index_documents, points)
+                total_indexed += batch_indexed
+            except Exception as e:
+                logger.error(f"Ошибка индексации пачки документов: {e}")
+
+        return total_indexed
+
     async def get_indexing_stats(self) -> Dict[str, Any]:
         """
         Возвращает статистику индексации.
