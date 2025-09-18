@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import os
 import logging
 import time
 import uuid
@@ -528,3 +529,4 @@ class IndexerService:
             logger.info("IndexerService закрыт")
         except Exception as e:
             logger.error(f"Ошибка закрытия IndexerService: {e}")
+

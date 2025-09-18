@@ -783,7 +783,7 @@ def main():
                                     repo_path,
                                     batch_size=512,
                                     recreate=False,
-                                    show_progress=False
+                                    show_progress=True
                                 ))
                                 
                                 if indexing_result and indexing_result.get('success', False):
@@ -959,7 +959,7 @@ def main():
                             index_repo_path,
                             batch_size=512,
                             recreate=recreate_index,
-                            show_progress=False
+                            show_progress=True
                         ))
                         
                         if indexing_result and indexing_result.get('success', False):
