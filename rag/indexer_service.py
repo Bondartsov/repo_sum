@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
+import numpy as np
 
 from rich.progress import Progress, TaskID, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 from rich.console import Console
@@ -383,6 +384,16 @@ class IndexerService:
                 passage_task = getattr(self.config.rag.embeddings, 'task_passage', 'retrieval.passage')
                 embeddings = await asyncio.to_thread(self.embedder.embed_texts, texts, task=passage_task)
                 self.stats['embedding_time'] += time.time() - embed_start
+                # Нормализация формы эмбеддингов для устойчивости пайплайна
+                try:
+                    embeddings = np.asarray(embeddings)
+                    if embeddings.ndim == 0:
+                        embeddings = []
+                    elif embeddings.ndim == 1 and len(texts) == 1:
+                        embeddings = embeddings.reshape(1, -1)
+                except Exception as e:
+                    logger.error(f"Ошибка приведения формы эмбеддингов: {e}")
+                    embeddings = []
                 
                 if embeddings is None or len(embeddings) == 0:
                     logger.error(f"Не удалось сгенерировать эмбеддинги для батча {i//batch_size + 1}")

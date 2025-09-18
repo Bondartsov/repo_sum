@@ -151,6 +151,22 @@ class RemoteVMEmbedder:
             embeddings = await self._make_request_with_retry(payload, deadline_ms)
 
             embeddings_array = np.array(embeddings, dtype=np.float32)
+            # Гарантируем корректную форму [N, D] и соответствие количеству текстов
+            if embeddings_array.ndim == 0:
+                raise ValueError("VM вернул скаляр вместо массива эмбеддингов")
+            if embeddings_array.ndim == 1:
+                if len(texts) == 1:
+                    embeddings_array = embeddings_array.reshape(1, -1)
+                else:
+                    raise ValueError(
+                        f"VM вернул 1D вектор при батче из {len(texts)} текстов: shape={embeddings_array.shape}"
+                    )
+            if embeddings_array.ndim != 2:
+                raise ValueError(f"Некорректная форма эмбеддингов от VM: ndim={embeddings_array.ndim}")
+            if embeddings_array.shape[0] != len(texts):
+                raise ValueError(
+                    f"Несовпадение размеров: embeddings={embeddings_array.shape[0]} vs texts={len(texts)}"
+                )
 
             elapsed_time = time.time() - start_time
             self.stats['total_requests'] += 1

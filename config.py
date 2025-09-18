@@ -164,7 +164,14 @@ class VectorStoreConfig:
     port: int = field(default_factory=lambda: safe_int("QDRANT_PORT", "6333"))
     prefer_grpc: bool = field(default_factory=lambda: safe_bool("QDRANT_PREFER_GRPC", "true"))
     collection_name: str = field(default_factory=lambda: os.getenv("QDRANT_COLLECTION_NAME", "code_chunks"))
-    vector_size: int = field(default_factory=lambda: safe_int("EMBEDDING_DIMENSION", "384"))
+    # Векторная размерность коллекции по умолчанию берётся из EMB_TRUNCATE_DIM,
+    # иначе EMB_DIM, иначе явный EMBEDDING_DIMENSION. Это обеспечивает согласованность с Matryoshka truncation.
+    vector_size: int = field(
+        default_factory=lambda: safe_int(
+            "EMBEDDING_DIMENSION",
+            os.getenv("EMB_TRUNCATE_DIM", os.getenv("EMB_DIM", "1024"))
+        )
+    )
     distance: str = field(default_factory=lambda: os.getenv("QDRANT_DISTANCE", "cosine"))
     # HNSW параметры
     hnsw_m: int = field(default_factory=lambda: safe_int("QDRANT_HNSW_M", "24"))
@@ -503,12 +510,28 @@ class Config:
 _config: Optional[Config] = None
 
 
+def _harmonize_vector_dims(cfg: Config) -> None:
+    try:
+        emb_dim = int(cfg.rag.embeddings.embedding_dim)
+        trunc_dim = int(cfg.rag.embeddings.truncate_dim)
+        if trunc_dim <= 0 or trunc_dim > emb_dim:
+            logger.warning(f"embeddings.truncate_dim={trunc_dim} вне диапазона, устанавливаю {emb_dim}")
+            cfg.rag.embeddings.truncate_dim = emb_dim
+            trunc_dim = emb_dim
+        if int(cfg.rag.vector_store.vector_size) != trunc_dim:
+            logger.info(f"Гармонизирую vector_store.vector_size: {cfg.rag.vector_store.vector_size} -> {trunc_dim}")
+            cfg.rag.vector_store.vector_size = trunc_dim
+    except Exception as e:
+        logger.warning(f"Не удалось гармонизировать размерности: {e}")
+
+
 def get_config(require_api_key: bool = False) -> Config:
     """Получает глобальный экземпляр конфигурации"""
     global _config
     if _config is None:
         _config = Config.load_from_file()
         _config.validate(require_api_key=require_api_key)
+        _harmonize_vector_dims(_config)
     return _config
 
 
@@ -519,4 +542,5 @@ def reload_config(config_path: str = "settings.json", require_api_key: bool = Tr
     _config = Config.load_from_file(config_path)
     logger.debug(f"reload_config: загружен новый _config id={id(_config)}, api_key_length={len(_config.openai.api_key) if _config.openai.api_key else 0}")
     _config.validate(require_api_key=require_api_key)
+    _harmonize_vector_dims(_config)
     return _config
