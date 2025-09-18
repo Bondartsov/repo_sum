@@ -423,6 +423,60 @@ except Exception as e:
             for key in sorted(additional_keys):
                 rendered_lines.append(f"{key}={local_values[key]}")
 
+        # Force VM-local overrides in the resulting .env content
+        def set_kv(lines: list, key: str, value: str) -> list:
+            updated = False
+            out = []
+            for ln in lines:
+                if not ln or ln.startswith('#') or '=' not in ln:
+                    out.append(ln)
+                    continue
+                k, sep, v = ln.partition('=')
+                if k.strip() == key:
+                    out.append(f"{key}={value}")
+                    updated = True
+                else:
+                    out.append(ln)
+            if not updated:
+                if out and out[-1] != "":
+                    out.append("")
+                out.append(f"{key}={value}")
+            return out
+
+        # Compute ports and overrides
+        port = None
+        for ln in rendered_lines:
+            if ln.startswith('RAG_SERVICE_PORT='):
+                port = ln.split('=',1)[1].strip()
+                break
+        if not port:
+            port = os.getenv('RAG_SERVICE_PORT', '8000')
+
+        overrides = {
+            'RAG_SERVICE_HOST': '127.0.0.1',
+            'RAG_SERVICE_PORT': port,
+            'RAG_EMBEDDINGS_ENDPOINT': f'http://127.0.0.1:{port}/embeddings',
+            'RAG_SEARCH_ENDPOINT': f'http://127.0.0.1:{port}/search',
+            'RAG_INDEX_ENDPOINT': f'http://127.0.0.1:{port}/index',
+            'QDRANT_HOST': 'localhost',
+            'QDRANT_PORT': os.getenv('QDRANT_PORT', '6333'),
+            'QDRANT_PREFER_GRPC': 'false',
+            'EMBEDDING_PROVIDER': 'fastembed',
+            'VECTOR_STORE_PROVIDER': 'local',
+        }
+
+        for k, v in overrides.items():
+            rendered_lines = set_kv(rendered_lines, k, str(v))
+
+        # Ensure EMBEDDING_DIMENSION matches EMB_TRUNCATE_DIM if present
+        trunc_dim = None
+        for ln in rendered_lines:
+            if ln.startswith('EMB_TRUNCATE_DIM='):
+                trunc_dim = ln.split('=',1)[1].strip()
+                break
+        if trunc_dim:
+            rendered_lines = set_kv(rendered_lines, 'EMBEDDING_DIMENSION', trunc_dim)
+
         env_content = "\n".join(rendered_lines) + "\n"
 
         self.execute_command(f"cd {self.vm_repo_dir} && cp .env .env.backup 2>/dev/null || true")
@@ -793,7 +847,13 @@ def main():
             
         elif args.action == "update":
             if manager.connect_ssh():
+                # 1) Синхронизация кода
                 manager.update_code_on_vm()
+                # 2) Обновление .env на основе .env.example + локального .env с подстановкой localhost
+                manager.create_env_file()
+                # 3) Перезапуск RAG-сервиса, чтобы применить .env
+                manager.execute_command(f"cd {manager.vm_repo_dir} && kill $(cat rag_service.pid 2>/dev/null) 2>/dev/null || true")
+                manager.start_rag_service()
                 manager.ssh_client.close()
             sys.exit(0)
             
@@ -806,3 +866,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
