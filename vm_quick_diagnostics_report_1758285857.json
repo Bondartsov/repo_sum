@@ -1,0 +1,76 @@
+{
+  "test_suite": "quick_diagnostics",
+  "vm_host": "10.61.11.54",
+  "vm_port": 8000,
+  "start_time": "2025-09-19T15:44:14.317953",
+  "tests": {
+    "tcp_connection": {
+      "test_name": "TCP Connection Test",
+      "success": true,
+      "error": null,
+      "response_time_ms": 20.883560180664062,
+      "details": {
+        "connection_established": true
+      }
+    },
+    "http_health": {
+      "test_name": "HTTP Health Test (requests)",
+      "success": true,
+      "error": null,
+      "response_time_ms": 32.76801109313965,
+      "status_code": 200,
+      "response_data": {
+        "status": "healthy",
+        "timestamp": "2025-09-19T12:44:14.394223+00:00",
+        "services": {
+          "embedder": {
+            "status": "ready",
+            "model": "jinaai/jina-embeddings-v3",
+            "provider": "fastembed"
+          },
+          "vector_store": {
+            "timestamp": "2025-09-19T12:44:14.394270+00:00",
+            "status": "connected",
+            "client_type": "http",
+            "collection_status": "exists",
+            "error": null,
+            "collection_info": {
+              "vectors_count": null,
+              "indexed_vectors_count": 0,
+              "points_count": 0,
+              "status": "green"
+            }
+          }
+        },
+        "collection_status": "exists",
+        "qdrant_status": "connected",
+        "vector_count": null
+      }
+    },
+    "ping": {
+      "test_name": "Ping Test",
+      "success": true,
+      "error": null,
+      "avg_response_time_ms": null,
+      "packet_loss": "0%"
+    },
+    "external_connectivity": {
+      "success": true,
+      "error": null,
+      "test_name": "External Connectivity Test",
+      "details": {
+        "connection_time_ms": 19.50383186340332,
+        "connection_status": "successful"
+      },
+      "recommendations": []
+    }
+  },
+  "summary": {
+    "total_tests": 4,
+    "passed_tests": 4,
+    "failed_tests": 0,
+    "critical_issues": [],
+    "quick_recommendations": []
+  },
+  "end_time": "2025-09-19T15:44:17.445494"
+}

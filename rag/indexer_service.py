@@ -29,9 +29,7 @@ from . import CPUEmbedder, QdrantVectorStore
 from .exceptions import VectorStoreException, VectorStoreConnectionError
 
 logger = logging.getLogger(__name__)
-# Подавляем шумные SyntaxWarning (например, из файлов tests) при парсинге AST
-warnings.filterwarnings('ignore', category=SyntaxWarning)
-import warnings
+# Подавляем шумные SyntaxWarning (например, при парсинге файлов tests)
 warnings.filterwarnings('ignore', category=SyntaxWarning)
 
 class IndexerService:
@@ -110,8 +108,12 @@ class IndexerService:
             recreate: Пересоздать коллекцию если она существует
         """
         try:
-            await asyncio.to_thread(self.vector_store.initialize_collection, recreate=recreate)
-            logger.info("Векторное хранилище готово к работе")
+            init_fn = getattr(self.vector_store, 'initialize_collection')
+            if asyncio.iscoroutinefunction(init_fn):
+                await init_fn(recreate=recreate)
+            else:
+                await asyncio.to_thread(init_fn, recreate=recreate)
+            logger.info("Vector store ready")
         except Exception as e:
             logger.error(f"Ошибка инициализации векторного хранилища: {e}")
             raise VectorStoreConnectionError(f"Не удалось подключиться к векторному хранилищу: {e}")
@@ -144,6 +146,18 @@ class IndexerService:
             # 1. Инициализация векторного хранилища
             self.console.print("[bold blue]🔗 Инициализация векторного хранилища...[/bold blue]")
             await self.initialize_vector_store(recreate=recreate)
+
+            health_fn = getattr(self.vector_store, 'health_check', None)
+            if callable(health_fn):
+                try:
+                    vs_health = await health_fn() if asyncio.iscoroutinefunction(health_fn) else await asyncio.to_thread(health_fn)
+                    status = None
+                    if isinstance(vs_health, dict):
+                        status = vs_health.get('status') or vs_health.get('state')
+                    if status and status.lower() not in {'connected', 'healthy', 'ok'}:
+                        raise VectorStoreConnectionError(f'VM vector store health check failed: {status}')
+                except Exception as exc:
+                    raise VectorStoreConnectionError(f'VM vector store health check failed: {exc}') from exc
             
             # 2. Сканирование файлов
             self.console.print("[bold blue]📁 Сканирование файлов...[/bold blue]")
@@ -423,7 +437,11 @@ class IndexerService:
                 
                 # Индексируем в Qdrant
                 index_start = time.time()
-                batch_indexed = await asyncio.to_thread(self.vector_store.index_documents, points)
+                index_fn = getattr(self.vector_store, 'index_documents')
+                if asyncio.iscoroutinefunction(index_fn):
+                    batch_indexed = await index_fn(points)
+                else:
+                    batch_indexed = await asyncio.to_thread(index_fn, points)
                 self.stats['indexing_time'] += time.time() - index_start
                 
                 indexed_count += batch_indexed
@@ -501,7 +519,11 @@ class IndexerService:
                 })
 
             try:
-                batch_indexed = await asyncio.to_thread(self.vector_store.index_documents, points)
+                index_fn = getattr(self.vector_store, 'index_documents')
+                if asyncio.iscoroutinefunction(index_fn):
+                    batch_indexed = await index_fn(points)
+                else:
+                    batch_indexed = await asyncio.to_thread(index_fn, points)
                 total_indexed += batch_indexed
             except Exception as e:
                 logger.error(f"Ошибка индексации пачки документов: {e}")

@@ -1,0 +1,63 @@
+{
+  "export_timestamp": "2025-09-19T15:29:35.500904",
+  "vm_host": "10.61.11.54",
+  "vm_port": 8000,
+  "total_records": 5,
+  "health_checks": [
+    {
+      "timestamp": "2025-09-19T15:28:35.498239",
+      "success": false,
+      "response_time_ms": 0.0,
+      "status_code": null,
+      "error": "Connection error: Cannot connect to host 10.61.11.54:8000 ssl:default [Удаленный компьютер отклонил это сетевое подключение]",
+      "service_status": null,
+      "embedder_status": null,
+      "vector_store_status": null,
+      "memory_usage": null
+    },
+    {
+      "timestamp": "2025-09-19T15:28:49.136452",
+      "success": false,
+      "response_time_ms": 0.0,
+      "status_code": null,
+      "error": "Connection error: Cannot connect to host 10.61.11.54:8000 ssl:default [Удаленный компьютер отклонил это сетевое подключение]",
+      "service_status": null,
+      "embedder_status": null,
+      "vector_store_status": null,
+      "memory_usage": null
+    },
+    {
+      "timestamp": "2025-09-19T15:29:02.721558",
+      "success": false,
+      "response_time_ms": 0.0,
+      "status_code": null,
+      "error": "Connection error: Cannot connect to host 10.61.11.54:8000 ssl:default [Удаленный компьютер отклонил это сетевое подключение]",
+      "service_status": null,
+      "embedder_status": null,
+      "vector_store_status": null,
+      "memory_usage": null
+    },
+    {
+      "timestamp": "2025-09-19T15:29:16.310461",
+      "success": false,
+      "response_time_ms": 0.0,
+      "status_code": null,
+      "error": "Connection error: Cannot connect to host 10.61.11.54:8000 ssl:default [Удаленный компьютер отклонил это сетевое подключение]",
+      "service_status": null,
+      "embedder_status": null,
+      "vector_store_status": null,
+      "memory_usage": null
+    },
+    {
+      "timestamp": "2025-09-19T15:29:29.883365",
+      "success": false,
+      "response_time_ms": 0.0,
+      "status_code": null,
+      "error": "Connection error: Cannot connect to host 10.61.11.54:8000 ssl:default [Удаленный компьютер отклонил это сетевое подключение]",
+      "service_status": null,
+      "embedder_status": null,
+      "vector_store_status": null,
+      "memory_usage": null
+    }
+  ]
+}
