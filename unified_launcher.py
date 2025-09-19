@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 Unified Launcher для repo_sum RAG-as-a-Service системы.
