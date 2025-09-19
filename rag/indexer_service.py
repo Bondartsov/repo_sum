@@ -7,6 +7,7 @@
 
 import asyncio
 import os
+import warnings
 import logging
 import time
 import uuid
@@ -28,7 +29,10 @@ from . import CPUEmbedder, QdrantVectorStore
 from .exceptions import VectorStoreException, VectorStoreConnectionError
 
 logger = logging.getLogger(__name__)
-
+# Подавляем шумные SyntaxWarning (например, из файлов tests) при парсинге AST
+warnings.filterwarnings('ignore', category=SyntaxWarning)
+import warnings
+warnings.filterwarnings('ignore', category=SyntaxWarning)
 
 class IndexerService:
     """
