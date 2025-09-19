@@ -106,6 +106,8 @@ class UnifiedLauncher:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     universal_newlines=True,
+                    encoding='utf-8',           # ✅ Явно указываем UTF-8
+                    errors='replace',           # ✅ Заменяем нечитаемые символы
                     bufsize=1
                 )
                 
@@ -201,6 +203,8 @@ class UnifiedLauncher:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
+                encoding='utf-8',           # ✅ Явно указываем UTF-8
+                errors='replace',           # ✅ Заменяем нечитаемые символы
                 bufsize=1
             )
             
