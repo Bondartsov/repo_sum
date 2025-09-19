@@ -37,7 +37,24 @@ class VMConfig:
     def __post_init__(self):
         # Загружаем пароль из переменной окружения если не указан
         if not self.ssh_password:
+            # Сначала пробуем из переменной окружения
             self.ssh_password = os.getenv("VM_PASSWORD")
+            
+            # Если не найден, пробуем загрузить из .env файла
+            if not self.ssh_password:
+                try:
+                    from dotenv import load_dotenv
+                    load_dotenv()
+                    self.ssh_password = os.getenv("VM_PASSWORD")
+                    if self.ssh_password:
+                        logger.info("SSH пароль загружен из .env файла")
+                except ImportError:
+                    logger.warning("python-dotenv не установлен, не удалось загрузить .env")
+                except Exception as e:
+                    logger.warning(f"Ошибка загрузки .env файла: {e}")
+                    
+            if not self.ssh_password:
+                logger.warning("VM_PASSWORD не найден ни в переменных окружения, ни в .env файле")
     
     @property
     def base_url(self) -> str:
@@ -571,6 +588,10 @@ if __name__ == "__main__":
     # Демонстрация ping
     ping_result = NetworkUtils.ping_host("10.61.11.54", count=3)
     if ping_result["success"]:
-        print(f"Ping: ✅ {ping_result['avg_response_time_ms']:.1f}ms avg")
+        # ИСПРАВЛЕНО: Проверяем что avg_response_time_ms не None
+        if ping_result.get('avg_response_time_ms') is not None:
+            print(f"Ping: ✅ {ping_result['avg_response_time_ms']:.1f}ms avg")
+        else:
+            print(f"Ping: ✅ Success (время недоступно)")
     else:
         print(f"Ping: ❌ {ping_result['error']}")

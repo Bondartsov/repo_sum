@@ -7,14 +7,12 @@ HTTP клиент для удалённых эмбеддингов через RA
 
 import os
 import logging
-import concurrent.futures
 import time
-import aiohttp
-import asyncio
 from typing import List, Optional, Dict, Any
 from config import EmbeddingConfig, ParallelismConfig, RemoteServiceConfig
 import numpy as np
 import json
+from .event_loop_manager import run_async_safe, get_shared_http_session
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +72,8 @@ class RemoteVMEmbedder:
         self.embedding_dim = getattr(embedding_config, "embedding_dim", int(os.getenv("EMB_DIM", "1024")))
         self.truncate_dim = getattr(embedding_config, "truncate_dim", int(os.getenv("EMB_TRUNCATE_DIM", str(self.embedding_dim))))
 
-        # HTTP параметры
-        timeout_total = int(os.getenv("RAG_TIMEOUT_SECONDS", str(self.remote_config.timeout_seconds)))
-        self.timeout = aiohttp.ClientTimeout(total=timeout_total, connect=5)
+        # HTTP параметры 
+        self.timeout_seconds = int(os.getenv("RAG_TIMEOUT_SECONDS", str(self.remote_config.timeout_seconds)))
         self.max_retries = int(os.getenv("RAG_MAX_RETRIES", str(self.remote_config.max_retries)))
         self.retry_delay = float(os.getenv("RAG_RETRY_DELAY", str(self.remote_config.retry_delay)))
         
@@ -100,33 +97,22 @@ class RemoteVMEmbedder:
         task: Optional[str] = None,
         deadline_ms: int = 30000
     ) -> np.ndarray:
-        """Синхронная обёртка над запросом embeddings к VM."""
+        """Синхронная обёртка над запросом embeddings к VM с правильным event loop management."""
         if not texts:
             return np.array([])
 
-        async def runner() -> np.ndarray:
-            return await self._async_embed_texts(texts, task=task, deadline_ms=deadline_ms)
+        deadline_seconds = deadline_ms / 1000.0 if deadline_ms else 60.0
 
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = None
-
-        deadline_seconds = deadline_ms / 1000.0 if deadline_ms else None
-
-        try:
-            if loop and loop.is_running():
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(asyncio.run, runner())
-                    return future.result(timeout=deadline_seconds)
-            return asyncio.run(runner())
-        except (asyncio.TimeoutError, concurrent.futures.TimeoutError):
-            _log(logger.warning, "Timeout while requesting embeddings from VM")
+            # Используем EventLoopManager для правильной работы с async кодом
+            return run_async_safe(
+                self._async_embed_texts(texts, task=task, deadline_ms=deadline_ms),
+                timeout=deadline_seconds
+            )
         except Exception as exc:
             _log(logger.error, f"Error requesting embeddings from VM: {exc}", exc_info=True)
-
-        self.stats['error_count'] += 1
-        return np.zeros((len(texts), self.truncate_dim), dtype=np.float32)
+            self.stats['error_count'] += 1
+            return np.zeros((len(texts), self.truncate_dim), dtype=np.float32)
 
     async def _async_embed_texts(
         self,
@@ -193,7 +179,7 @@ class RemoteVMEmbedder:
         deadline_ms: int
     ) -> List[List[float]]:
         """
-        Выполняет HTTP запрос с retry логикой.
+        Выполняет HTTP запрос с retry логикой используя shared HTTP session.
         
         Args:
             payload: Данные для отправки
@@ -202,31 +188,36 @@ class RemoteVMEmbedder:
         Returns:
             Список эмбеддингов
         """
-        timeout = aiohttp.ClientTimeout(total=deadline_ms/1000.0)
+        import asyncio
         
         for attempt in range(self.max_retries):
             try:
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.post(
-                        self.embeddings_endpoint,
-                        json=payload,
-                        headers={'Content-Type': 'application/json'}
-                    ) as response:
+                # Используем shared HTTP session с connection pooling
+                session = await get_shared_http_session()
+                
+                # Создаем новый timeout для данного запроса
+                import aiohttp
+                request_timeout = aiohttp.ClientTimeout(total=deadline_ms/1000.0)
+                
+                async with session.post(
+                    self.embeddings_endpoint,
+                    json=payload,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=request_timeout
+                ) as response:
+                    
+                    if response.status == 200:
+                        result = await response.json()
                         
-                        if response.status == 200:
-                            result = await response.json()
-                            
-                            # Ожидаем формат: {"embeddings": [[...], [...], ...]}
-                            if "embeddings" in result:
-                                return result["embeddings"]
-                            else:
-                                raise ValueError(f"Неожиданный формат ответа: {result.keys()}")
-                        
+                        # Ожидаем формат: {"embeddings": [[...], [...], ...]}
+                        if "embeddings" in result:
+                            return result["embeddings"]
                         else:
-                            error_text = await response.text()
-                            raise aiohttp.ClientError(
-                                f"HTTP {response.status}: {error_text}"
-                            )
+                            raise ValueError(f"Неожиданный формат ответа: {result.keys()}")
+                    
+                    else:
+                        error_text = await response.text()
+                        raise RuntimeError(f"HTTP {response.status}: {error_text}")
             
             except asyncio.TimeoutError:
                 _log(logger.warning, f"Timeout при запросе к VM (попытка {attempt + 1})")
@@ -244,7 +235,7 @@ class RemoteVMEmbedder:
     
     async def health_check(self) -> Dict[str, Any]:
         """
-        Проверяет состояние удалённого сервиса.
+        Проверяет состояние удалённого сервиса используя shared HTTP session.
         
         Returns:
             Информация о состоянии сервиса
@@ -268,29 +259,31 @@ class RemoteVMEmbedder:
                 "normalize": True
             }
             
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                async with session.post(
-                    self.embeddings_endpoint,
-                    json=test_payload
-                ) as response:
+            # Используем shared HTTP session
+            session = await get_shared_http_session()
+            
+            async with session.post(
+                self.embeddings_endpoint,
+                json=test_payload
+            ) as response:
+                
+                if response.status == 200:
+                    result = await response.json()
                     
-                    if response.status == 200:
-                        result = await response.json()
+                    if "embeddings" in result and len(result["embeddings"]) > 0:
+                        actual_dim = len(result["embeddings"][0])
+                        health_info['status'] = 'healthy'
+                        health_info['actual_embedding_dim'] = actual_dim
                         
-                        if "embeddings" in result and len(result["embeddings"]) > 0:
-                            actual_dim = len(result["embeddings"][0])
-                            health_info['status'] = 'healthy'
-                            health_info['actual_embedding_dim'] = actual_dim
-                            
-                            if actual_dim != self.truncate_dim:
-                                health_info['warning'] = f"Размерность не соответствует ожидаемой: {actual_dim} vs {self.truncate_dim}"
-                        else:
-                            health_info['status'] = 'error'
-                            health_info['error'] = "Некорректный формат ответа"
+                        if actual_dim != self.truncate_dim:
+                            health_info['warning'] = f"Размерность не соответствует ожидаемой: {actual_dim} vs {self.truncate_dim}"
                     else:
-                        error_text = await response.text()
                         health_info['status'] = 'error'
-                        health_info['error'] = f"HTTP {response.status}: {error_text}"
+                        health_info['error'] = "Некорректный формат ответа"
+                else:
+                    error_text = await response.text()
+                    health_info['status'] = 'error'
+                    health_info['error'] = f"HTTP {response.status}: {error_text}"
         
         except Exception as e:
             health_info['status'] = 'error'
@@ -300,7 +293,7 @@ class RemoteVMEmbedder:
     
     def warmup(self) -> None:
         """
-        Прогрев удалённого сервиса (опционально).
+        Прогрев удалённого сервиса с правильным event loop management.
         """
         if self._is_warmed_up:
             return
@@ -308,15 +301,8 @@ class RemoteVMEmbedder:
         _log(logger.info, "Прогрев удалённого VM сервиса...")
         
         try:
-            # Асинхронный прогрев в синхронном контексте
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Если уже в event loop, создаем задачу
-                asyncio.create_task(self._async_warmup())
-            else:
-                # Запускаем новый event loop
-                loop.run_until_complete(self._async_warmup())
-                
+            # Используем EventLoopManager для правильной работы с async кодом
+            run_async_safe(self._async_warmup(), timeout=30)
         except Exception as e:
             _log(logger.warning, f"Ошибка прогрева VM сервиса: {e}")
             # Не критично, продолжаем работу
@@ -364,6 +350,3 @@ class RemoteVMEmbedder:
 
 # Обратная совместимость: алиас для старого класса
 CPUEmbedder = RemoteVMEmbedder
-
-
-

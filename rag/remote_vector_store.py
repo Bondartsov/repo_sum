@@ -7,14 +7,12 @@ HTTP клиент для удалённого векторного хранил�
 
 import os
 import logging
-import concurrent.futures
 import time
-import aiohttp
-import asyncio
 from typing import List, Dict, Optional, Any
 from config import RemoteServiceConfig
 import numpy as np
 from datetime import datetime, timezone
+from .event_loop_manager import run_async_safe, get_shared_http_session
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +60,7 @@ class RemoteVMVectorStore:
         self.service_host = host
         self.service_port = port
 
-        timeout_total = int(os.getenv("RAG_TIMEOUT_SECONDS", str(self.remote_config.timeout_seconds)))
-        self.timeout = aiohttp.ClientTimeout(total=timeout_total, connect=10)
+        self.timeout_seconds = int(os.getenv("RAG_TIMEOUT_SECONDS", str(self.remote_config.timeout_seconds)))
         self.max_retries = int(os.getenv("RAG_MAX_RETRIES", str(self.remote_config.max_retries)))
         self.retry_delay = float(os.getenv("RAG_RETRY_DELAY", str(self.remote_config.retry_delay)))
 
@@ -81,38 +78,18 @@ class RemoteVMVectorStore:
         self._collection_exists = False
         
         _log(logger.info, f"RemoteVMVectorStore инициализирован: поиск={self.search_endpoint}, индексация={self.index_endpoint}")
-    def _run_async(self, coro_factory, timeout=None, op_name="operation"):
-        """Запускает корутину в синхронном контексте."""
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = None
-
-        try:
-            if loop and loop.is_running():
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(asyncio.run, coro_factory())
-                    return future.result(timeout=timeout)
-            return asyncio.run(coro_factory())
-        except (asyncio.TimeoutError, concurrent.futures.TimeoutError):
-            _log(logger.warning, f"Timeout during {op_name}")
-            raise
-        except Exception as exc:
-            _log(logger.warning, f"Exception during {op_name}: {exc}", exc_info=True)
-            raise
-
     def initialize_collection(self, recreate: bool = False) -> None:
-        """Синхронная инициализация коллекции на VM."""
-        return self._run_async(
-            lambda: self._async_initialize_collection(recreate=recreate),
-            op_name="initialize_collection"
+        """Синхронная инициализация коллекции на VM с правильным event loop management."""
+        return run_async_safe(
+            self._async_initialize_collection(recreate=recreate),
+            timeout=60
         )
 
     def index_documents(self, points: List[Dict]) -> int:
-        """Синхронная индексация документов."""
-        return self._run_async(
-            lambda: self._async_index_documents(points),
-            op_name="index_documents"
+        """Синхронная индексация документов с правильным event loop management."""
+        return run_async_safe(
+            self._async_index_documents(points),
+            timeout=300  # Индексация может занять больше времени
         )
 
     def search(
@@ -123,10 +100,10 @@ class RemoteVMVectorStore:
         use_hybrid: bool = True,
         sparse_vector: Optional[Dict[int, float]] = None
     ) -> List[Dict]:
-        """Синхронный поиск в удалённом хранилище."""
-        return self._run_async(
-            lambda: self._async_search(query_vector, top_k, filters, use_hybrid, sparse_vector),
-            op_name="search"
+        """Синхронный поиск в удалённом хранилище с правильным event loop management."""
+        return run_async_safe(
+            self._async_search(query_vector, top_k, filters, use_hybrid, sparse_vector),
+            timeout=60
         )
 
     def search_by_text(
@@ -136,31 +113,31 @@ class RemoteVMVectorStore:
         filters: Optional[Dict] = None,
         use_hybrid: bool = True
     ) -> List[Dict]:
-        """Синхронный поиск по тексту."""
-        return self._run_async(
-            lambda: self._async_search_by_text(query_text, top_k, filters, use_hybrid),
-            op_name="search_by_text"
+        """Синхронный поиск по тексту с правильным event loop management."""
+        return run_async_safe(
+            self._async_search_by_text(query_text, top_k, filters, use_hybrid),
+            timeout=60
         )
 
     def health_check(self) -> Dict[str, Any]:
-        """Синхронный health-check удалённого сервиса."""
-        return self._run_async(
-            self._async_health_check,
-            op_name="health_check"
+        """Синхронный health-check удалённого сервиса с правильным event loop management."""
+        return run_async_safe(
+            self._async_health_check(),
+            timeout=30
         )
 
     def get_collection_info(self) -> Dict[str, Any]:
-        """Синхронное получение сведений о коллекции."""
-        return self._run_async(
-            self._async_get_collection_info,
-            op_name="get_collection_info"
+        """Синхронное получение сведений о коллекции с правильным event loop management."""
+        return run_async_safe(
+            self._async_get_collection_info(),
+            timeout=30
         )
 
     def close_sync(self) -> None:
-        """Синхронно закрывает соединение."""
-        return self._run_async(
-            self._async_close,
-            op_name="close"
+        """Синхронно закрывает соединение с правильным event loop management."""
+        return run_async_safe(
+            self._async_close(),
+            timeout=10
         )
 
     
@@ -196,15 +173,17 @@ class RemoteVMVectorStore:
         try:
             recreate_endpoint = f"http://{self.service_host}:{self.service_port}/collection/recreate"
             
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                async with session.post(recreate_endpoint) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        _log(logger.info, f"Коллекция пересоздана: {result}")
-                        self._collection_exists = True
-                    else:
-                        error_text = await response.text()
-                        _log(logger.error, f"Ошибка пересоздания коллекции: HTTP {response.status}: {error_text}")
+            # Используем shared HTTP session
+            session = await get_shared_http_session()
+            
+            async with session.post(recreate_endpoint) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    _log(logger.info, f"Коллекция пересоздана: {result}")
+                    self._collection_exists = True
+                else:
+                    error_text = await response.text()
+                    _log(logger.error, f"Ошибка пересоздания коллекции: HTTP {response.status}: {error_text}")
                         
         except Exception as e:
             _log(logger.error, f"Ошибка пересоздания коллекции через VM: {e}")
@@ -263,7 +242,7 @@ class RemoteVMVectorStore:
     
     async def _make_index_request_with_retry(self, payload: Dict[str, Any]) -> int:
         """
-        Выполняет запрос на индексацию с retry логикой.
+        Выполняет запрос на индексацию с retry логикой используя shared HTTP session.
         
         Args:
             payload: Данные для индексации
@@ -271,29 +250,31 @@ class RemoteVMVectorStore:
         Returns:
             Количество проиндексированных документов
         """
+        import asyncio
+        
         for attempt in range(self.max_retries):
             try:
-                async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                    async with session.post(
-                        self.index_endpoint,
-                        json=payload,
-                        headers={'Content-Type': 'application/json'}
-                    ) as response:
+                # Используем shared HTTP session с connection pooling
+                session = await get_shared_http_session()
+                
+                async with session.post(
+                    self.index_endpoint,
+                    json=payload,
+                    headers={'Content-Type': 'application/json'}
+                ) as response:
+                    
+                    if response.status == 200:
+                        result = await response.json()
                         
-                        if response.status == 200:
-                            result = await response.json()
-                            
-                            # Ожидаем формат: {"indexed_count": 123, "status": "success"}
-                            if "indexed_count" in result:
-                                return result["indexed_count"]
-                            else:
-                                raise ValueError(f"Неожиданный формат ответа индексации: {result.keys()}")
-                        
+                        # Ожидаем формат: {"indexed_count": 123, "status": "success"}
+                        if "indexed_count" in result:
+                            return result["indexed_count"]
                         else:
-                            error_text = await response.text()
-                            raise aiohttp.ClientError(
-                                f"HTTP {response.status}: {error_text}"
-                            )
+                            raise ValueError(f"Неожиданный формат ответа индексации: {result.keys()}")
+                    
+                    else:
+                        error_text = await response.text()
+                        raise RuntimeError(f"HTTP {response.status}: {error_text}")
             
             except Exception as e:
                 _log(logger.warning, f"Ошибка индексации (попытка {attempt + 1}): {e}")
@@ -405,7 +386,7 @@ class RemoteVMVectorStore:
     
     async def _make_search_request_with_retry(self, payload: Dict[str, Any]) -> List[Dict]:
         """
-        Выполняет запрос на поиск с retry логикой.
+        Выполняет запрос на поиск с retry логикой используя shared HTTP session.
         
         Args:
             payload: Данные запроса
@@ -413,29 +394,31 @@ class RemoteVMVectorStore:
         Returns:
             Список результатов поиска
         """
+        import asyncio
+        
         for attempt in range(self.max_retries):
             try:
-                async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                    async with session.post(
-                        self.search_endpoint,
-                        json=payload,
-                        headers={'Content-Type': 'application/json'}
-                    ) as response:
+                # Используем shared HTTP session с connection pooling
+                session = await get_shared_http_session()
+                
+                async with session.post(
+                    self.search_endpoint,
+                    json=payload,
+                    headers={'Content-Type': 'application/json'}
+                ) as response:
+                    
+                    if response.status == 200:
+                        result = await response.json()
                         
-                        if response.status == 200:
-                            result = await response.json()
-                            
-                            # Ожидаем формат: {"results": [...], "query_time": 0.123}
-                            if "results" in result:
-                                return result["results"]
-                            else:
-                                raise ValueError(f"Неожиданный формат ответа поиска: {result.keys()}")
-                        
+                        # Ожидаем формат: {"results": [...], "query_time": 0.123}
+                        if "results" in result:
+                            return result["results"]
                         else:
-                            error_text = await response.text()
-                            raise aiohttp.ClientError(
-                                f"HTTP {response.status}: {error_text}"
-                            )
+                            raise ValueError(f"Неожиданный формат ответа поиска: {result.keys()}")
+                    
+                    else:
+                        error_text = await response.text()
+                        raise RuntimeError(f"HTTP {response.status}: {error_text}")
             
             except Exception as e:
                 _log(logger.warning, f"Ошибка поиска (попытка {attempt + 1}): {e}")
@@ -449,7 +432,7 @@ class RemoteVMVectorStore:
     
     async def _async_health_check(self) -> Dict[str, Any]:
         """
-        Проверяет состояние удалённого векторного хранилища.
+        Проверяет состояние удалённого векторного хранилища используя shared HTTP session.
         
         Returns:
             Информация о состоянии сервиса
@@ -467,26 +450,28 @@ class RemoteVMVectorStore:
         try:
             health_endpoint = f"http://{self.service_host}:{self.service_port}{self.remote_config.health_endpoint}"
             
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                async with session.get(health_endpoint) as response:
+            # Используем shared HTTP session
+            session = await get_shared_http_session()
+            
+            async with session.get(health_endpoint) as response:
+                
+                if response.status == 200:
+                    result = await response.json()
                     
-                    if response.status == 200:
-                        result = await response.json()
-                        
-                        health_info['status'] = 'connected'
-                        health_info['collection_status'] = result.get('collection_status', 'unknown')
-                        health_info['qdrant_status'] = result.get('qdrant_status', 'unknown')
-                        health_info['vector_count'] = result.get('vector_count', 0)
-                        
-                        # Обновляем внутреннее состояние
-                        self._connected = True
-                        self._collection_exists = health_info['collection_status'] == 'exists'
-                        
-                    else:
-                        error_text = await response.text()
-                        health_info['status'] = 'error'
-                        health_info['error'] = f"HTTP {response.status}: {error_text}"
-                        self._connected = False
+                    health_info['status'] = 'connected'
+                    health_info['collection_status'] = result.get('collection_status', 'unknown')
+                    health_info['qdrant_status'] = result.get('qdrant_status', 'unknown')
+                    health_info['vector_count'] = result.get('vector_count', 0)
+                    
+                    # Обновляем внутреннее состояние
+                    self._connected = True
+                    self._collection_exists = health_info['collection_status'] == 'exists'
+                    
+                else:
+                    error_text = await response.text()
+                    health_info['status'] = 'error'
+                    health_info['error'] = f"HTTP {response.status}: {error_text}"
+                    self._connected = False
         
         except Exception as e:
             health_info['status'] = 'error'
@@ -498,7 +483,7 @@ class RemoteVMVectorStore:
     
     async def _async_get_collection_info(self) -> Dict[str, Any]:
         """
-        Получает информацию о коллекции через удалённый сервис.
+        Получает информацию о коллекции через удалённый сервис используя shared HTTP session.
         
         Returns:
             Информация о коллекции
@@ -506,17 +491,19 @@ class RemoteVMVectorStore:
         try:
             info_endpoint = f"http://{self.service_host}:{self.service_port}/collection/info"
             
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                async with session.get(info_endpoint) as response:
-                    
-                    if response.status == 200:
-                        return await response.json()
-                    else:
-                        error_text = await response.text()
-                        return {
-                            'error': f"HTTP {response.status}: {error_text}",
-                            'status': 'error'
-                        }
+            # Используем shared HTTP session
+            session = await get_shared_http_session()
+            
+            async with session.get(info_endpoint) as response:
+                
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    return {
+                        'error': f"HTTP {response.status}: {error_text}",
+                        'status': 'error'
+                    }
         
         except Exception as e:
             return {

@@ -12,6 +12,8 @@ import os
 import sys
 import asyncio
 import logging
+import gc
+import psutil
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
@@ -83,6 +85,78 @@ class IndexResponse(BaseModel):
 
 # Глобальные сервисы
 services = {}
+
+def check_memory_usage() -> Dict[str, Any]:
+    """
+    Проверка использования памяти на VM.
+    
+    Returns:
+        Словарь с информацией о памяти
+    """
+    try:
+        memory = psutil.virtual_memory()
+        return {
+            "total_gb": round(memory.total / (1024**3), 2),
+            "available_gb": round(memory.available / (1024**3), 2),
+            "used_gb": round(memory.used / (1024**3), 2),
+            "percent_used": memory.percent,
+            "is_critical": memory.percent > 85,
+            "is_warning": memory.percent > 75
+        }
+    except Exception as e:
+        logger.warning(f"Не удалось получить информацию о памяти: {e}")
+        return {"error": str(e)}
+
+def force_garbage_collection() -> Dict[str, Any]:
+    """
+    Принудительная очистка памяти.
+    
+    Returns:
+        Информация об очистке
+    """
+    try:
+        # Получаем состояние памяти до очистки
+        before = psutil.virtual_memory().percent
+        
+        # Выполняем сборку мусора
+        collected = gc.collect()
+        
+        # Получаем состояние после очистки
+        after = psutil.virtual_memory().percent
+        
+        return {
+            "objects_collected": collected,
+            "memory_before_percent": before,
+            "memory_after_percent": after,
+            "memory_freed_percent": round(before - after, 2)
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при сборке мусора: {e}")
+        return {"error": str(e)}
+
+def memory_check_middleware():
+    """
+    Middleware для проверки памяти перед тяжелыми операциями.
+    """
+    memory_info = check_memory_usage()
+    
+    if memory_info.get("is_critical", False):
+        logger.warning(f"⚠️ Критический уровень памяти: {memory_info['percent_used']:.1f}%")
+        gc_result = force_garbage_collection()
+        logger.info(f"Сборка мусора: освобождено {gc_result.get('memory_freed_percent', 0):.1f}%")
+        
+        # Если после сборки мусора все еще критично - возвращаем ошибку
+        updated_memory = check_memory_usage()
+        if updated_memory.get("is_critical", False):
+            raise HTTPException(
+                status_code=507,
+                detail=f"Недостаточно памяти на VM: {updated_memory['percent_used']:.1f}% использовано"
+            )
+    
+    elif memory_info.get("is_warning", False):
+        logger.warning(f"⚠️ Высокий уровень памяти: {memory_info['percent_used']:.1f}%")
+    
+    return memory_info
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -200,6 +274,9 @@ async def get_embeddings(request: EmbeddingRequest):
         raise HTTPException(status_code=503, detail="Embedder не инициализирован")
     
     try:
+        # Проверяем память перед тяжелой операцией
+        memory_check_middleware()
+        
         start_time = asyncio.get_event_loop().time()
         
         # Получаем эмбеддинги с поддержкой dual task
@@ -259,11 +336,21 @@ async def search_documents(request: SearchRequest):
 
 @app.post("/index", response_model=IndexResponse)
 async def index_documents(request: IndexRequest, background_tasks: BackgroundTasks):
-    """Индексация документов"""
+    """Индексация документов с защитой от OOM"""
     if 'indexer_service' not in services:
         raise HTTPException(status_code=503, detail="Indexer service не инициализирован")
     
     try:
+        # КРИТИЧНО: Проверяем память перед индексацией
+        memory_info = memory_check_middleware()
+        logger.info(f"🧠 Память перед индексацией: {memory_info.get('percent_used', 0):.1f}%")
+        
+        # Автоматически уменьшаем batch_size при высоком потреблении памяти
+        original_batch_size = request.batch_size
+        if memory_info.get('is_warning', False):
+            request.batch_size = min(1, original_batch_size // 4)
+            logger.warning(f"⚠️ Уменьшен batch_size: {original_batch_size} -> {request.batch_size}")
+        
         start_time = asyncio.get_event_loop().time()
         
         # Подготавливаем документы для индексации
@@ -349,7 +436,7 @@ async def get_stats():
             stats['services']['vector_store'] = services['vector_store'].get_stats()
         
         if 'search_service' in services:
-            stats['services']['search_service'] = services['search_service'].get_stats()
+            stats['services']['search_service'] = services['search_service'].get_search_stats()
         
         return stats
     except Exception as e:
