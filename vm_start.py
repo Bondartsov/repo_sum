@@ -595,6 +595,8 @@ except Exception as e:
         )
         
         success, output, error = self.execute_command(start_command)
+        # Игнорируем статус возврата команды запуска и переходим к ожиданию health
+        success = True
         
         if not success:
             self.console.print(f"[red]❌ Ошибка запуска сервиса: {error}[/red]")
@@ -853,7 +855,15 @@ def main():
                 manager.create_env_file()
                 # 3) Перезапуск RAG-сервиса, чтобы применить .env
                 manager.execute_command(f"cd {manager.vm_repo_dir} && kill $(cat rag_service.pid 2>/dev/null) 2>/dev/null || true")
-                manager.start_rag_service()
+                started = manager.start_rag_service()
+                # Явный health-пинг после старта
+                ok, _, _ = manager.execute_command("curl -s http://localhost:8000/health >/dev/null 2>&1")
+                if ok and started:
+                    print("[green]✔ VM service is healthy on http://localhost:8000[/green]")
+                elif ok:
+                    print("[yellow]! VM service responded healthy, старт-команда вернула non-zero (игнорировано)[/yellow]")
+                else:
+                    print("[red]✖ VM service health didn’t respond; см. rag_service.log[/red]")
                 manager.ssh_client.close()
             sys.exit(0)
             
