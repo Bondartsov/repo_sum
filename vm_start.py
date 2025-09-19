@@ -604,66 +604,77 @@ except Exception as e:
             self.diagnose_rag_service()
             return False
         
-        # Ждем запуска сервиса с детальным прогресс-баром
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            TimeElapsedColumn(),
-            console=self.console
-        ) as progress:
-            
-            task = progress.add_task("Запуск RAG сервиса...", total=60)
-            
-            for i in range(60):  # 60 секунд максимум
-                time.sleep(1)
-                success, _, _ = self.execute_command("curl -s http://localhost:8000/health >/dev/null 2>&1")
-                if success:
-                    progress.update(task, description="✅ RAG сервис запущен!")
-                    self.console.print("[green]✅ RAG сервис успешно запущен[/green]")
-                    return True
+        # Ждем запуска сервиса с детальным прогресс-баром и принудительным timeout
+        try:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=self.console
+            ) as progress:
                 
-                # Обновляем описание прогресса
-                if i < 10:
-                    desc = f"Загрузка Jina v3 модели... ({i+1}/60s)"
-                elif i < 20:
-                    desc = f"Инициализация компонентов... ({i+1}/60s)"
-                elif i < 30:
-                    desc = f"Подключение к Qdrant... ({i+1}/60s)"
-                else:
-                    desc = f"Ожидание запуска сервиса... ({i+1}/60s)"
+                task = progress.add_task("Запуск RAG сервиса...", total=60)
+                start_time = time.time()
                 
-                progress.update(task, description=desc, advance=1)
-                
-                # Диагностика каждые 15 секунд без остановки прогресса
-                if i % 15 == 14:
-                    progress.update(task, description=f"🔍 Проверка статуса... ({i+1}/60s)")
-                    success_proc, output, _ = self.execute_command("ps aux | grep vm_rag_service | grep -v grep")
-                    if success_proc and output.strip():
-                        progress.update(task, description=f"✅ Процесс найден, ждем готовности... ({i+1}/60s)")
+                for i in range(60):  # 60 секунд максимум
+                    # Принудительный timeout protection
+                    if time.time() - start_time > 70:  # 70 секунд абсолютный лимит
+                        progress.stop()
+                        self.console.print("[red]⚠️ Принудительное завершение по timeout (70s)[/red]")
+                        break
+                    
+                    time.sleep(1)
+                    success, _, _ = self.execute_command("curl -s http://localhost:8000/health >/dev/null 2>&1")
+                    if success:
+                        progress.update(task, description="✅ RAG сервис запущен!")
+                        self.console.print("[green]✅ RAG сервис успешно запущен[/green]")
+                        return True
+                    
+                    # Обновляем описание прогресса
+                    if i < 10:
+                        desc = f"Загрузка Jina v3 модели... ({i+1}/60s)"
+                    elif i < 20:
+                        desc = f"Инициализация компонентов... ({i+1}/60s)"
+                    elif i < 30:
+                        desc = f"Подключение к Qdrant... ({i+1}/60s)"
                     else:
-                        # Проверяем логи для диагностики
-                        log_success, logs, _ = self.execute_command(f"cd {self.vm_repo_dir} && tail -3 rag_service.log 2>/dev/null")
-                        if log_success and "ERROR" in logs:
-                            progress.stop()
-                            self.console.print("[red]❌ Обнаружена ошибка в логах[/red]")
-                            self.console.print(f"[dim]Последние строки: {logs.strip()}[/dim]")
-                            break
+                        desc = f"Ожидание запуска сервиса... ({i+1}/60s)"
+                    
+                    progress.update(task, description=desc, advance=1)
+                    
+                    # Диагностика каждые 15 секунд без остановки прогресса
+                    if i % 15 == 14:
+                        progress.update(task, description=f"🔍 Проверка статуса... ({i+1}/60s)")
+                        success_proc, output, _ = self.execute_command("ps aux | grep vm_rag_service | grep -v grep")
+                        if success_proc and output.strip():
+                            progress.update(task, description=f"✅ Процесс найден, ждем готовности... ({i+1}/60s)")
+                        else:
+                            # Проверяем логи для диагностики
+                            log_success, logs, _ = self.execute_command(f"cd {self.vm_repo_dir} && tail -3 rag_service.log 2>/dev/null")
+                            if log_success and "ERROR" in logs:
+                                progress.stop()
+                                self.console.print("[red]❌ Обнаружена ошибка в логах[/red]")
+                                self.console.print(f"[dim]Последние строки: {logs.strip()}[/dim]")
+                                break
+        except Exception as e:
+            self.console.print(f"[red]❌ Ошибка в progress monitoring: {e}[/red]")
+            logger.error(f"Progress monitoring error: {e}")
         
         self.console.print("[red]❌ RAG сервис не запустился в течение 60 секунд[/red]")
         
-        # Полная диагностика при неудаче
-        self.console.print("[blue]🔍 Запуск полной диагностики...[/blue]")
-        diagnostics = self.diagnose_rag_service()
+        # Быстрая диагностика без зависания
+        self.console.print("[blue]🔍 Быстрая проверка логов...[/blue]")
+        log_success, logs, _ = self.execute_command(f"cd {self.vm_repo_dir} && tail -5 rag_service.log 2>/dev/null")
         
-        # Вывод рекомендаций на основе диагностики
-        if not diagnostics['python_imports_ok']:
-            self.console.print("[yellow]💡 Рекомендация: Проблема с импортами Python модулей[/yellow]")
-        elif diagnostics['service_logs']:
-            self.console.print("[yellow]💡 Рекомендация: Проверьте логи выше для деталей ошибки[/yellow]")
+        if log_success and logs.strip():
+            self.console.print(f"[yellow]📄 Последние строки логов:[/yellow]\n{logs.strip()}")
         else:
-            self.console.print("[yellow]💡 Рекомендация: Попробуйте ручной запуск на VM для диагностики[/yellow]")
+            self.console.print("[yellow]⚠️ Логи RAG сервиса недоступны[/yellow]")
+        
+        self.console.print("[yellow]💡 Рекомендация: Проверьте логи на VM: tail -20 rag_service.log[/yellow]")
+        self.console.print("[yellow]💡 Или выполните диагностику: python vm_start.py diagnose[/yellow]")
         
         return False
     
@@ -765,16 +776,26 @@ except Exception as e:
                 "[cyan]python main.py rag status[/cyan]"
             ))
 
+            # Явное завершение при успехе
+            if self.ssh_client:
+                self.ssh_client.close()
+            logger.info("VM setup completed successfully - exiting")
             return True
 
         except Exception as e:
             self.console.print(f"[red]❌ Критическая ошибка: {e}[/red]")
             logger.error(f"Критическая ошибка настройки: {e}")
+            if self.ssh_client:
+                self.ssh_client.close()
             return False
 
         finally:
+            # Убеждаемся что SSH соединение закрыто
             if self.ssh_client:
-                self.ssh_client.close()
+                try:
+                    self.ssh_client.close()
+                except:
+                    pass
 
     def update_code_on_vm(self) -> bool:
         """Sync repository state on the VM with the configured branch."""
@@ -876,4 +897,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
