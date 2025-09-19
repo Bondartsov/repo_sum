@@ -1,317 +1,368 @@
-"""
-Единый Event Loop Manager для правильной работы async/sync кода.
-
-Решает проблемы:
-- Множественные event loops через asyncio.run()
-- TCP TIME_WAIT состояния соединений
-- ConnectionRefusedError при массовых вызовах
-"""
+# rag/event_loop_manager.py
+from __future__ import annotations
 
 import asyncio
 import logging
 import threading
 import atexit
-from typing import Coroutine, TypeVar, Any, Optional
-from concurrent.futures import ThreadPoolExecutor
+import time
+from typing import Any, Awaitable, Optional, TypeVar
+
 import aiohttp
 
-logger = logging.getLogger(__name__)
+__all__ = [
+    "EventLoopManager",
+    "run_async_safe",
+    "get_shared_http_session",
+]
 
-T = TypeVar('T')
+logger = logging.getLogger(__name__)
+T = TypeVar("T")
 
 
 def _safe_message(message: str) -> str:
     if not isinstance(message, str):
         return str(message)
     try:
-        message.encode('ascii')
+        message.encode("ascii")
         return message
     except UnicodeEncodeError:
-        return message.encode('ascii', 'ignore').decode('ascii')
+        return message.encode("ascii", "ignore").decode("ascii")
 
 
 def _log(logger_method, message: str, *args, **kwargs):
     logger_method(_safe_message(message), *args, **kwargs)
 
 
+# -------------------- small helpers --------------------
+
+def _pulse_loop(loop: asyncio.AbstractEventLoop, timeout: float = 0.5) -> None:
+    """
+    Дать event loop один «тик» без создания корутин/тасок.
+    Реализация: постим колбэк в цикл и ждём threading.Event.
+    """
+    ev = threading.Event()
+
+    def _set():
+        ev.set()
+
+    try:
+        loop.call_soon_threadsafe(_set)
+        ev.wait(timeout=timeout)
+    except Exception:
+        # Не валим процесс на shutdown
+        pass
+
+
+# -------------------- HTTPSessionManager --------------------
+
 class HTTPSessionManager:
     """
-    Централизованное управление HTTP сессиями с connection pooling.
+    Централизованная aiohttp-сессия с connection pooling.
+    Управляется EventLoopManager'ом; без магии в __del__.
     """
-    
-    def __init__(self):
+    def __init__(self) -> None:
         self._session: Optional[aiohttp.ClientSession] = None
         self._connector: Optional[aiohttp.TCPConnector] = None
         self._lock = asyncio.Lock()
-        
+
     async def get_session(self) -> aiohttp.ClientSession:
-        """
-        Получает переиспользуемую HTTP сессию с connection pooling.
-        
-        Returns:
-            Настроенная aiohttp.ClientSession
-        """
         async with self._lock:
             if self._session is None or self._session.closed:
-                # Создаем connector с оптимизированными настройками
                 self._connector = aiohttp.TCPConnector(
-                    limit=100,              # Общий лимит соединений
-                    limit_per_host=20,      # Лимит на хост
-                    keepalive_timeout=30,   # Keep-alive timeout
-                    enable_cleanup_closed=True,  # Автоочистка закрытых соединений
-                    ttl_dns_cache=300,      # DNS cache TTL
-                    use_dns_cache=True,     # Включить DNS cache
+                    limit=100,
+                    limit_per_host=20,
+                    keepalive_timeout=30,
+                    enable_cleanup_closed=True,
+                    ttl_dns_cache=300,
+                    use_dns_cache=True,
                 )
-                
-                # Настройки таймаутов
                 timeout = aiohttp.ClientTimeout(
-                    total=60,       # Общий таймаут запроса
-                    connect=10,     # Таймаут подключения 
-                    sock_read=30,   # Таймаут чтения
-                    sock_connect=5  # Таймаут socket соединения
+                    total=60, connect=10, sock_read=30, sock_connect=5
                 )
-                
-                # Создаем сессию
                 self._session = aiohttp.ClientSession(
                     connector=self._connector,
                     timeout=timeout,
                     headers={
-                        'User-Agent': 'repo-sum-rag-client/1.0',
-                        'Connection': 'keep-alive'
-                    }
+                        "User-Agent": "repo-sum-rag-client/1.0",
+                        "Connection": "keep-alive",
+                    },
                 )
-                
                 _log(logger.debug, "HTTP session создана с connection pooling")
-        
-        return self._session
-    
-    async def close(self) -> None:
-        """Закрывает HTTP сессию и освобождает ресурсы."""
-        async with self._lock:
-            if self._session and not self._session.closed:
-                await self._session.close()
-                _log(logger.debug, "HTTP session закрыта")
-            
-            if self._connector and not self._connector.closed:
-                await self._connector.close()
-                _log(logger.debug, "HTTP connector закрыт")
-                
-            self._session = None
-            self._connector = None
-    
-    def __del__(self):
-        """Cleanup при удалении объекта."""
-        if self._session and not self._session.closed:
-            try:
-                # Попытка graceful закрытия
-                asyncio.create_task(self.close())
-            except Exception:
-                pass  # Игнорируем ошибки в деструкторе
+            return self._session
 
+    async def close(self) -> None:
+        async with self._lock:
+            try:
+                if self._session and not self._session.closed:
+                    await self._session.close()
+                    _log(logger.debug, "HTTP session закрыта")
+            finally:
+                # TCPConnector.close() синхронный
+                if self._connector and not self._connector.closed:
+                    try:
+                        self._connector.close()
+                        _log(logger.debug, "HTTP connector закрыт")
+                    except Exception as e:
+                        _log(logger.debug, f"Ошибка закрытия connector: {e}")
+                self._session = None
+                self._connector = None
+
+
+# -------------------- EventLoopManager --------------------
 
 class EventLoopManager:
     """
-    Singleton для управления единым event loop в приложении.
-    
-    Решает проблемы:
-    - asyncio.run() создает новый event loop каждый раз
-    - Множественные event loops вызывают TCP проблемы
-    - Неправильное управление ресурсами
+    Потокобезопасный singleton, поднимающий отдельный поток с asyncio event loop.
+    Гарантирует:
+      - безопасный запуск корутин из sync-кода с таймаутом
+      - корректную отмену задач при таймауте + дренаж (без создания sleep-корутин)
+      - аккуратный shutdown без зависаний/RecursionError
+      - общую aiohttp-сессию
+    Публичный API:
+      - get_instance()
+      - get_stats()
+      - run_async(coro, timeout)
+    Внешняя обёртка: run_async_safe(coro, timeout)
     """
-    
-    _instance: Optional['EventLoopManager'] = None
+
+    _instance: Optional["EventLoopManager"] = None
     _lock = threading.Lock()
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         if EventLoopManager._instance is not None:
             raise RuntimeError("EventLoopManager is singleton. Use get_instance().")
-            
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._executor: Optional[ThreadPoolExecutor] = None
+
         self._thread: Optional[threading.Thread] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._ready_event = threading.Event()
+        self._stop_event = threading.Event()
+
         self._session_manager: Optional[HTTPSessionManager] = None
-        self._running = False
-        
-        # Регистрируем cleanup при выходе
-        atexit.register(self._cleanup)
-        
+
+        self._stats = {
+            "started_at": time.time(),
+            "submitted": 0,
+            "completed": 0,
+            "cancelled": 0,
+            "timeouts": 0,
+            "shutdowns": 0,
+        }
+
+        self._start_loop_thread()
+        atexit.register(self._atexit_shutdown)
+
+    # ---------- Singleton ----------
+
     @classmethod
-    def get_instance(cls) -> 'EventLoopManager':
-        """Получает singleton instance EventLoopManager."""
+    def get_instance(cls) -> "EventLoopManager":
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
-                    cls._instance = cls()
+                    cls._instance = EventLoopManager()
         return cls._instance
-    
-    def _ensure_loop(self) -> None:
-        """Гарантирует что event loop запущен и готов к работе."""
-        if self._loop is None or self._loop.is_closed():
-            self._start_background_loop()
-    
-    def _start_background_loop(self) -> None:
-        """Запускает event loop в background thread."""
-        if self._running:
+
+    # ---------- Public API ----------
+
+    def get_stats(self) -> dict:
+        return dict(self._stats)
+
+    def run_async(self, coro: Awaitable[Any], timeout: Optional[float] = None) -> Any:
+        """
+        Выполняет корутину внутри фонового event loop.
+        Корректно обрабатывает таймаут: cancel + дренаж (без sleep-корутин).
+        """
+        loop = self._ensure_loop()
+        self._stats["submitted"] += 1
+
+        cfut = asyncio.run_coroutine_threadsafe(_wrap_coro(coro), loop)
+
+        try:
+            result = cfut.result(timeout=timeout)
+            self._stats["completed"] += 1
+            return result
+
+        except asyncio.TimeoutError:
+            self._stats["timeouts"] += 1
+            self._cancel_and_drain(loop, cfut)
+            raise
+
+        except TimeoutError:
+            self._stats["timeouts"] += 1
+            self._cancel_and_drain(loop, cfut)
+            raise
+
+        except Exception:
+            if not cfut.done():
+                self._cancel_and_drain(loop, cfut)
+            else:
+                self._stats["completed"] += 1
+            raise
+
+    async def get_http_session(self) -> aiohttp.ClientSession:
+        if self._session_manager is None:
+            raise RuntimeError("HTTPSessionManager not initialized")
+        return await self._session_manager.get_session()
+
+    def shutdown(self, timeout: float = 2.0) -> None:
+        """
+        Быстрый и безопасный останов:
+          - закрыть HTTP-сессию
+          - отменить pending задачи (кроме текущей shutdown-задачи) и дождаться их завершения
+          - остановить цикл и отпустить поток
+        Повторные вызовы безопасны. Жёстко ограничиваем время ожидания.
+        """
+        if self._stop_event.is_set():
             return
-            
-        # Создаем новый event loop
-        self._loop = asyncio.new_event_loop()
-        
-        # Настраиваем thread pool executor
-        self._executor = ThreadPoolExecutor(
-            max_workers=4,
-            thread_name_prefix="rag-async"
-        )
-        
-        # Запускаем loop в отдельном потоке
-        def run_loop():
+
+        loop = self._loop
+        thread = self._thread
+        if loop is None or thread is None:
+            return
+
+        self._stop_event.set()
+        self._stats["shutdowns"] += 1
+
+        # 1) Закрываем HTTP-сессию в цикле
+        try:
+            if self._session_manager is not None:
+                fut = asyncio.run_coroutine_threadsafe(self._session_manager.close(), loop)
+                fut.result(timeout=timeout)
+        except Exception:
+            pass
+
+        # 2) Отменяем все задачи (кроме текущей) и даём им завершиться
+        try:
+            fut = asyncio.run_coroutine_threadsafe(_graceful_shutdown(loop), loop)
+            fut.result(timeout=timeout)
+        except Exception:
+            pass
+
+        # 3) Останавливаем цикл и даём «тик» без корутин
+        try:
+            loop.call_soon_threadsafe(loop.stop)
+            _pulse_loop(loop, timeout=0.5)
+        except Exception:
+            pass
+
+        # 4) Ждём поток недолго и отпускаем (поток — daemon)
+        if thread.is_alive():
+            thread.join(timeout=timeout)
+
+        # ссылки освободим, остальное — в worker.finally
+        self._loop = None
+        self._thread = None
+
+    # ---------- Internals ----------
+
+    def _start_loop_thread(self) -> None:
+        def _loop_worker():
+            self._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._loop)
+            self._ready_event.set()
+
             try:
                 self._loop.run_forever()
-            except Exception as e:
-                _log(logger.error, f"Event loop error: {e}")
             finally:
-                self._loop.close()
-        
-        self._thread = threading.Thread(target=run_loop, daemon=True)
-        self._thread.start()
-        self._running = True
-        
-        # Инициализируем HTTP session manager
-        future = asyncio.run_coroutine_threadsafe(
-            self._init_session_manager(), 
-            self._loop
+                # Финальная очистка всех оставшихся задач
+                try:
+                    current = asyncio.current_task()
+                    pending = [t for t in asyncio.all_tasks()
+                               if t is not current and not t.done()]
+                    if pending:
+                        for t in pending:
+                            t.cancel()
+                        self._loop.run_until_complete(
+                            asyncio.gather(*pending, return_exceptions=True)
+                        )
+                    # финальный тик (безопасно — мы внутри потока цикла)
+                    self._loop.run_until_complete(asyncio.sleep(0))
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        self._loop.close()
+                    except Exception:
+                        pass
+
+        # daemon=True, чтобы никогда не удерживать процесс при редких зависаниях
+        self._thread = threading.Thread(
+            target=_loop_worker, name="EventLoopManagerThread", daemon=True
         )
-        future.result(timeout=10)  # Ждем инициализации
-        
+        self._thread.start()
+
+        # Дожидаемся готовности цикла
+        self._ready_event.wait(timeout=3.0)
+
+        # Инициализируем SessionManager в самом цикле
+        init_fut = asyncio.run_coroutine_threadsafe(self._init_session_manager(), self._loop)  # type: ignore[arg-type]
+        init_fut.result(timeout=3.0)
         _log(logger.info, "EventLoopManager: background loop started")
-    
+
     async def _init_session_manager(self) -> None:
-        """Инициализирует HTTP session manager."""
         self._session_manager = HTTPSessionManager()
         _log(logger.debug, "HTTPSessionManager initialized")
-    
-    def run_async(self, coro: Coroutine[Any, Any, T], timeout: Optional[float] = 60) -> T:
+
+    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
+        if self._loop is None or (self._thread and not self._thread.is_alive()):
+            self._ready_event.clear()
+            self._stop_event.clear()
+            self._start_loop_thread()
+        return self._loop  # type: ignore[return-value]
+
+    def _cancel_and_drain(self, loop: asyncio.AbstractEventLoop, cfut) -> None:
         """
-        Правильно выполняет coroutine из синхронного контекста.
-        
-        Args:
-            coro: Корутина для выполнения
-            timeout: Таймаут выполнения в секундах
-            
-        Returns:
-            Результат выполнения корутины
-            
-        Raises:
-            asyncio.TimeoutError: При превышении таймаута
-            Exception: Любые ошибки из корутины
+        Отмена задачи при таймауте + короткий дренаж БЕЗ создания корутин.
         """
-        self._ensure_loop()
-        
-        if not self._loop or self._loop.is_closed():
-            raise RuntimeError("Event loop is not running")
-        
         try:
-            # Выполняем корутину в background event loop
-            future = asyncio.run_coroutine_threadsafe(coro, self._loop)
-            return future.result(timeout=timeout)
-            
-        except Exception as e:
-            _log(logger.error, f"Error running async operation: {e}")
-            raise
-    
-    async def get_http_session(self) -> aiohttp.ClientSession:
-        """
-        Получает переиспользуемую HTTP сессию.
-        
-        Returns:
-            Настроенная aiohttp.ClientSession с connection pooling
-        """
-        if not self._session_manager:
-            raise RuntimeError("HTTPSessionManager not initialized")
-        
-        return await self._session_manager.get_session()
-    
-    def _cleanup(self) -> None:
-        """Очистка ресурсов при завершении."""
-        if not self._running:
-            return
-            
+            cfut.cancel()
+        except Exception:
+            pass
+        # Два коротких «пульса» — достаточно для Windows/3.13
+        _pulse_loop(loop, timeout=0.3)
+        _pulse_loop(loop, timeout=0.3)
+        self._stats["cancelled"] += 1
+
+    def _atexit_shutdown(self) -> None:
+        # Быстрый, не блокирующий выход на случай непредвидённых состояний
         try:
-            if self._session_manager and self._loop and not self._loop.is_closed():
-                # Закрываем HTTP session
-                future = asyncio.run_coroutine_threadsafe(
-                    self._session_manager.close(),
-                    self._loop
-                )
-                future.result(timeout=5)
-            
-            if self._executor:
-                try:
-                    self._executor.shutdown(wait=True)
-                except Exception as e:
-                    _log(logger.error, f"Ошибка завершения thread pool: {e}")
-            
-            if self._loop and not self._loop.is_closed():
-                # Отменяем все pending tasks перед остановкой loop
-                try:
-                    pending = asyncio.all_tasks(self._loop)
-                    for task in pending:
-                        task.cancel()
-                    # Даём время на завершение отмены
-                    if pending:
-                        import time
-                        time.sleep(0.1)
-                except Exception as e:
-                    _log(logger.error, f"Ошибка отмены tasks: {e}")
-                
-                self._loop.call_soon_threadsafe(self._loop.stop)
-                
-            if self._thread and self._thread.is_alive():
-                self._thread.join(timeout=5)
-                
-            self._running = False
-            _log(logger.info, "EventLoopManager cleanup completed")
-            
-        except Exception as e:
-            _log(logger.error, f"Error during cleanup: {e}")
-    
-    def get_stats(self) -> dict:
-        """Возвращает статистику работы event loop manager."""
-        return {
-            'running': self._running,
-            'loop_closed': self._loop.is_closed() if self._loop else True,
-            'thread_alive': self._thread.is_alive() if self._thread else False,
-            'executor_shutdown': self._executor._shutdown if self._executor else True,
-            'session_manager_active': self._session_manager is not None
-        }
+            self.shutdown(timeout=1.5)
+        except Exception:
+            pass
 
 
-# Глобальная функция для удобного доступа
-def run_async_safe(coro: Coroutine[Any, Any, T], timeout: Optional[float] = 60) -> T:
+# -------------------- helpers --------------------
+
+async def _wrap_coro(coro: Awaitable[Any]) -> Any:
+    try:
+        return await coro
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        raise
+
+
+async def _graceful_shutdown(loop: asyncio.AbstractEventLoop) -> None:
     """
-    Безопасно выполняет async код из sync контекста.
-    
-    Args:
-        coro: Корутина для выполнения
-        timeout: Таймаут в секундах
-        
-    Returns:
-        Результат выполнения корутины
-        
-    Example:
-        result = run_async_safe(some_async_function())
+    Корректная отмена «чужих» задач внутри event loop.
+    Главное: НЕ отменяем текущую shutdown-задачу.
     """
+    current = asyncio.current_task()
+    pending = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
+    if pending:
+        for t in pending:
+            t.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+    # Никаких sleep здесь снаружи — «тик» делает вызывающая сторона (через _pulse_loop).
+
+
+# -------------------- public convenience API --------------------
+
+def run_async_safe(coro: Awaitable[Any], timeout: Optional[float] = None) -> Any:
     manager = EventLoopManager.get_instance()
     return manager.run_async(coro, timeout)
 
 
 async def get_shared_http_session() -> aiohttp.ClientSession:
-    """
-    Получает переиспользуемую HTTP сессию для всего приложения.
-    
-    Returns:
-        Настроенная aiohttp.ClientSession с connection pooling
-    """
     manager = EventLoopManager.get_instance()
     return await manager.get_http_session()
