@@ -14,11 +14,7 @@ This file provides guidance to agents when working with code in this repository.
 
 ### Memory Bank структура (.clinerules/):
 - 📊 **[projectbrief.md](.clinerules/projectbrief.md)** - суть проекта, цели, требования
-- 🎯 **[productContext.md](.clinerules/productContext.md)** - продуктовый контекст, пользователи, сценарии  
-- 🏗️ **[systemPatterns.md](.clinerules/systemPatterns.md)** - архитектурные паттерны, SOLID принципы
-- 💻 **[techContext.md](.clinerules/techContext.md)** - технологический стек, компоненты, критические проблемы
-- 🔄 **[activeContext.md](.clinerules/activeContext.md)** - текущий статус, активные задачи, M2 milestone
-- 📈 **[progress.md](.clinerules/progress.md)** - история развития, достижения, метрики
+- 🎯 **[productContext.md](.clinerules/productContext.md)** - продуктовый контекст, пользователи, сценарии
 
 ### Вспомогательные файлы:
 - 📋 **[custom_instructions.md](.clinerules/custom_instructions.md)** - правила работы с Memory Bank
