@@ -6,6 +6,8 @@
 
 **Статус:** ✅ M2.5 VM Migration 80% ЗАВЕРШЕНА - Jina v3 работает на VM!
 
+> 📚 **Актуальный статус**: [`.clinerules/project_status.md`](.clinerules/project_status.md)
+
 ### 🎉 Достигнутый прорыв:
 - ✅ **Jina v3 SUCCESS**: 570M параметров работают на VM (10.61.11.54:8000)
 - ✅ **SSH Automation**: полная автоматизация через `vm_start.py`
@@ -40,6 +42,21 @@ python main.py rag search "authentication function" --top-k 5
 ```
 
 **📝 Полная инструкция:** см. `SETUP.md` (все этапы в одном файле)
+
+---
+
+## 📚 Система памяти
+
+**Централизованная документация проекта** в [`.clinerules/`](.clinerules/) обеспечивает:
+
+- 🗺️ **[navigation.md](.clinerules/navigation.md)** - точка входа в систему памяти
+- 📊 **[project_status.md](.clinerules/project_status.md)** - единый источник истины о статусе
+- 🎯 **[activeContext.md](.clinerules/activeContext.md)** - текущий фокус разработки
+- 📈 **[progress.md](.clinerules/progress.md)** - история развития проекта
+- 🏗️ **[techContext.md](.clinerules/techContext.md)** - техническая архитектура
+- 🎯 **[projectContext.md](.clinerules/projectContext.md)** - продуктовый контекст
+
+> **НАЧНИТЕ ЗДЕСЬ**: [`.clinerules/navigation.md`](.clinerules/navigation.md) для навигации по документации
 
 ---
 
@@ -779,6 +796,15 @@ MIT License - подробности в файле LICENSE.
 - Приложите логи с флагом `-v` (verbose mode)
 - Укажите версию Python и операционную систему
 - Приложите содержимое `settings.json` (без API ключа)
+
+---
+
+## 📚 Документация проекта
+
+- 🗺️ **[ROADMAP.md](ROADMAP.md)** - полная дорожная карта развития
+- 📋 **[SETUP.md](SETUP.md)** - инструкция по настройке и запуску
+- 🧪 **[AGENTS.md](AGENTS.md)** - правила работы с кодом проекта
+- 📚 **[Система памяти](.clinerules/navigation.md)** - консолидированная документация
 
 ---
 

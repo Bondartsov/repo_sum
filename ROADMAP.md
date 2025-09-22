@@ -1,9 +1,11 @@
 # 🗺️ ROADMAP: Repository Analyzer Development Plan
 
-**Дата:** 16 сентября 2025  
-**Статус:** M2.5 VM Migration BREAKTHROUGH - RAG-as-a-Service система запущена  
-**Версия:** 2.0.0 (VM Migration революция)  
+**Дата:** 22 сентября 2025
+**Статус:** M2.5 VM Migration BREAKTHROUGH - RAG-as-a-Service система запущена
+**Версия:** 2.0.0 (VM Migration революция)
 **Ветка:** jina-embeddings-v3 → master (готов к мержу)
+
+> 📚 **Система памяти**: [`.clinerules/`](.clinerules/) - консолидированная документация проекта
 
 ---
 
@@ -60,9 +62,11 @@
 - ✅ Метрики: Precision@10 +15-20%, Recall@100 +25-30%
 - ✅ Performance: <300ms p95 латентность
 
-### 🔄 **M2.5: Jina v3 VM Migration** (80% ЗАВЕРШЁН - 16.09.2025)
-**Статус:** ✅ VM ЗАПУЩЕНА → ❌ ASYNC FIXES PENDING  
+### 🔄 **M2.5: Jina v3 VM Migration** (80% ЗАВЕРШЁН - 22.09.2025)
+**Статус:** ✅ VM ЗАПУЩЕНА → ❌ ASYNC FIXES PENDING
 **РЕВОЛЮЦИОННЫЙ ПРОРЫВ**: Первая RAG-as-a-Service архитектура!
+
+> 📋 **Система памяти**: Подробный статус в [`.clinerules/project_status.md`](.clinerules/project_status.md)
 
 #### **✅ Достигнутые результаты:**
 - ✅ **VM Infrastructure**: Xeon Gold 6248R, 31GB RAM, Ubuntu 22.04.4
@@ -372,6 +376,8 @@ async def _async_embed_texts(self, texts: List[str], task: str = None) -> np.nda
 
 ---
 
-**Дата создания**: 16 сентября 2025  
-**Статус**: VM Migration Breakthrough - готов к финализации  
+**Дата создания**: 22 сентября 2025
+**Статус**: VM Migration Breakthrough - готов к финализации
 **Следующее обновление**: После завершения M2.5 async fixes
+
+> 📚 **Система памяти**: [`.clinerules/`](.clinerules/) - актуальная информация о проекте

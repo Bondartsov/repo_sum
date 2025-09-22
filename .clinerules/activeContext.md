@@ -1,6 +1,6 @@
 # Active Context: Repository Analyzer
 
-**Дата обновления:** 16 сентября 2025  
+**Дата обновления:** 22 сентября 2025
 **Статус:** M2.5 🔄 В ПРОЦЕССЕ - VM MIGRATION ЧАСТИЧНО УСПЕШНА  
 **Версия:** 0.6.1 (M2.5 VM Migration + async/sync fixes pending)  
 **Основная Ветка:** jina-embeddings-v3
