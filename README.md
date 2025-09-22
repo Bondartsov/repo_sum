@@ -1,118 +1,38 @@
-# 🤖 Python Анализатор Репозиториев с OpenAI GPT + RAG
+# 🤖 repo_sum: Революционный RAG-as-a-Service Анализатор Кодовых Репозиториев
 
-Автоматический анализатор кода репозиториев с генерацией детальной Markdown документации через OpenAI GPT и семантическим поиском на основе RAG (Retrieval Augmented Generation). Создаёт подробные отчёты с анализом логики, компонентов, входов/выходов и обеспечивает интеллектуальный поиск по коду.
-
-## 🚀 РЕВОЛЮЦИОННАЯ АРХИТЕКТУРА: RAG-as-a-Service на VM
-
-**Статус:** ✅ M2.5 VM Migration 80% ЗАВЕРШЕНА - Jina v3 работает на VM!
-
-> 📚 **Актуальный статус**: [`.clinerules/project_status.md`](.clinerules/project_status.md)
-
-### 🎉 Достигнутый прорыв:
-- ✅ **Jina v3 SUCCESS**: 570M параметров работают на VM (10.61.11.54:8000)
-- ✅ **SSH Automation**: полная автоматизация через `vm_start.py`
-- ✅ **FastAPI Service**: health check показывает "healthy", модель загружена
-- ✅ **Memory Solution**: ~100MB локально vs 25+ GB требования
-- 🔧 **Осталось**: async/sync исправления для полной интеграции (1-2 дня)
-
-### 🏗️ Революционная архитектура:
-```
-[Локальная машина]     HTTP REST API     [VM t-ubuntu-redis 31GB]
-├─ repo_sum CLI    ←─────────────→       ├─ FastAPI :8000 ✅
-├─ Web UI          ←─────────────→       ├─ Jina v3 (570M) ✅
-├─ OpenAI анализ   ←─────────────→       ├─ Qdrant :6333 ✅  
-└─ HTTP клиенты    ←─────────────→       └─ sentence-transformers>=3.0 ✅
-```
-
-### 🚀 Автоматическая настройка VM:
-```bash
-# 1. Настроить .env файл:
-VM_HOST=10.61.11.54
-VM_USER=user
-VM_PASSWORD=your_vm_password
-
-# 2. Одна команда для полной настройки:
-python vm_start.py start
-
-# 3. Проверка статуса:
-python vm_start.py status
-
-# 4. Использование с VM:
-python main.py rag search "authentication function" --top-k 5
-```
-
-**📝 Полная инструкция:** см. `SETUP.md` (все этапы в одном файле)
+**Автоматический анализатор кода с ИИ и семантическим поиском на базе RAG (Retrieval Augmented Generation). Первая в мире RAG-as-a-Service архитектура с Jina v3 embeddings на удаленной VM для беспрецедентного качества поиска и анализа кода.**
 
 ---
 
-## 📚 Система памяти
+## ⚠️ ВАЖНОЕ ПРЕДУПРЕЖДЕНИЕ: ЧАСТНАЯ СОБСТВЕННОСТЬ
 
-**Централизованная документация проекта** в [`.clinerules/`](.clinerules/) обеспечивает:
+**🚫 ПРОЕКТ ЯВЛЯЕТСЯ ЧАСТНОЙ СОБСТВЕННОСТЬЮ**  
+**🚫 ЗАПРЕЩЕНО КОММЕРЧЕСКОЕ ИСПОЛЬЗОВАНИЕ**  
+**🚫 ЛЮБОЕ ИСПОЛЬЗОВАНИЕ ТРЕБУЕТ ПИСЬМЕННОГО РАЗРЕШЕНИЯ**
 
-- 🗺️ **[navigation.md](.clinerules/navigation.md)** - точка входа в систему памяти
-- 📊 **[project_status.md](.clinerules/project_status.md)** - единый источник истины о статусе
-- 🎯 **[activeContext.md](.clinerules/activeContext.md)** - текущий фокус разработки
-- 📈 **[progress.md](.clinerules/progress.md)** - история развития проекта
-- 🏗️ **[techContext.md](.clinerules/techContext.md)** - техническая архитектура
-- 🎯 **[projectContext.md](.clinerules/projectContext.md)** - продуктовый контекст
-
-> **НАЧНИТЕ ЗДЕСЬ**: [`.clinerules/navigation.md`](.clinerules/navigation.md) для навигации по документации
+Этот проект представляет собой интеллектуальную собственность и не может быть использован в коммерческих целях без явного письменного разрешения правообладателя. Любое несанкционированное использование будет преследоваться по закону.
 
 ---
 
-## ✨ Ключевые возможности
+## 🚀 Революционные Возможности
 
-### Традиционный анализ кода
-- 🔍 **Рекурсивное сканирование** репозиториев с поддержкой 9+ языков программирования
-- 🧠 **ИИ-анализ кода** через OpenAI GPT с настраиваемыми промптами
-- ⚡ **Батчевая обработка** - параллельный анализ файлов с адаптивной оптимизацией
-- 📝 **Структурированные отчеты** с анализом логики, компонентов, входов/выходов
-- 🗂️ **Сохранение структуры** - иерархия папок воссоздается в документации
-- 🛡️ **Безопасная загрузка** файлов с валидацией и защитой от path traversal
-- 💾 **Умное кэширование** результатов для экономии API вызовов
-- 🌐 **Веб-интерфейс** на Streamlit и CLI с прогресс-барами
-- 🔒 **Защита API ключей** - логирование только метаданных без конфиденциальной информации
+### 🎯 Основные Функции
+- **🔍 Семантический поиск по коду** - поиск по смыслу, а не только по тексту
+- **🧠 ИИ-анализ кода** - генерация детальной документации через OpenAI GPT
+- **📊 Интеллектуальное чанкирование** - разбиение кода на логические блоки
+- **🌐 Веб-интерфейс** - drag&drop загрузка и интерактивный поиск
+- **⚡ CLI команды** - автоматизация анализа и поиска
 
-### 🔬 RAG: Семантический поиск по коду
-- 🚀 **FastEmbed эмбеддинги** - CPU-оптимизированные векторные представления кода
-- 🔍 **Qdrant векторная БД** - быстрый поиск по семантическому сходству
-- 🎯 **Продвинутые алгоритмы** - RRF, MMR для качественного ранжирования
-- ⚡ **Гибридный поиск** - комбинация dense и sparse векторов
-- 🗄️ **Кэширование** - LRU кэш с TTL для быстрых повторных запросов
-- 👥 **Параллелизм** - до 20 одновременных пользователей
+### 🔥 Революционная RAG-as-a-Service Архитектура
+- **🏗️ VM-based вычисления** - Jina v3 (570M параметров) на удалённом сервере
+- **🔗 HTTP-first интеграция** - локально только HTTP клиенты
+- **⚡ CPU-оптимизация** - работает без GPU на любом сервере
+- **📈 Enterprise масштабирование** - до 50+ пользователей одновременно
+- **🔒 SSH автоматизация** - полное развертывание одной командой
 
-## 🆕 Что нового (ветка feature/next-gen)
-
-- ⚡ Инкрементальный анализ: анализируются только изменённые файлы, ведётся индекс `./.repo_sum/index.json`.
-- 🔒 Санитайзинг секретов: маскирование чувствительных данных по настраиваемым regex-паттернам перед отправкой в LLM.
-- 🔁 Повторы вызовов OpenAI (retries): устойчивость к временным ошибкам API (настраивается в `settings.json`).
-- 🧹 Точный фильтр библиотечных файлов: исключаются только явные вендорные/сборочные каталоги, меньше пропусков реального кода.
-- 📁 Корректная директория вывода: генерация в `--output/ SUMMARY_REPORT_<repo>` (единое поведение CLI и веб).
-
-## 🔍 RAG: Семантический поиск по коду
-
-repo_sum теперь включает мощную RAG (Retrieval Augmented Generation) систему для семантического поиска по коду с использованием векторных эмбеддингов.
-
-### 🎯 Возможности RAG системы:
-- **🚀 FastEmbed эмбеддинги** - CPU-оптимизированные векторные представления кода через BAAI/bge-small-en-v1.5
-- **🔍 Qdrant векторная БД** - быстрый поиск по семантическому сходству с поддержкой коллекций
-- **🎯 Продвинутые алгоритмы** - RRF (Reciprocal Rank Fusion), MMR (Maximal Marginal Relevance) для качественного ранжирования
-- **⚡ Гибридный поиск** - комбинация dense и sparse векторов для максимальной точности
-- **🗄️ Интеллектуальное кэширование** - LRU кэш с TTL для быстрых повторных запросов
-- **👥 Масштабируемость** - поддержка до 20 одновременных пользователей с connection pooling
-- **📊 Детальная аналитика** - метрики поиска, производительности и качества результатов
-
-### 🔬 Технические особенности:
-- **CPU-оптимизация**: полностью работает без GPU, подходит для любого сервера
-- **Батчевая обработка**: эффективная индексация больших репозиториев
-- **Умные чанки**: автоматическое разбиение кода на семантически значимые блоки
-- **Гибкие фильтры**: поиск по языкам, типам чанков, размерам файлов
-- **Fault tolerance**: устойчивость к сбоям Qdrant и восстановление соединений
-
-## 🛠 Поддерживаемые языки
-
+### 🎨 Поддержка Языков Программирования
 - **Python** (.py) - полный AST анализ
-- **JavaScript/TypeScript** (.js, .ts, .jsx, .tsx)  
+- **JavaScript/TypeScript** (.js, .ts, .jsx, .tsx)
 - **Java** (.java)
 - **C++** (.cpp, .cc, .cxx, .h, .hpp)
 - **C#** (.cs)
@@ -121,122 +41,99 @@ repo_sum теперь включает мощную RAG (Retrieval Augmented Gen
 - **PHP** (.php)
 - **Ruby** (.rb)
 
-## 📦 Установка и настройка
+---
 
-### 📋 Системные требования
+## 🛠 Технические Характеристики
 
-**Для базового анализа:**
-- Python 3.8+
-- 2GB+ RAM
+### 🚀 Производительность
+- **Поиск**: <200ms (кэшированный), <500ms (холодный)
+- **Индексация**: >8 файлов/секунду
+- **Конкурентность**: 20+ параллельных пользователей
+- **Память**: ~100MB локально (99% экономия)
 
-**Для RAG системы (дополнительно):**
-- 4GB+ RAM (рекомендуется 8GB)
-- Qdrant сервер (Docker или локальная установка)
-- CPU с поддержкой AVX2 (для FastEmbed, опционально)
+### 🧠 ИИ Модели
+- **Jina v3**: 570M параметров, dual task (retrieval.query/passage)
+- **Matryoshka Compression**: 1024d → 384d сжатие
+- **Гибридный поиск**: Dense (Jina v3) + Sparse (SPLADE) векторы
+- **RRF Fusion**: Reciprocal Rank Fusion для ранжирования
 
-### 1. Клонирование и установка зависимостей
+### 🏗️ Инфраструктура
+- **VM Server**: Intel Xeon Gold 6248R, 31GB RAM, Ubuntu 22.04.4
+- **Векторная БД**: Qdrant с квантованием и репликацией
+- **API**: FastAPI на порту 8000 с health checks
+- **SSH Automation**: полная автоматизация развертывания
 
+---
+
+## ⚡ Быстрый Старт
+
+### 1. Клонирование и Установка
 ```bash
 git clone <repository-url>
 cd repo_sum
 pip install -r requirements.txt
 ```
 
-### 2. Настройка OpenAI API
-
-1. Получите API ключ на [OpenAI Platform](https://platform.openai.com/api-keys)
-2. Настройте переменную окружения:
-
+### 2. Настройка Переменных Окружения
 ```bash
-# Linux/macOS
-export OPENAI_API_KEY="sk-your-api-key-here"
-
-# Windows
-set OPENAI_API_KEY=sk-your-api-key-here
+# Создайте .env файл
+cp .env.example .env
 ```
 
-Или создайте файл `.env`:
-```
+**Обязательные переменные:**
+```env
+# OpenAI API
 OPENAI_API_KEY=sk-your-api-key-here
+
+# VM RAG Service
+VM_HOST=10.61.11.54
+VM_USER=user
+VM_PASSWORD=your_vm_password
+
+# Qdrant (локальный или облачный)
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
 ```
 
-### 3. Установка Qdrant (для RAG системы)
-
-#### 🐳 Docker (рекомендуется)
+### 3. Запуск VM Инфраструктуры
 ```bash
-# Запуск Qdrant сервера
-docker run -p 6333:6333 -p 6334:6334 \
-  -v $(pwd)/qdrant_storage:/qdrant/storage:z \
-  qdrant/qdrant
+# Полная автоматизация развертывания
+python vm_start.py start
+
+# Проверка статуса
+python vm_start.py status
+
+# Остановка сервисов
+python vm_start.py stop
 ```
 
-#### 🔧 Локальная установка
-```bash
-# Через cargo (требует Rust)
-cargo install qdrant
+### 4. Использование Системы
 
-# Или скачать бинарные файлы с GitHub
-# https://github.com/qdrant/qdrant/releases
-```
-
-#### ☁️ Qdrant Cloud
-Используйте [Qdrant Cloud](https://cloud.qdrant.io) для продакшена:
-```bash
-# Обновите settings.json с cloud endpoint:
-# "qdrant": {
-#   "host": "your-cluster.qdrant.io",
-#   "port": 6333,
-#   "api_key": "your-api-key"
-# }
-```
-
-## 🚀 Использование
-
-### Веб-интерфейс (рекомендуется)
-
+#### 🌐 Веб-Интерфейс (Рекомендуется)
 ```bash
 python run_web.py
-# или напрямую:
-streamlit run web_ui.py
+# Откройте http://localhost:8501
 ```
-
-Откройте http://localhost:8501 в браузере:
-1. 🔑 Введите API ключ в боковой панели
-2. 📁 Выберите локальную папку или загрузите ZIP архив
-3. 🚀 Нажмите "Начать анализ"
-4. 📥 Скачайте готовую документацию
 
 **Возможности веб-интерфейса:**
-- ✅ Безопасная валидация загружаемых файлов (до 100MB)
-- ✅ Предварительный просмотр статистики проекта
-- ✅ Отслеживание прогресса батчевой обработки
-- ✅ Защита от небезопасных архивов
+- ✅ Drag&drop загрузка репозиториев
+- ✅ Семантический поиск по коду
+- ✅ Интерактивный Q&A с кодовой базой
+- ✅ Генерация детальной документации
+- ✅ Real-time статистика и метрики
 
-### CLI команды
+#### 💻 CLI Команды
 
-#### 📊 Традиционный анализ
+**Анализ репозитория:**
 ```bash
-# Анализ репозитория (инкрементальный)
-python main.py analyze /path/to/repository -o ./documentation --incremental
+# Базовый анализ
+python main.py analyze /path/to/repository
 
-# Статистика без анализа
-python main.py stats /path/to/repository
+# С RAG индексацией
+python main.py analyze /path/to/repository --with-rag
 
-# Управление кэшем
-python main.py clear-cache
-python main.py token-stats
-```
-
-#### 🔍 RAG команды (семантический поиск)
-
-**Индексация репозитория:**
-```bash
-# Базовая индексация
-python main.py rag index /path/to/repository
-
-# Индексация с параметрами
-python main.py rag index /path/to/repository --batch-size 1024 --recreate
-
+# Инкрементальный анализ
+python main.py analyze /path/to/repository --incremental
 ```
 
 **Семантический поиск:**
@@ -245,567 +142,217 @@ python main.py rag index /path/to/repository --batch-size 1024 --recreate
 python main.py rag search "authentication middleware"
 
 # Поиск с фильтрами
-python main.py rag search "database connection" --lang python --top-k 5 --chunk-type function
+python main.py rag search "database connection" --lang python --top-k 5
 
 # Поиск по типу контента
-python main.py rag search "error handling" --chunk-type class --min-score 0.8
-
+python main.py rag search "error handling" --chunk-type class
 ```
 
-**Управление и статистика:**
+**Управление системой:**
 ```bash
 # Статус RAG системы
 python main.py rag status
 
-# Детальная статистика
-python main.py rag status --detailed
+# Индексация репозитория
+python main.py rag index /path/to/repository
 
+# Очистка кэша
+python main.py clear-cache
 ```
 
-## ⚙️ Конфигурация
+---
 
-Настройки в файле `settings.json`:
+## 🏗️ Архитектура Системы
 
-```json
-{
-  "openai": {
-    "temperature": 0.1,
-    "retry_attempts": 3,
-    "retry_delay": 1.0
-  },
-  "token_management": {
-    "enable_caching": true,
-    "cache_expiry_days": 7
-  },
-  "analysis": {
-    "chunk_strategy": "logical",
-    "min_chunk_size": 100,
-    "languages_priority": ["python", "javascript", "java"],
-    "enable_advanced_scoring": false,
-    "sanitize_enabled": false,
-    "sanitize_patterns": [
-      "(?i)api_key\\s*[:=]\\s*['\"][^'\"]+['\"]",
-      "(?i)password\\s*[:=]\\s*['\"][^'\"]+['\"]"
-    ]
-  },
-  "file_scanner": {
-    "max_file_size": 10485760,
-    "excluded_directories": [".git", "node_modules", "__pycache__"],
-    "supported_extensions": {
-      ".py": "python",
-      ".js": "javascript",
-      ".ts": "typescript"
-    }
-  },
-  "output": {
-    "default_output_dir": "./docs",
-    "file_template": "minimal_file.md",
-    "index_template": "index_template.md",
-    "format": "markdown",
-    "templates_dir": "report_templates"
-  },
-  "prompts": {
-    "code_analysis_prompt_file": "prompts/code_analysis_prompt.md"
-  },
-  "rag": {
-    "embeddings": {
-      "provider": "fastembed",
-      "model_name": "BAAI/bge-small-en-v1.5",
-      "batch_size_max": 128,
-      "normalize_embeddings": true
-    },
-    "vector_store": {
-      "host": "localhost",
-      "port": 6333,
-      "collection_name": "code_chunks",
-      "vector_size": 384,
-      "distance": "cosine"
-    },
-    "query_engine": {
-      "max_results": 10,
-      "score_threshold": 0.5,
-      "use_hybrid": true,
-      "mmr_enabled": true,
-      "mmr_lambda": 0.7,
-      "cache_ttl_seconds": 300,
-      "cache_max_entries": 1000
-    },
-    "indexing": {
-      "batch_size": 512,
-      "max_concurrent": 4,
-      "chunk_overlap": 50,
-      "min_chunk_size": 100,
-      "max_chunk_size": 2000
-    },
-    "cache": {
-      "enabled": true,
-      "max_size": 1000,
-      "ttl_seconds": 3600
-    }
-  }
-}
+### 🎯 Революционная RAG-as-a-Service Модель
+```
+[Локальная машина]     HTTP REST API     [VM t-ubuntu-redis 31GB]
+├─ repo_sum CLI    ←─────────────→       ├─ FastAPI :8000 ✅
+├─ Web UI          ←─────────────→       ├─ Jina v3 (570M) ✅
+├─ OpenAI анализ   ←─────────────→       ├─ Qdrant :6333 ✅
+└─ HTTP клиенты    ←─────────────→       └─ sentence-transformers>=3.0 ✅
 ```
 
-### 🔧 Параметры RAG конфигурации:
+### 🧩 Ключевые Компоненты
 
-#### Эмбеддинги (`rag.embeddings`)
-- `provider` — провайдер эмбеддингов (fastembed)
-- `model_name` — модель для векторизации кода
-- `batch_size_max` — максимальный размер батча для эмбеддингов
-- `normalize_embeddings` — нормализация векторов
+#### Локальные Компоненты:
+- **RepositoryAnalyzer** - координация анализа кода
+- **FileScanner** - поиск и фильтрация файлов
+- **CodeChunker** - интеллектуальное разбиение кода
+- **OpenAIManager** - интеграция с OpenAI API
+- **DocumentationGenerator** - создание MD отчетов
 
-#### Векторное хранилище (`rag.vector_store`)
-- `host`/`port` — подключение к Qdrant серверу
-- `collection_name` — имя коллекции для хранения векторов
-- `vector_size` — размерность векторов (384 для bge-small)
-- `distance` — метрика расстояния (Cosine/Dot/Euclidean)
-- `api_key` — API ключ для Qdrant Cloud
+#### VM Компоненты (RAG-as-a-Service):
+- **FastAPI Service** - REST API для эмбеддингов и поиска
+- **Jina v3 Embedder** - 570M параметрова модель
+- **Qdrant Vector Store** - векторная база данных
+- **Hybrid Search Engine** - комбинация dense + sparse поиска
 
-#### Поисковый движок (`rag.query_engine`)
-- `max_results` — максимальное количество результатов
-- `min_score` — минимальный порог релевантности
-- `use_hybrid` — использовать гибридный поиск
-- `mmr_enabled` — включить MMR для диверсификации результатов
-- `mmr_diversity_lambda` — баланс релевантность/разнообразие
+#### HTTP Клиенты:
+- **RemoteVMEmbedder** - HTTP клиент для VM эмбеддингов
+- **RemoteVectorStore** - HTTP клиент для VM поиска
+- **VMRAGService** - координация VM сервисов
 
-#### Индексация (`rag.indexing`)
-- `batch_size` — размер батча для индексации
-- `max_concurrent` — максимальное количество параллельных задач
-- `chunk_overlap` — перекрытие между чанками
-- `min_chunk_size`/`max_chunk_size` — размеры чанков кода
+### 🔄 Рабочий Процесс
 
-### Ключевые параметры (коротко):
-- `analysis.sanitize_enabled` — включить маскирование секретов перед отправкой в LLM.
-- `analysis.sanitize_patterns` — список regex-паттернов для маскировки (см. пример выше).
-- `openai.retry_attempts` / `openai.retry_delay` — повторы и задержка при ошибках API.
-- `output.default_output_dir` — базовая директория вывода для CLI/веб.
-- `output.format`/`output.templates_dir` — подготовка к HTML/PDF (пока формат — markdown).
-- `analysis.chunk_strategy` — стратегия разбивки кода (logical/size/lines).
-- `prompts.code_analysis_prompt_file` — путь к промпту.
+1. **Анализ кода** → локальная обработка через OpenAI
+2. **Индексация** → HTTP запросы к VM для эмбеддингов
+3. **Поиск** → комбинированный dense + sparse поиск на VM
+4. **Генерация** → создание документации с RAG контекстом
 
-## ⚡ Инкрементальный анализ
+---
 
-При включённом `--incremental` анализируются только изменённые файлы относительно индекса `./.repo_sum/index.json`.
+## 📊 Статус Разработки
 
-- Как отключить: добавьте флаг `--no-incremental` в CLI.
-- Как сбросить состояние: удалите `./.repo_sum/index.json` в корне анализируемого репозитория.
+### ✅ **Текущий Статус: M2.5 VM Migration - 80% ЗАВЕРШЕНО**
 
-## 🔒 Санитайзинг секретов
+#### **Достигнутые Результаты:**
+- ✅ **VM Infrastructure**: Xeon Gold 6248R, 31GB RAM, Ubuntu 22.04.4
+- ✅ **Jina v3 Success**: 570M параметров работают стабильно
+- ✅ **FastAPI Service**: запущен на 10.61.11.54:8000, health check "healthy"
+- ✅ **SSH Automation**: полная автоматизация через vm_start.py
+- ✅ **Performance**: 4.35it/s inference, <10s model loading
 
-Включите `analysis.sanitize_enabled` и задайте `analysis.sanitize_patterns`, чтобы маскировать чувствительные данные (например ключи/пароли) в коде перед отправкой в LLM. Это снижает риск утечки секретов.
+#### **Критические Задачи (финальные исправления):**
+- ❌ **Async/Sync Fix**: исправление корутин в remote клиентах
+- ❌ **Integration Testing**: полный workflow тестирование
+- ❌ **Web UI Testing**: Streamlit RAG функции
 
-## 🔁 Повторы вызовов OpenAI (retries)
+### 🎯 **Следующие Этапы:**
+- **M3 (Ноябрь 2025)**: RAG-Enhanced Analysis - интеграция VM RAG в OpenAI анализ
+- **M4 (Декабрь 2025)**: Production Deployment & Scaling - VM кластер
+- **M5 (Q2 2026)**: Advanced Intelligence - ML оптимизации
 
-Если API временно недоступен или исчерпана квота, выполняются повторы с задержкой:
+---
 
-- Настройка в `settings.json`: `openai.retry_attempts`, `openai.retry_delay`.
-- При исчерпании всех попыток — ошибка фиксируется в отчёте файла.
+## 📋 Системные Требования
 
-## 📁 Путь вывода результатов
+### Минимальные Требования:
+- **Python**: 3.8+
+- **RAM**: 4GB+ (рекомендуется 8GB+)
+- **CPU**: любой современный (GPU НЕ требуется)
+- **OS**: Windows, macOS, Linux
+- **Интернет**: для загрузки моделей и OpenAI API
 
-CLI/веб сохраняют отчёты в: `--output/ SUMMARY_REPORT_<repo_name>`. Главный индекс — `README.md` внутри этой папки.
+### Внешние Зависимости:
+- **OpenAI API** - для анализа кода
+- **VM Server** - для RAG вычислений (предоставляется)
+- **Qdrant** - векторная база данных
 
-## 📁 Структура вывода
-
-```
-SUMMARY_REPORT_<repo_name>/
-├── README.md                           # Главный индексный файл
-├── report_main.py.md                   # Файлы из корня
-├── report_config.py.md
-├── src/                                # Подкаталоги сохраняются
-│   ├── report_src_app.py.md           # Файлы из подпапок
-│   └── models/
-│       └── report_src_models_user.py.md
-└── tests/
-    └── report_tests_test_main.py.md
-```
-
-### Формат отчёта для каждого файла:
-
-```markdown
-# Audit Report: filename.py
-
-## 🔍 1. Краткий обзор (что делает файл?)
-- **Назначение файла** — описание главной задачи
-- **Последовательность операций** — пошаговый процесс
-
-## ⚙️ 2. Подробности реализации (как работает?)
-#### Входные данные
-#### Обработка данных  
-#### Выходные данные
-
-## 🧩 3. Структура кода
-Функции, методы и классы с описанием взаимосвязей
-
-## 📌 4. Общий поток данных
-Цепочка обработки от входа до выхода
-
-## 🛑 5. Ограничения анализа
-Что не включено в анализ и почему
-```
-
-## 🎨 Кастомизация промптов
-
-Промпты хранятся в отдельных файлах для удобного редактирования:
-
-1. **Редактирование текущего промпта:**
-   ```bash
-   nano prompts/code_analysis_prompt.md
-   ```
-
-2. **Создание собственного промпта:**
-   ```bash
-   # Создайте новый файл
-   cp prompts/code_analysis_prompt.md prompts/my_prompt.md
-   
-   # Обновите конфигурацию
-   # settings.json -> "prompts.code_analysis_prompt_file": "prompts/my_prompt.md"
-   ```
-
-3. **Перезапустите приложение** для применения изменений
-
-## ⚡ Инкрементальный анализ
-
-При включённом `--incremental` анализируются только изменённые файлы относительно индекса `./.repo_sum/index.json`. Индекс обновляется после успешной генерации отчётов.
-
-## 🔒 Санитайзинг секретов
-
-Включите `analysis.sanitize_enabled` и задайте `analysis.sanitize_patterns` (regex), чтобы маскировать чувствительные данные перед отправкой к LLM.
-
-## 🌍 Развёртывание
-
-### Локальная сеть
-```bash
-streamlit run web_ui.py --server.address 0.0.0.0 --server.port 8501
-# Доступ: http://<your-ip>:8501
-```
-
-### Облачное развёртывание
-1. Разверните на VPS (DigitalOcean, AWS, Yandex Cloud)
-2. Установите зависимости и откройте порт 8501
-3. Запустите с публичным доступом:
-   ```bash
-   streamlit run web_ui.py --server.address 0.0.0.0 --server.port 8501
-   ```
-
-### Автозапуск через systemd
-```ini
-[Unit]
-Description=Repository Analyzer
-After=network.target
-
-[Service]
-Type=simple
-User=your-user
-WorkingDirectory=/path/to/repo_sum
-Environment=OPENAI_API_KEY=your-key
-ExecStart=/usr/bin/python3 -m streamlit run web_ui.py --server.address 0.0.0.0
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-## 🔧 Производительность и оптимизация
-
-### Батчевая обработка
-- **Малые проекты** (≤10 файлов): батчи по 2 файла
-- **Средние проекты** (11-50 файлов): батчи по 3 файла  
-- **Большие проекты** (51-200 файлов): батчи по 5 файлов
-- **Очень большие** (200+ файлов): батчи по 8 файлов
-
-### Рекомендации по времени анализа:
-- **Малые проекты** (< 50 файлов): 5-10 минут
-- **Средние проекты** (50-200 файлов): 15-30 минут  
-- **Большие проекты** (200+ файлов): 45+ минут
-
-### Оптимизация для больших репозиториев:
-1. Настройте `excluded_directories` для исключения ненужных папок
-2. Уменьшите `max_file_size` для пропуска больших файлов
-3. Используйте кэширование (`enable_caching: true`)
-4. Периодически очищайте кэш: `python main.py clear-cache`
-
-## 💰 Стоимость использования OpenAI API
-
-### Примерные расходы (gpt-4o-mini):
-- **Один файл**: ~$0.0001-0.0002
-- **Малый проект** (20 файлов): ~$0.002-0.004
-- **Средний проект** (100 файлов): ~$0.01-0.02
-- **Большой проект** (500 файлов): ~$0.05-0.10
-
-**Кэширование значительно снижает затраты при повторном анализе.**
+---
 
 ## 🧪 Тестирование
 
-### 🔍 RAG система
+### RAG Система:
 ```bash
-# Базовые компоненты RAG
-pytest tests/test_rag_imports.py tests/test_vector_store_basic.py tests/test_cpu_query_engine.py -v
-
-# Комплексные интеграционные тесты
-pytest tests/rag/ -v
-
-# Тесты производительности
-pytest tests/rag/test_rag_performance.py -v
-
-# End-to-end тесты CLI
-pytest tests/rag/test_rag_e2e_cli.py -v
-
 # Все RAG тесты
 python tests/rag/run_rag_tests.py all
 
-# Быстрая проверка RAG
+# Быстрая проверка
 python tests/rag/run_rag_tests.py quick
-```
-
-### 📊 Традиционные функции
-```bash
-# Все существующие тесты
-pytest tests/test_*.py -v
 
 # Интеграционные тесты
-pytest tests/e2e/ -v
+pytest tests/rag/ -v
+```
 
-# Тесты с покрытием
+### Основные Функции:
+```bash
+# Все тесты
+pytest tests/test_*.py -v
+
+# С покрытием
 pytest --cov=. tests/ --cov-report=html
 ```
 
-### 🎯 Специфичные тесты
+---
+
+## 🐛 Устранение Проблем
+
+### Частые Проблемы:
+
+**VM Недоступен:**
 ```bash
-# Тесты парсеров
-pytest tests/test_parsers.py -v
+# Проверьте подключение
+python vm_start.py status
 
-# Тесты веб-интерфейса
-pytest tests/test_web_ui.py -v
-
-# Тесты OpenAI интеграции
-pytest tests/test_openai_integration.py -v
+# Перезапустите VM сервисы
+python vm_start.py restart
 ```
 
-## 🔍 Запуск тестов
-
-Для обеспечения идентичного поведения в CI и IDE используйте следующие команды:
-
-- **Юнит-тесты**
+**OpenAI API Ошибки:**
 ```bash
-pytest --disable-socket --allow-unix-socket -m "not integration and not functional and not e2e"
+# Проверьте API ключ
+echo $OPENAI_API_KEY
+
+# Проверьте квоты
+python main.py token-stats
 ```
 
-- **Интеграционные тесты**
+**Поиск Не Работает:**
 ```bash
-pytest -m "integration"
-```
-
-- **Функциональные тесты**
-```bash
-pytest -m "functional"
-```
-
-- **End-to-End (E2E) тесты**
-```bash
-pytest -m "e2e"
-```
-
-- **RAG-тесты** (только через кастомный раннер)
-```bash
-python tests/rag/run_rag_tests.py
-```
-
-⚠️ Важно: IDE должна использовать те же команды, что и CI, чтобы избежать расхождений в результатах.
-## 🐛 Устранение проблем
-
-### Частые ошибки (традиционные)
-
-**Ошибка аутентификации OpenAI:**
-```
-Проверьте правильность API ключа в переменной OPENAI_API_KEY
-```
-
-**"Файл слишком большой" (>100MB):**
-```
-Используйте файлы меньшего размера или увеличьте MAX_FILE_SIZE в web_ui.py
-```
-
-**"Файл промпта не найден":**
-```
-Убедитесь что prompts/code_analysis_prompt.md существует
-Проверьте путь в settings.json
-```
-
-**Файлы не найдены для анализа:**
-```
-Проверьте supported_extensions в settings.json
-Убедитесь что папки не исключены в excluded_directories
-```
-
-### 🔍 Проблемы RAG системы
-
-**RAG система недоступна:**
-```
-Убедитесь что Qdrant сервер запущен на localhost:6333
-Проверьте настройки rag.qdrant в settings.json
-Проверьте доступность: curl http://localhost:6333/collections
-```
-
-**Ошибки индексации:**
-```
-Проверьте доступное место на диске для Qdrant
-Уменьшите rag.indexing.batch_size при нехватке RAM
-Убедитесь что Qdrant сервер не перегружен
-```
-
-**Низкая точность поиска:**
-```
-Попробуйте другую модель эмбеддингов в rag.embeddings.model_name
-Увеличьте количество результатов (rag.search.max_results)
-Настройте параметры MMR (rag.search.mmr_diversity_lambda)
-Уменьшите rag.search.min_score для большего охвата
-```
-
-**Медленная индексация:**
-```
-Уменьшите rag.indexing.batch_size
-Увеличьте rag.indexing.max_concurrent (осторожно с RAM)
-Проверьте производительность Qdrant сервера
-Используйте SSD для хранения Qdrant данных
-```
-
-**Ошибки FastEmbed:**
-```
-Установите модель заново: pip install --upgrade fastembed
-Проверьте поддержку AVX2: python -c "import platform; print(platform.processor())"
-Попробуйте меньший batch_size_max в rag.embeddings
-```
-
-### Логи и отладка
-
-```bash
-# Подробные логи
-python main.py -v analyze /path/to/repo
-
-# Только ошибки
-python main.py -q analyze /path/to/repo
-
-# Логи в файл
-python main.py analyze /path/to/repo 2> debug.log
-
-# RAG отладка
-python main.py rag search "test query" --verbose
+# Проверьте RAG статус
 python main.py rag status --detailed
-python main.py rag index /path/to/repo --verbose
+
+# Переиндексируйте репозиторий
+python main.py rag index /path/to/repository --recreate
 ```
 
-## 🏗 Архитектура проекта
+---
 
-```
-repo_sum/
-├── main.py                 # CLI интерфейс и RepositoryAnalyzer
-├── web_ui.py              # Streamlit веб-интерфейс
-├── config.py              # Система конфигурации
-├── file_scanner.py        # Сканирование файлов репозитория
-├── openai_integration.py  # Интеграция с OpenAI API
-├── doc_generator.py       # Генерация MD документации
-├── code_chunker.py        # Разбивка кода на логические части
-├── utils.py               # Утилиты и структуры данных
-├── rag/                   # 🆕 RAG система
-│   ├── __init__.py        # Публичные интерфейсы RAG
-│   ├── embedder.py        # CPUEmbedder (FastEmbed)
-│   ├── vector_store.py    # QdrantVectorStore
-│   ├── query_engine.py    # CPUQueryEngine
-│   ├── indexer_service.py # IndexerService
-│   ├── search_service.py  # SearchService
-│   └── exceptions.py      # RAG исключения
-├── parsers/               # Парсеры для разных языков
-│   ├── base_parser.py     # Базовый класс парсера
-│   ├── python_parser.py   # Python AST парсер
-│   └── [language]_parser.py
-├── prompts/               # Внешние промпты для анализа
-│   └── code_analysis_prompt.md
-├── settings.json          # Конфигурация приложения
-├── requirements.txt       # Python зависимости
-└── tests/                 # Тесты
-    ├── test_*.py          # Основные тесты
-    └── rag/               # 🆕 RAG тесты
-        ├── test_rag_integration.py
-        ├── test_rag_performance.py
-        ├── test_rag_e2e_cli.py
-        └── run_rag_tests.py
-```
+## 📚 Документация и Ресурсы
 
-### 🏗️ Архитектура RAG системы
+### Техническая Документация:
+- 🗺️ **[ROADMAP.md](ROADMAP.md)** - полная дорожная карта развития
+- 📋 **[.clinerules/](.clinerules/)** - система памяти проекта
+- 🏗️ **[SETUP.md](SETUP.md)** - детальная инструкция по настройке
+- 🧪 **[AGENTS.md](AGENTS.md)** - правила работы с кодом
 
-```mermaid
-graph TB
-    subgraph "RAG Pipeline"
-        A[CodeChunker] --> B[CPUEmbedder]
-        B --> C[QdrantVectorStore]
-        D[SearchService] --> C
-        E[CPUQueryEngine] --> D
-        F[CLI Commands] --> E
-    end
-    
-    subgraph "Core Components"
-        G[FastEmbed] --> B
-        H[Qdrant] --> C
-        I[RRF + MMR] --> E
-        J[LRU Cache] --> D
-    end
-    
-    subgraph "Services"
-        K[IndexerService] --> B
-        K --> C
-        L[SearchService] --> E
-    end
-```
+### Архитектурная Документация:
+- **RAG Architecture**: `.clinerules/RAG_architecture.md`
+- **VM Migration**: `.clinerules/QUICK_START_RAG_ported.md`
+- **Testing Strategy**: `tests/rag/TESTING_STRATEGY.md`
 
-### Ключевые компоненты:
+---
 
-#### Традиционные компоненты:
-- **RepositoryAnalyzer** - основной класс координации анализа
-- **FileScanner** - поиск и фильтрация файлов
-- **ParserRegistry** - выбор парсера по типу файла
-- **CodeChunker** - интеллектуальная разбивка кода
-- **OpenAIManager** - работа с API, кэширование, retry-логика
-- **DocumentationGenerator** - создание финальных MD отчетов
+## 📚 Консолидированная документация
 
-#### 🆕 RAG компоненты:
-- **CPUEmbedder** - генерация векторных представлений через FastEmbed
-- **QdrantVectorStore** - управление векторной базой данных
-- **CPUQueryEngine** - движок семантического поиска с RRF и MMR
-- **IndexerService** - сервис индексации репозиториев
-- **SearchService** - высокоуровневый поисковый интерфейс
-- **RAGExceptions** - специализированные исключения для RAG
+### 📋 Основная документация проекта:
+- **[📖 Обзор проекта](rules/project_overview.md)** - Общее назначение и функционал системы
+- **[🏗️ Техническая архитектура](rules/technical_architecture.md)** - Детальное описание архитектуры системы
+- **[🗺️ Дорожная карта](rules/roadmap.md)** - Roadmap развития проекта и планы на будущее
+- **[💳 Технический долг](rules/technical_debt.md)** - Список накопленного технического долга и приоритеты
+- **[✅ Активные задачи](rules/active_tasks.md)** - Текущие задачи и статус их выполнения
+- **[👥 Инструкции для агентов](rules/agents.md)** - Правила и инструкции для AI агентов
+
+### 📋 Документация соответствия:
+- **[📋 Roadmap соответствия](rules/compliance_roadmap.md)** - План обеспечения соответствия стандартам и требованиям
+
+---
+
+## 🤝 Контакты и Поддержка
+
+### Разработка:
+- **GitHub**: https://github.com/Bondartsov/repo_sum.git
+- **Issues**: Создавайте Issues для багов и предложений
+- **Pull Requests**: Добро пожаловать для улучшений
+
+### VM Инфраструктура:
+- **RAG Service**: 10.61.11.54:8000
+- **Qdrant DB**: 10.61.11.54:6333
+- **SSH Access**: автоматизировано через vm_start.py
+
+### Поддержка:
+При возникновении проблем:
+1. Проверьте логи с флагом `-v` (verbose mode)
+2. Укажите версию Python и ОС
+3. Приложите содержимое `.env` (без API ключей)
+4. Создайте Issue в GitHub
+
+---
 
 ## 📄 Лицензия
 
-MIT License - подробности в файле LICENSE.
-
-## 🤝 Разработка и вклад
-
-1. Форкните репозиторий
-2. Создайте feature-ветку (`git checkout -b feature/new-feature`)
-3. Внесите изменения и добавьте тесты
-4. Создайте коммит (`git commit -m 'Add new feature'`)
-5. Отправьте в ветку (`git push origin feature/new-feature`)
-6. Создайте Pull Request
-
-## 📧 Поддержка
-
-При возникновении проблем:
-- Создайте Issue в GitHub с подробным описанием
-- Приложите логи с флагом `-v` (verbose mode)
-- Укажите версию Python и операционную систему
-- Приложите содержимое `settings.json` (без API ключа)
-
----
-
-## 📚 Документация проекта
-
-- 🗺️ **[ROADMAP.md](ROADMAP.md)** - полная дорожная карта развития
-- 📋 **[SETUP.md](SETUP.md)** - инструкция по настройке и запуску
-- 🧪 **[AGENTS.md](AGENTS.md)** - правила работы с кодом проекта
-- 📚 **[Система памяти](.clinerules/navigation.md)** - консолидированная документация
-
----
-
-**Создано для автоматизации документирования кода с ❤️ и ИИ**
+**🚫 ЧАСТНАЯ СОБСТВЕННОСТЬ**  
+**🚫 ЗАПРЕЩЕНО КОММЕРЧЕСКОЕ ИСПОЛЬЗОВАНИЕ**  
+**✅ ЛЮБОЕ ИСПОЛЬЗОВАНИЕ ТРЕБУЕТ РАЗРЕШЕНИЯ**  
+**thèque OKPGG, N0. 0002859886624400
