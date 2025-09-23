@@ -1,11 +1,9 @@
-# 🗺️ ROADMAP: Repository Analyzer Development Plan
+# План развития проекта (roadmap) с чекбоксами
 
 **Дата:** 22 сентября 2025
 **Статус:** M2.5 VM Migration - 80% ЗАВЕРШЕНО
 **Версия:** 2.0.0 (VM Migration революция)
 **Ветка:** jina-embeddings-v3 → master (готов к мержу)
-
-> 📚 **Система памяти**: [`.clinerules/`](.clinerules/) - консолидированная документация проекта
 
 ---
 
