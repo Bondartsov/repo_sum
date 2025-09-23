@@ -7,7 +7,6 @@
 > 📋 **Актуальный статус проекта**: [ROADMAP.md](../../ROADMAP.md) - полная дорожная карта
 
 ---
-
 ## 🗺️ ЦЕНТРАЛЬНАЯ ТОЧКА ВХОДА
 
 ### **НАЧНИТЕ ЗДЕСЬ** - Быстрый доступ к информации:
@@ -22,7 +21,7 @@
 - **[progress.md](progress.md)** - История развития и достижения
 
 #### **🏗️ АРХИТЕКТУРА (ПРИОРИТЕТ 3):**
-- **[techContext.md](techContext.md)** - Технологический стек и паттерны
+- **[technical_architecture.md](technical_architecture.md)** - Технологический стек и паттерны
 - **[projectContext.md](projectContext.md)** - Продуктовый контекст и цели
 
 ---
@@ -36,7 +35,7 @@
 - **Обновление**: Ежедневно при изменениях статуса
 - **Аудитория**: Все участники проекта
 
-#### **2. 🎯 activeContext.md** - ТЕКУЩИЙ ФОКУС
+#### **2. 🎯 project_status.md** - ТЕКУЩИЙ ФОКУС
 - **Назначение**: Активные задачи, проблемы, следующий фокус
 - **Обновление**: При изменении приоритетов разработки
 - **Аудитория**: Разработчики, технические специалисты
@@ -46,7 +45,7 @@
 - **Обновление**: При завершении значимых этапов
 - **Аудитория**: Все участники, для понимания эволюции
 
-#### **4. 🏗️ techContext.md** - ТЕХНИЧЕСКИЙ КОНТЕКСТ
+#### **4. 🏗️ technical_architecture.md** - ТЕХНИЧЕСКИЙ КОНТЕКСТ
 - **Назначение**: Архитектура, паттерны, технологический стек
 - **Обновление**: При архитектурных изменениях
 - **Аудитория**: Разработчики, архитекторы
@@ -80,15 +79,15 @@
 ```
 🚨 КРИТИЧЕСКИЕ ПРОБЛЕМЫ → project_status.md
 📊 МЕТРИКИ И KPI → project_status.md
-🎯 ТЕКУЩИЙ ФОКУС → activeContext.md
+🎯 ТЕКУЩИЙ ФОКУС → project_status.md
 📈 ИСТОРИЯ РАЗВИТИЯ → progress.md
 ```
 
 ### **ПО ТЕХНИЧЕСКИМ АСПЕКТАМ:**
 ```
-🏗️ АРХИТЕКТУРА → techContext.md
-📋 КОНФИГУРАЦИЯ → techContext.md
-🧪 ТЕСТИРОВАНИЕ → techContext.md
+🏗️ АРХИТЕКТУРА → technical_architecture.md
+📋 КОНФИГУРАЦИЯ → technical_architecture.md
+🧪 ТЕСТИРОВАНИЕ → technical_architecture.md
 ```
 
 ### **ПО ПРОДУКТОВЫМ АСПЕКТАМ:**
@@ -107,21 +106,20 @@
 ```
 ROADMAP.md (ГЛАВНЫЙ ДОКУМЕНТ)
     ↓
-project_status.md (ЕДИНЫЙ СТАТУС)
+project_status.md (ТЕКУЩИЙ ФОКУС)
     ↓
-├── activeContext.md (ТЕКУЩИЙ ФОКУС)
 ├── progress.md (ИСТОРИЯ)
-├── techContext.md (ТЕХНИКА)
+├── technical_architecture.md (ТЕХНИКА)
 ├── projectContext.md (ПРОДУКТ)
 ```
 
 ### **КРОСС-РЕФЕРЕНСЫ:**
 
 #### **project_status.md ссылается на:**
-- `activeContext.md` - текущие проблемы
 - `progress.md` - история достижений
 - `techContext.md` - техническая архитектура
 - `ROADMAP.md` - общий план развития
+- `technical_architecture.md` - технические детали
 
 #### **activeContext.md ссылается на:**
 - `project_status.md` - общий статус
@@ -133,6 +131,7 @@ project_status.md (ЕДИНЫЙ СТАТУС)
 - `ROADMAP.md` - milestone'ы
 - `techContext.md` - технические достижения
 
+
 ---
 
 ## 📊 СТАТУС ФАЙЛОВ MEMORY BANK
@@ -140,7 +139,7 @@ project_status.md (ЕДИНЫЙ СТАТУС)
 ### **ПО ПРИОРИТЕТАМ ОБНОВЛЕНИЯ:**
 
 #### **🔴 КРИТИЧЕСКИЕ (обновлять ежедневно):**
-- ✅ **[project_status.md](project_status.md)** - СТАТУС ПРОЕКТА
+- ✅ **[project_status.md](project_status.md)** - ТЕКУЩИЙ ФОКУС
 - ✅ **[activeContext.md](activeContext.md)** - ТЕКУЩИЙ ФОКУС
 
 #### **🟡 ВАЖНЫЕ (обновлять еженедельно):**
@@ -149,6 +148,7 @@ project_status.md (ЕДИНЫЙ СТАТУС)
 
 #### **🟢 СТАБИЛЬНЫЕ (обновлять при изменениях):**
 - ✅ **[projectContext.md](projectContext.md)** - ПРОДУКТОВЫЙ КОНТЕКСТ
+
 
 ---
 
@@ -160,13 +160,13 @@ project_status.md (ЕДИНЫЙ СТАТУС)
 → **[project_status.md](project_status.md)** - единый источник истины
 
 #### **"Какие проблемы решаем сейчас?"**
-→ **[activeContext.md](activeContext.md)** - текущий фокус разработки
+→ **[project_status.md](project_status.md)** - текущий фокус разработки
 
 #### **"Как развивался проект?"**
 → **[progress.md](progress.md)** - полная история развития
 
 #### **"Как устроена архитектура?"**
-→ **[techContext.md](techContext.md)** - технический контекст
+→ **[technical_architecture.md](technical_architecture.md)** - технический контекст
 
 #### **"Какие цели у проекта?"**
 → **[projectContext.md](projectContext.md)** - продуктовый контекст

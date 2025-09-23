@@ -77,7 +77,7 @@
     "embeddings": {
       "provider": "remote-vm",
       "model_name": "jinaai/jina-embeddings-v3",
-      "truncate_dim": 768,
+      "truncate_dim": 1024,
       "normalize_embeddings": true,
       "task_query": "retrieval.query",
       "task_passage": "retrieval.passage",

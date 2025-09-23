@@ -338,7 +338,7 @@ flowchart TD
 
 #### **2. Documentation Debt**
 **Вероятность:** Средняя | **Влияние:** Низкое
-- **Риск**: Отсутствие документации может замедлить adoption
+- **Риск**:Отсутствие документации может замедлить adoption
 - **Mitigation**: Comprehensive docs, Memory Bank system
 - **Contingency**: Video tutorials, community support
 
@@ -375,7 +375,7 @@ flowchart TD
 
 ### 📈 **Future Plans:**
 - **Future Plans**: [rules/future_plans.md](rules/future_plans.md) - детальные планы развития
-- **Project Overview**: [rules/project_overview.md](rules/project_overview.md) - обзор проекта
+- **Project Overview**: [rules/projectContext.md](rules/projectContext.md) - обзор проекта
 - **Navigation**: [rules/navigation.md](rules/navigation.md) - навигация по системе памяти
 
 ---

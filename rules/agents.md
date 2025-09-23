@@ -158,12 +158,12 @@ python tests/test_offline_no_network.py
 - **[ROADMAP.md](ROADMAP.md)** - Главный документ проекта
 - **[rules/technical_architecture.md](rules/technical_architecture.md)** - Техническая архитектура
 - **[rules/RAG_architecture.md](rules/RAG_architecture.md)** - RAG архитектура
-- **[rules/project_overview.md](rules/project_overview.md)** - Обзор проекта
+- **[rules/projectContext.md](rules/projectContext.md)** - Обзор проекта
 
 ### 7.2 Технические Спецификации
 - **[JINA_V3_VM_MIGRATION_PLAN.md](JINA_V3_VM_MIGRATION_PLAN.md)** - Миграция на Jina v3
 - **[MIGRATION_GUIDE_JINA_V3.md](MIGRATION_GUIDE_JINA_V3.md)** - Руководство миграции
-- **[ASYNC_SYNC_FIX_ARCHITECTURE.md](ASYNC_SYNC_FIX_ARCHITECTURE.md)** - Архитектура async/sync
+- **[technical_debt.md](rules/technical_debt.md)** - Технический долг (включает решенные async/sync проблемы)
 
 ### 7.3 Тестирование
 - **[tests/rag/TESTING_STRATEGY.md](tests/rag/TESTING_STRATEGY.md)** - Стратегия тестирования
@@ -235,7 +235,7 @@ python scripts/migrate_to_jina_v3.py
 ### 9.3 Качество и Ответственность
 - **Каждый агент несет ответственность** за качество своего кода
 - **Все изменения должны быть обоснованы** и документированы
-- **Технический долг должен минимизироваться** на всех этапах
+- **Технический дол должен минимизироваться** на всех этапах
 - **Архитектурные решения должны согласовываться** с командой
 
 ---

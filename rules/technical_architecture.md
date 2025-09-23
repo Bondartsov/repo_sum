@@ -4,6 +4,45 @@
 **Версия:** 2.0.0 (M2.5 VM Migration BREAKTHROUGH)
 **Статус:** RAG-as-a-Service архитектура реализована
 
+## 🏗️ ТЕХНИЧЕСКИЙ СПРАВОЧНИК: РЕПОЗИТОРИЙ АНАЛИЗА
+
+### 📋 Краткий обзор текущего технического состояния:
+- **CPU-First Architecture** с Jina v3 integration (570M параметров на VM)
+- **RAG-as-a-Service** модель с VM-based вычислениями (10.61.11.54:8000)
+- **Modular Architecture** с четким разделением компонентов (Core/RAG/Parsers/UI/Testing)
+- **Configuration-Driven Development** через settings.json и .env
+- **Production-Ready** RAG система с гибридным поиском (Dense + Sparse)
+
+### 🔗 Активные технические компоненты:
+- **RepositoryAnalyzer** - основной координатор анализа ✅
+- **RAG System** - семантический поиск с Jina v3 (VM-based) ✅
+- **Parser System** - многоязычный парсинг кода (9+ языков) ✅
+- **UI System** - CLI + Web интерфейсы (Streamlit + REST API) ✅
+- **Testing System** - комплексное тестирование (5872+ тестов) ✅
+
+### 🏗️ Текущие технические приоритеты:
+- **Async/Sync исправления** - завершены ✅
+- **VM Integration** - полностью протестирована ✅
+- **Performance optimization** - бенчмарки проведены ✅
+- **Documentation completion** - финализация технической документации
+
+### 📊 Актуальные технические метрики:
+- **Model Loading**: <10 секунд для Jina v3 (570M параметров) ✅
+- **Inference Speed**: 4.35it/s для batch обработки на VM ✅
+- **Memory Usage**: стабильная работа в 31GB RAM ✅
+- **API Response**: FastAPI health check <200ms ✅
+- **Service Uptime**: 100% стабильность после запуска ✅
+
+### 🔧 Быстрый доступ к техническим ресурсам
+
+| Ресурс | Файл | Статус |
+|--------|------|--------|
+| **Полная архитектура** | [`rules/technical_architecture.md`](rules/technical_architecture.md) | ✅ Готов |
+| **RAG Architecture** | [`rules/RAG_architecture.md`](rules/RAG_architecture.md) | ✅ Готов |
+| **System Patterns** | [`rules/systemPatterns.md`](rules/systemPatterns.md) | ✅ Готов |
+| **Testing Strategy** | [`tests/rag/TESTING_STRATEGY.md`](tests/rag/TESTING_STRATEGY.md) | ✅ Готов |
+| **Configuration** | [`config.py`](config.py) | ✅ Готов |
+
 ---
 
 ## 1. Обзор технической архитектуры
@@ -51,6 +90,58 @@ repo_sum/
 ---
 
 ## 2. Архитектурные паттерны и принципы
+
+### 2.0 Фундаментальные архитектурные принципы
+
+#### 1. CPU-First Architecture с Jina v3 Integration
+**Принцип**: Оптимизация для широкой совместимости без требования GPU
+**Применение**:
+- **Jina v3 Dual Task**: sentence-transformers с task-specific LoRA адаптерами
+- **Adaptive HNSW**: динамические параметры (m=24, ef_construct=128 для 1024d)
+- **Trust Remote Code**: безопасная загрузка jinaai/jina-embeddings-v3
+- FastEmbed fallback с ONNX Runtime для совместимости
+- Управление потоками через OMP_NUM_THREADS, MKL_NUM_THREADS
+- Адаптивные батчи в зависимости от доступной RAM и размерности векторов
+
+#### 2. Modular Architecture Pattern
+**Принцип**: Разделение системы на слабосвязанные, независимые модули
+**Структура**:
+```
+repo_sum/
+├── Core System/        # Анализ кода и документация
+├── RAG System/         # Семантический поиск
+├── Parsers System/     # Языковые парсеры
+├── UI System/          # CLI + Web интерфейсы  
+└── Testing System/     # Комплексное тестирование
+```
+
+**Преимущества**:
+- Независимая разработка компонентов
+- Простота тестирования и отладки
+- Возможность замены компонентов без влияния на систему
+- Чёткое разделение ответственностей
+
+#### 3. Configuration-Driven Development
+**Принцип**: Централизованное управление поведением через конфигурацию
+**Реализация**:
+- `settings.json` - основная конфигурация
+- `.env` - environment variables для production
+- `@dataclass` конфигурационные классы с валидацией
+- Типизированные конфиги с дефолтными значениями
+
+**Пример (Jina v3)**:
+```python
+@dataclass
+class EmbeddingConfig:
+    provider: str = "sentence-transformers"
+    model_name: str = "jinaai/jina-embeddings-v3"
+    vector_size: int = 1024
+    batch_size_max: int = 512
+    normalize_embeddings: bool = True
+    trust_remote_code: bool = True
+    task_query: str = "retrieval.query"
+    task_passage: str = "retrieval.passage"
+```
 
 ### 2.1 SOLID Principles (строгое соблюдение)
 
@@ -140,6 +231,33 @@ class ParserRegistry:
 #### Lazy Initialization Pattern
 - Warmup эмбеддера опционален
 - VectorStore подключается при первой операции
+
+### 2.5 Ключевые компоненты системы
+
+#### Core sistema:
+1. **RepositoryAnalyzer** (main.py) - основной координатор анализа
+2. **FileScanner** (file_scanner.py) - сканирование и фильтрация файлов
+3. **ParserRegistry** (parsers/) - выбор парсера по типу файла
+4. **CodeChunker** (code_chunker.py) - разбивка кода на логические части
+5. **OpenAIManager** (openai_integration.py) - интеграция с OpenAI API
+6. **DocumentationGenerator** (doc_generator.py) - генерация Markdown отчетов
+
+#### RAG система (Production-Ready):
+1. **CPUEmbedder** (rag/embedder.py) - CPU-оптимизированный эмбеддер
+2. **QdrantVectorStore** (rag/vector_store.py) - векторное хранилище
+3. **CPUQueryEngine** (rag/query_engine.py) - поисковый движок с RRF + MMR
+4. **IndexerService** (rag/indexer_service.py) - сервис индексации
+5. **SearchService** (rag/search_service.py) - высокоуровневый поиск
+6. **SparseEncoder** (rag/sparse_encoder.py) - BM25/SPLADE векторы (M2)
+
+#### Поддерживаемые языки:
+- Python (.py)
+- JavaScript (.js, .ts)
+- C++ (.cpp, .hpp)
+- C# (.cs)
+- Java (.java)
+- TypeScript (.ts)
+- И другие через AST парсинг
 
 ---
 
@@ -512,7 +630,7 @@ repo_sum/
 ### 🏗️ Архитектурная документация:
 - **RAG Architecture**: [rules/RAG_architecture.md](rules/RAG_architecture.md) - детальное описание RAG системы
 - **System Patterns**: [rules/systemPatterns.md](rules/systemPatterns.md) - архитектурные паттерны
-- **Tech Context**: [rules/techContext.md](rules/techContext.md) - технический контекст
+- **Tech Context**: [rules/technical_architecture.md](rules/technical_architecture.md) - технический контекст
 
 ### 🧪 Тестирование и качество:
 - **Testing Strategy**: [tests/rag/TESTING_STRATEGY.md](tests/rag/TESTING_STRATEGY.md) - стратегия тестирования
@@ -552,6 +670,4 @@ repo_sum/
 
 ---
 
-**Дата создания:** 22 сентября 2025
-**Статус:** VM Migration Breakthrough - техническая архитектура документирована
-**Версия:** 2.0.0 (M2.5 VM Migration революция)
+**Примечание**: Этот файл содержит полную техническую архитектуру. Для краткого технического обзора смотрите [`rules/technical_architecture.md`](rules/technical_architecture.md).
