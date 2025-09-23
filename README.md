@@ -302,7 +302,7 @@ python main.py rag index /path/to/repository --recreate
 ## 📚 Документация и Ресурсы
 
 ### Техническая Документация:
-- 🗺️ **[ROADMAP.md](ROADMAP.md)** - полная дорожная карта развития
+- 🗺️ **[Development Roadmap.md](rules/Development Roadmap.md)** - полная дорожная карта развития
 - 📋 **[.clinerules/](.clinerules/)** - система памяти проекта
 - 🏗️ **[SETUP.md](SETUP.md)** - детальная инструкция по настройке
 - 🧪 **[AGENTS.md](AGENTS.md)** - правила работы с кодом

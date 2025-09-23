@@ -620,9 +620,9 @@ repo_sum/
 - 🏗️ **[SETUP.md](SETUP.md)** - детальная настройка системы
 
 ### 🏗️ Архитектурная документация:
-- **RAG Architecture**: [rules/RAG_architecture.md](rules/RAG_architecture.md) - детальное описание RAG системы
-- **System Patterns**: [rules/systemPatterns.md](rules/systemPatterns.md) - архитектурные паттерны
-- **Tech Context**: [rules/Technical Architecture.md](rules/Technical Architecture.md) - технический контекст
+- **Technical Debt**: [Technical Debt.md](Technical Debt.md) - технический долг и решенные проблемы
+- **Project Overview**: [Project Overview.md](Project Overview.md) - обзор проекта
+- **Development Roadmap**: [Development Roadmap.md](Development Roadmap.md) - план развития
 
 ### 🧪 Тестирование и качество:
 - **Testing Strategy**: [tests/rag/TESTING_STRATEGY.md](tests/rag/TESTING_STRATEGY.md) - стратегия тестирования
@@ -636,9 +636,8 @@ repo_sum/
 - **Configuration**: [config.py](config.py) - система конфигурации
 
 ### 📊 Статус и прогресс:
-- **Project Status**: [rules/project_status.md](rules/project_status.md) - текущий статус
-- **Active Tasks**: [rules/active_tasks.md](rules/active_tasks.md) - активные задачи
-- **Progress**: [rules/progress.md](rules/progress.md) - прогресс разработки
+- **Agent Guidelines**: [Agent Guidelines.md](Agent Guidelines.md) - правила работы агентов
+- **Technical Debt**: [Technical Debt.md](Technical Debt.md) - технический долг и решенные проблемы
 
 ---
 

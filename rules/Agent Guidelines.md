@@ -166,19 +166,16 @@ python tests/test_offline_no_network.py
 - **[Project Overview.md](Project Overview.md)** - Обзор проекта
 
 ### 7.2 Технические спецификации
-- **[JINA_V3_VM_MIGRATION_PLAN.md](JINA_V3_VM_MIGRATION_PLAN.md)** - Миграция на Jina v3
-- **[MIGRATION_GUIDE_JINA_V3.md](MIGRATION_GUIDE_JINA_V3.md)** - Руководство миграции
 - **[Technical Debt.md](Technical Debt.md)** - Технический долг (включает решенные async/sync проблемы)
 
 ### 7.3 Тестирование
-- **[tests/rag/TESTING_STRATEGY.md](tests/rag/TESTING_STRATEGY.md)** - Стратегия тестирования
-- **[tests/rag/README.md](tests/rag/README.md)** - RAG тестирование
-- **[tests/test_offline_no_network.py](tests/test_offline_no_network.py)** - Offline тесты
+- **[tests/rag/TESTING_STRATEGY.md](../tests/rag/TESTING_STRATEGY.md)** - Стратегия тестирования
+- **[tests/rag/README.md](../tests/rag/README.md)** - RAG тестирование
+- **[tests/test_offline_no_network.py](../tests/test_offline_no_network.py)** - Offline тесты
 
 ### 7.4 Разработка
 - **[Technical Architecture.md](Technical Architecture.md)** - Правила Memory Bank
-- **[Technical Debt.md](Technical Debt.md)** - Правила mock объектов
-- **[Technical Debt.md](Technical Debt.md)** - Результаты аудита
+- **[Technical Debt.md](Technical Debt.md)** - Правила mock объектов и результаты аудита
 
 ---
 

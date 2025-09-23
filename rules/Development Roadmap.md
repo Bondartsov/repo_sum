@@ -15,8 +15,8 @@
 - **Революция**: Первая в мире VM-based RAG архитектура для code analysis
 - **Jina v3**: 570M параметров, dual task, 1024d→384d Matryoshka на 31GB VM
 - **Автоматизация**: `vm_start.py` - полная SSH автоматизация VM развертывания
-- **Следующие цели**: Async/sync исправления (завершены), затем M3 (RAG-enhanced анализ)
-- **Критические проблемы**: Remote клиенты требуют sync wrapper для coroutines
+- **Следующие цели**: M3 (RAG-enhanced анализ) - async/sync исправления завершены
+- **Статус async/sync**: ✅ РЕШЕНО - все проблемы с coroutines устранены
 
 ---
 
@@ -76,11 +76,16 @@
 - ✅ **Memory Efficiency**: ~100MB локально vs 25+ GB требования
 - ✅ **Async/Sync исправления**: RemoteVMEmbedder методы синхронизированы
 
-#### **❌ Критические задачи для завершения (1-2 дня):**
-- ❌ **Integration Testing**: финальное тестирование RAG поиска
-- ❌ **Web UI Testing**: Streamlit RAG функции
-- ❌ **Performance Testing**: бенчмарки Jina v3 vs BGE
-- ❌ **Error Handling**: улучшение fallback логики
+#### **✅ Завершенные критические задачи:**
+- ✅ **Async/Sync исправления**: все проблемы с coroutines решены
+- ✅ **Remote клиенты**: sync wrapper методы реализованы
+- ✅ **Event Loop Manager**: единый управляющий компонент создан
+
+#### **🔄 Оставшиеся задачи для финализации (1-2 дня):**
+- 🔄 **Integration Testing**: финальное тестирование RAG поиска
+- 🔄 **Web UI Testing**: Streamlit RAG функции
+- 🔄 **Performance Testing**: бенчмарки Jina v3 vs BGE
+- 🔄 **Error Handling**: улучшение fallback логики
 
 #### **Новые компоненты M2.5:**
 - `vm_start.py` - автоматизация VM развертывания
@@ -342,20 +347,17 @@ flowchart TD
 ## 🔗 ССЫЛКИ НА ТЕХНИЧЕСКИЕ ДЕТАЛИ
 
 ### 📚 **Центральная документация:**
-- 🗺️ **[ROADMAP.md](ROADMAP.md)** - основная дорожная карта с техническими деталями
-- 📋 **[README.md](README.md)** - основная документация с инструкциями
-- 🏗️ **[SETUP.md](SETUP.md)** - детальная инструкция по настройке системы
+- 🗺️ **[Development Roadmap.md](Development Roadmap.md)** - основная дорожная карта с техническими деталями
+- 📋 **[README.md](../README.md)** - основная документация с инструкциями
+- 🏗️ **Инструкции по настройке** - см. README.md для детальной настройки системы
 
 ### 🏗️ **Архитектурная документация:**
-- **RAG Architecture**: [rules/RAG_architecture.md](rules/RAG_architecture.md) - детальное описание RAG системы
-- **Technical Architecture**: [rules/technical_architecture.md](rules/technical_architecture.md) - полная техническая архитектура
-- **System Patterns**: [rules/systemPatterns.md](rules/systemPatterns.md) - архитектурные паттерны
+- **Technical Architecture**: [Technical Architecture.md](Technical Architecture.md) - полная техническая архитектура
+- **Technical Debt**: [Technical Debt.md](Technical Debt.md) - технический долг и решенные проблемы
 
 ### 📊 **Статус и прогресс:**
-- **Project Status**: [rules/project_status.md](rules/project_status.md) - текущий статус разработки
-- **Active Tasks**: [rules/active_tasks.md](rules/active_tasks.md) - активные задачи
-- **Progress**: [rules/progress.md](rules/progress.md) - история прогресса
-- **Completed Features**: [rules/completed_features.md](rules/completed_features.md) - завершенные функции
+- **Project Overview**: [Project Overview.md](Project Overview.md) - обзор проекта и текущий статус
+- **Technical Debt**: [Technical Debt.md](Technical Debt.md) - технический долг и решенные проблемы
 
 ### 🔧 **Техническая реализация:**
 - **Main Module**: [main.py](main.py) - основной модуль с CLI командами
