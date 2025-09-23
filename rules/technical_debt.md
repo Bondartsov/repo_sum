@@ -121,8 +121,8 @@ embeddings = self.embedder.embed_texts(texts)  # Синхронный вызов
 **Файлы:** `AGENTS.md`, `rules/custom_instructions.md`
 
 **Проблема:** Ссылки на несуществующие файлы:
-- `[systemPatterns.md](.clinerules/systemPatterns.md)` - файл не существует
-- `[audit_results.md](.clinerules/audit_results.md)` - файл не существует
+- `[systemPatterns.md](rules/systemPatterns.md)` - файл не существует
+- `[audit_results.md](rules/audit_results.md)` - файл не существует
 
 **Решение:** Создать отсутствующие файлы или обновить ссылки
 
@@ -552,8 +552,8 @@ embeddings = self.embedder.embed_texts(texts)  # Синхронный вызов
 **Файлы:** `AGENTS.md`, `rules/custom_instructions.md`
 
 **Проблема:** Ссылки на несуществующие файлы:
-- `[systemPatterns.md](.clinerules/systemPatterns.md)` - файл не существует
-- `[audit_results.md](.clinerules/audit_results.md)` - файл не существует
+- `[systemPatterns.md](rules/systemPatterns.md)` - файл не существует
+- `[audit_results.md](rules/audit_results.md)` - файл не существует
 
 **Решение:** Создать отсутствующие файлы или обновить ссылки
 
@@ -983,8 +983,8 @@ embeddings = self.embedder.embed_texts(texts)  # Синхронный вызов
 **Файлы:** `AGENTS.md`, `rules/custom_instructions.md`
 
 **Проблема:** Ссылки на несуществующие файлы:
-- `[systemPatterns.md](.clinerules/systemPatterns.md)` - файл не существует
-- `[audit_results.md](.clinerules/audit_results.md)` - файл не существует
+- `[systemPatterns.md](rules/systemPatterns.md)` - файл не существует
+- `[audit_results.md](rules/audit_results.md)` - файл не существует
 
 **Решение:** Создать отсутствующие файлы или обновить ссылки
 
@@ -1413,8 +1413,8 @@ embeddings = self.embedder.embed_texts(texts)  # Синхронный вызов
 **Файлы:** `AGENTS.md`, `rules/custom_instructions.md`
 
 **Проблема:** Ссылки на несуществующие файлы:
-- `[systemPatterns.md](.clinerules/systemPatterns.md)` - файл не существует
-- `[audit_results.md](.clinerules/audit_results.md)` - файл не существует
+- `[systemPatterns.md](rules/systemPatterns.md)` - файл не существует
+- `[audit_results.md](rules/audit_results.md)` - файл не существует
 
 **Решение:** Создать отсутствующие файлы или обновить ссылки
 

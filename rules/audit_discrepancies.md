@@ -155,8 +155,8 @@ async def health_check(self) -> Dict[str, Any]:
 **Проблема:** Ссылки на файлы, которые не существуют в файловой системе.
 
 **Обнаруженные битые ссылки:**
-- `[systemPatterns.md](.clinerules/systemPatterns.md)` - файл не существует
-- `[audit_results.md](.clinerules/audit_results.md)` - файл не существует
+- `[systemPatterns.md](rules/systemPatterns.md)` - файл не существует
+- `[audit_results.md](rules/audit_results.md)` - файл не существует
 
 **Места использования:**
 - `AGENTS.md` (строки 18, 26)
@@ -173,10 +173,10 @@ async def health_check(self) -> Dict[str, Any]:
 Memory Bank структура (.clinerules/):
 - 📊 **[projectbrief.md](.clinerules/projectbrief.md)** - суть проекта, цели, требования
 - 🎯 **[productContext.md](.clinerules/productContext.md)** - продуктовый контекст, пользователи, сценарии
-- 🏗️ **[systemPatterns.md](.clinerules/systemPatterns.md)** - архитектурные паттерны, SOLID принципы
-- 💻 **[techContext.md](.clinerules/techContext.md)** - технологический стек, компоненты, критические проблемы
-- 🔄 **[activeContext.md](.clinerules/activeContext.md)** - текущий статус, активные задачи, M2 milestone
-- 📈 **[progress.md](.clinerules/progress.md)** - история развития, достижения, метрики
+- 🏗️ **[systemPatterns.md](rules/systemPatterns.md)** - архитектурные паттерны, SOLID принципы
+- 💻 **[techContext.md](rules/techContext.md)** - технологический стек, компоненты, критические проблемы
+- 🔄 **[activeContext.md](rules/activeContext.md)** - текущий статус, активные задачи, M2 milestone
+- 📈 **[progress.md](rules/progress.md)** - история развития, достижения, метрики
 ```
 
 **Реальность:** В `.clinerules/` находятся 16 файлов, включая отсутствующие `systemPatterns.md` и `audit_results.md`.

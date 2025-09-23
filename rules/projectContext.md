@@ -344,7 +344,7 @@
 - **Полная roadmap**: `ROADMAP.md`
 - **Техническая архитектура**: `rules/technical_architecture.md`  
 - **Текущий прогресс**: `rules/progress.md`
-- **Активные задачи**: `.clinerules/activeContext.md`
+- **Активные задачи**: `rules/activeContext.md`
 - **Пользовательские инструкции**: `AGENTS.md`
 
 ### Контакты и ресурсы:

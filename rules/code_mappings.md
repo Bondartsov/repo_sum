@@ -215,9 +215,9 @@
 - **[`ROADMAP.md`](ROADMAP.md)** → [project_status.md](project_status.md) - план развития
 
 #### **Техническая документация:**
-- **[`.clinerules/techContext.md`](.clinerules/techContext.md)** → [`config.py`](config.py) - архитектура
-- **[`.clinerules/progress.md`](.clinerules/progress.md)** → [`main.py`](main.py) - история
-- **[`.clinerules/activeContext.md`](.clinerules/activeContext.md)** → [`vm_start.py`](vm_start.py) - фокус
+- **[`rules/techContext.md`](rules/techContext.md)** → [`config.py`](config.py) - архитектура
+- **[`rules/progress.md`](rules/progress.md)** → [`main.py`](main.py) - история
+- **[`rules/activeContext.md`](rules/activeContext.md)** → [`vm_start.py`](vm_start.py) - фокус
 
 #### **Специализированная документация:**
 - **[`.clinerules/QUICK_START_RAG_ported.md`](.clinerules/QUICK_START_RAG_ported.md)** → [`rag/`](rag/) - RAG quick start
