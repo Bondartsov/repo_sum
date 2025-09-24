@@ -1,7 +1,7 @@
 # Технический долг проекта
 
-**Дата создания:** 23 сентября 2025
-**Статус:** M2.5 VM Migration - 95% ЗАВЕРШЕНО (async/sync проблемы решены)
+**Дата создания:** 24 сентября 2025
+**Статус:** M2.5 VM Migration - ФИНАЛИЗАЦИЯ (устранение блокеров VM backend и performance benchmarking)
 **Версия:** 1.1 - Обновлена после решения async/sync проблем
 **Ответственный:** Система технического аудита
 
@@ -20,7 +20,7 @@
 - **Документационные несоответствия:** 7 (путаница для пользователей)
 
 **Общий объем работ:** 29 задач, ~12-15 дней разработки (уменьшено)
-**Блокирующие факторы:** ✅ Async/Sync проблемы РЕШЕНЫ - основные блокеры устранины
+**Блокирующие факторы:** ✅ Async/Sync проблемы РЕШЕНЫ - текущие блокеры: VM backend и performance benchmarking
 
 ---
 
@@ -58,7 +58,7 @@ embeddings = self.embedder.embed_texts(texts)  # Синхронный вызов
 **Приоритет:** P0 (критическая проблема была успешно решена)
 
 ### **2. Несоответствие статуса M2.5 между документацией и кодом**
-**Статус:** ❌ КРИТИЧЕСТКИЙ (создает ложное впечатление о проблемах)
+**Статус:** ✅ РЕШЕНО (обновлено 24 сентября 2025)
 **Влияние:** Пользователи думают что async проблемы не решены
 **Файлы:** [rules/activeContext.md](rules/activeContext.md), [rules/progress.md](rules/progress.md), [rules/project_status.md](rules/project_status.md)
 
@@ -120,11 +120,11 @@ embeddings = self.embedder.embed_texts(texts)  # Синхронный вызов
 **Влияние:** Пользователи не могут получить доступ к заявленной информации
 **Файлы:** `AGENTS.md`, `rules/custom_instructions.md`
 
-**Проблема:** Ссылки на несуществующие файлы:
-- `[systemPatterns.md](rules/systemPatterns.md)` - файл не существует
-- `[audit_results.md](rules/audit_results.md)` - файл не существует
+**Проблема:** Ссылки на устаревшие файлы:
+- `systemPatterns.md` → заменено на [Agent Guidelines.md](rules/Agent%20Guidelines.md)
+- `audit_results.md` → заменено на [tests/tests_audit.md](../tests/tests_audit.md)
 
-**Решение:** Создать отсутствующие файлы или обновить ссылки
+**Решение:** Ссылки обновлены на актуальные документы
 
 **Оценка:** 1 день, сложность: низкая
 **Приоритет:** P1 (влияет на usability)
@@ -231,7 +231,7 @@ embeddings = self.embedder.embed_texts(texts)  # Синхронный вызов
 **Приоритет:** P1 (влияет на user experience)
 
 ### **3. Performance benchmarking Jina v3 vs BGE**
-**Статус:** ❌ ОТСУТСТВУЕТ
+**Статус:** 🔄 В ПРОЦЕССЕ (финализация M2.5)
 **Влияние:** Нет подтверждения заявленного +40-60% улучшения
 **Файлы:** `tests/rag/test_rag_performance.py`, `scripts/benchmarks/`
 
@@ -267,23 +267,19 @@ embeddings = self.embedder.embed_texts(texts)  # Синхронный вызов
 **Файлы:** `AGENTS.md`, `rules/custom_instructions.md`
 
 **Проблема:** Ссылки на `systemPatterns.md` и `audit_results.md` в `.clinerules/`
-
+**Решение:** Обновлено — использовать [Agent Guidelines.md](rules/Agent%20Guidelines.md) и [tests/tests_audit.md](../tests/tests_audit.md)
 **Рекомендации:** Создать отсутствующие файлы или обновить ссылки
 
 **Оценка:** 1 день, сложность: низкая
 **Приоритет:** P2 (влияет на usability)
 
-### **3. Несоответствие критериев завершения M2.5**
-**Статус:** ❌ НЕСООТВЕТСТВИЕ
-**Влияние:** Неясно что именно нужно для completion
-**Файлы:** `rules/active_tasks.md`, `rules/project_status.md`
+### **3. Критерии завершения M2.5**
+**Статус:** ✅ УНИФИЦИРОВАНО (24 сентября 2025)
+**Файлы:** `rules/Development Roadmap.md`, `rules/Project Overview.md`, `rules/Technical Debt.md`
 
-**Проблема:** Разные критерии успеха в разных файлах
-
-**Рекомендации:** Унифицировать критерии завершения M2.5
-
-**Оценка:** 0.5 дня, сложность: низкая
-**Приоритет:** P2 (влияет на clarity)
+**Критерии завершения:**
+- Устранение блокеров VM backend
+- Успешное прохождение performance benchmarking (Jina v3 vs BGE)
 
 ---
 
@@ -379,11 +375,12 @@ embeddings = self.embedder.embed_texts(texts)  # Синхронный вызов
 1. **Финализация M2.5** - завершить integration testing и documentation
 2. **Улучшение качества** - error handling, performance optimization
 3. **Production readiness** - monitoring, observability, comprehensive testing
+4. **Рефакторинг перегруженных классов** - декомпозиция `VectorStore` (~1000 строк) и устранение дублирования логики в `Embedder`/`RemoteEmbedder`
+5. **Активация Matryoshka-сжатия** - включить 1024→384 по умолчанию и протестировать влияние на качество поиска
+6. **Расширение Parser System** - реализовать поддержку Java, Go, Ruby (сейчас только 5 языков)
 
 **Общий статус:** Технический долг управляем, основные риски устранены, проект готов к M3 фазе разработки.
 
 ---
 
-**Дата создания:** 23 сентября 2025
-**Статус:** Technical debt analysis completed
-**Следующее обновление:** После завершения M2.5 финализации
+⚠️ Обновлено по результатам аудита от 24 сентября 2025
