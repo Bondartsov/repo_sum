@@ -233,63 +233,62 @@ class RemoteVMEmbedder:
                 else:
                     raise  # Последняя попытка - пробрасываем ошибку
     
-    async def health_check(self) -> Dict[str, Any]:
+    async def _async_health_check(self) -> Dict[str, Any]:
         """
-        Проверяет состояние удалённого сервиса используя shared HTTP session.
-        
-        Returns:
-            Информация о состоянии сервиса
+        Асинхронная проверка состояния удалённого сервиса.
         """
         health_info = {
-            'status': 'unknown',
-            'service_url': self.embeddings_endpoint,
-            'provider': self.provider_name,
-            'model_name': self.model_name,
-            'embedding_dim': self.embedding_dim,
-            'truncate_dim': self.truncate_dim,
-            'error': None
+            "status": "unknown",
+            "components": {
+                "embedder": {
+                    "service_url": self.embeddings_endpoint,
+                    "provider": self.provider_name,
+                    "model_name": self.model_name,
+                    "embedding_dim": self.embedding_dim,
+                    "truncate_dim": self.truncate_dim,
+                }
+            },
+            "error": None,
         }
-        
+
         try:
-            # Тестовый запрос
             test_payload = {
                 "texts": ["test"],
                 "task": "retrieval.query",
                 "truncate_dim": self.truncate_dim,
-                "normalize": True
+                "normalize": True,
             }
-            
-            # Используем shared HTTP session
+
             session = await get_shared_http_session()
-            
-            async with session.post(
-                self.embeddings_endpoint,
-                json=test_payload
-            ) as response:
-                
+            async with session.post(self.embeddings_endpoint, json=test_payload) as response:
                 if response.status == 200:
                     result = await response.json()
-                    
                     if "embeddings" in result and len(result["embeddings"]) > 0:
                         actual_dim = len(result["embeddings"][0])
-                        health_info['status'] = 'healthy'
-                        health_info['actual_embedding_dim'] = actual_dim
-                        
+                        health_info["status"] = "ok"
+                        health_info["components"]["embedder"]["actual_embedding_dim"] = actual_dim
                         if actual_dim != self.truncate_dim:
-                            health_info['warning'] = f"Размерность не соответствует ожидаемой: {actual_dim} vs {self.truncate_dim}"
+                            health_info["components"]["embedder"]["warning"] = (
+                                f"Размерность не соответствует ожидаемой: {actual_dim} vs {self.truncate_dim}"
+                            )
                     else:
-                        health_info['status'] = 'error'
-                        health_info['error'] = "Некорректный формат ответа"
+                        health_info["status"] = "error"
+                        health_info["error"] = "Некорректный формат ответа"
                 else:
                     error_text = await response.text()
-                    health_info['status'] = 'error'
-                    health_info['error'] = f"HTTP {response.status}: {error_text}"
-        
+                    health_info["status"] = "error"
+                    health_info["error"] = f"HTTP {response.status}: {error_text}"
         except Exception as e:
-            health_info['status'] = 'error'
-            health_info['error'] = str(e)
-            
+            health_info["status"] = "error"
+            health_info["error"] = str(e)
+
         return health_info
+
+    def check_health(self) -> Dict[str, Any]:
+        """
+        Синхронная обёртка для health check.
+        """
+        return run_async_safe(self._async_health_check(), timeout=30)
     
     def warmup(self) -> None:
         """

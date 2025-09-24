@@ -688,14 +688,14 @@ class TestJinaV3QualityBenchmark:
                     provider="fastembed",
                     model_name="BAAI/bge-small-en-v1.5",
                     precision="int8",
-                    truncate_dim=384,
+                    truncate_dim=1024,
                     batch_size_max=128,
                     normalize_embeddings=True,
                     device="cpu"
                 ),
                 vector_store=VectorStoreConfig(
                     collection_name="bge_test_collection",
-                    vector_size=384
+                    vector_size=1024
                 ),
                 query_engine=QueryEngineConfig(
                     max_results=20,

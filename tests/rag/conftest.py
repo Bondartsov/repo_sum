@@ -64,7 +64,7 @@ def test_rag_settings_file():
                 "provider": "fastembed",
                 "model_name": "BAAI/bge-small-en-v1.5",
                 "precision": "int8",
-                "truncate_dim": 384,
+                "truncate_dim": 1024,
                 "batch_size_min": 8,
                 "batch_size_max": 64,
                 "normalize_embeddings": True,
@@ -77,7 +77,7 @@ def test_rag_settings_file():
                 "port": int(os.getenv("QDRANT_PORT", "6333")),
                 "prefer_grpc": False,
                 "collection_name": "test_rag_collection",
-                "vector_size": 384,
+                "vector_size": 1024,
                 "distance": "cosine",
                 "hnsw_m": 16,
                 "hnsw_ef_construct": 64,
@@ -130,7 +130,7 @@ def test_rag_config():
             provider="fastembed",
             model_name="BAAI/bge-small-en-v1.5",
             precision="int8",
-            truncate_dim=384,
+            truncate_dim=1024,
             batch_size_min=8,
             batch_size_max=64,
             normalize_embeddings=True,
@@ -143,7 +143,7 @@ def test_rag_config():
             port=int(os.getenv("QDRANT_PORT", "6333")),
             prefer_grpc=False,
             collection_name="test_collection",
-            vector_size=384,
+            vector_size=1024,
             distance="cosine",
             hnsw_m=16,
             hnsw_ef_construct=64,
@@ -187,7 +187,7 @@ def minimal_rag_config():
         ),
         vector_store=VectorStoreConfig(
             collection_name="minimal_test_collection",
-            vector_size=384,
+            vector_size=1024,
             enable_quantization=False,  # Отключаем для простоты
             hnsw_m=8,  # Уменьшенные параметры
             hnsw_ef_construct=32
@@ -311,7 +311,7 @@ def mock_fastembed_embedder():
             
             # Функция генерации эмбеддингов
             def generate_embeddings(texts):
-                return [np.random.random(384).astype(np.float32) for _ in texts]
+                return [np.random.random(1024).astype(np.float32) for _ in texts]
             
             mock_model.embed = generate_embeddings
             
@@ -328,7 +328,7 @@ def mock_sentence_transformers_embedder():
             
             # Функция генерации эмбеддингов
             def generate_embeddings(texts, **kwargs):
-                return np.array([np.random.random(384).astype(np.float32) for _ in texts])
+                return np.array([np.random.random(1024).astype(np.float32) for _ in texts])
             
             mock_model.encode = generate_embeddings
             
@@ -415,7 +415,7 @@ def sample_vector_points():
     for i in range(10):
         points.append({
             'id': f'test_point_{i}',
-            'vector': np.random.random(384).tolist(),
+            'vector': np.random.random(1024).tolist(),
             'payload': {
                 'content': f'test content {i}',
                 'file_path': f'test/file_{i}.py',

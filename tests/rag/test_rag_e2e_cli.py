@@ -55,7 +55,7 @@ class TestRAGCliE2E:
                     "provider": "fastembed",
                     "model_name": "BAAI/bge-small-en-v1.5",
                     "precision": "int8",
-                    "truncate_dim": 384,
+                    "truncate_dim": 1024,
                     "batch_size_min": 4,
                     "batch_size_max": 32,
                     "normalize_embeddings": True,
@@ -66,7 +66,7 @@ class TestRAGCliE2E:
                     "host": os.getenv("QDRANT_HOST", "localhost"),
                     "port": int(os.getenv("QDRANT_PORT", "6333")),
                     "collection_name": "test_e2e_collection",
-                    "vector_size": 384,
+                    "vector_size": 1024,
                     "distance": "cosine",
                     "hnsw_m": 16,
                     "hnsw_ef_construct": 64,
@@ -168,7 +168,7 @@ class TestRAGCliE2E:
                 # Генерируем случайные эмбеддинги подходящей размерности
                 def generate_embeddings(texts):
                     import numpy as np
-                    return [np.random.random(384).astype(np.float32) for _ in texts]
+                    return [np.random.random(1024).astype(np.float32) for _ in texts]
                 
                 mock_model.embed = generate_embeddings
                 

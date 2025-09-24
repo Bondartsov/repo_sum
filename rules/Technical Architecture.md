@@ -64,7 +64,7 @@ flowchart TD
 
 - **CPU-First подход**: Оптимизация для широкой совместимости без GPU
 - **Dual Task Architecture**: Специализированные эмбеддинги для query/passage
-- **Matryoshka Compression**: 1024d → 384d сжатие без потери качества
+- **Единый стандарт размерности**: 1024d векторы (унифицировано для всех компонентов)
 - **Гибридный поиск**: Dense (Jina v3) + Sparse (SPLADE) с RRF fusion
 - **Memory Efficiency**: ~100MB локально vs 25+ GB требования
 

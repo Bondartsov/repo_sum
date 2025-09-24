@@ -119,8 +119,8 @@ class RemoteVMVectorStore:
             timeout=60
         )
 
-    def health_check(self) -> Dict[str, Any]:
-        """Синхронный health-check удалённого сервиса с правильным event loop management."""
+    def check_health(self) -> Dict[str, Any]:
+        """Синхронный health-check удалённого сервиса (унифицированный формат)."""
         return run_async_safe(
             self._async_health_check(),
             timeout=30
@@ -432,53 +432,44 @@ class RemoteVMVectorStore:
     
     async def _async_health_check(self) -> Dict[str, Any]:
         """
-        Проверяет состояние удалённого векторного хранилища используя shared HTTP session.
-        
-        Returns:
-            Информация о состоянии сервиса
+        Асинхронная проверка состояния удалённого векторного хранилища.
         """
         health_info = {
-            'status': 'unknown',
-            'service_host': self.service_host,
-            'service_port': self.service_port,
-            'search_endpoint': self.search_endpoint,
-            'index_endpoint': self.index_endpoint,
-            'collection_status': 'unknown',
-            'error': None
+            "status": "unknown",
+            "components": {
+                "vector_store": {
+                    "service_host": self.service_host,
+                    "service_port": self.service_port,
+                    "search_endpoint": self.search_endpoint,
+                    "index_endpoint": self.index_endpoint,
+                    "collection_status": "unknown",
+                }
+            },
+            "error": None,
         }
-        
+
         try:
             health_endpoint = f"http://{self.service_host}:{self.service_port}{self.remote_config.health_endpoint}"
-            
-            # Используем shared HTTP session
             session = await get_shared_http_session()
-            
             async with session.get(health_endpoint) as response:
-                
                 if response.status == 200:
                     result = await response.json()
-                    
-                    health_info['status'] = 'connected'
-                    health_info['collection_status'] = result.get('collection_status', 'unknown')
-                    health_info['qdrant_status'] = result.get('qdrant_status', 'unknown')
-                    health_info['vector_count'] = result.get('vector_count', 0)
-                    
-                    # Обновляем внутреннее состояние
+                    health_info["status"] = "ok"
+                    health_info["components"]["vector_store"]["collection_status"] = result.get("collection_status", "unknown")
+                    health_info["components"]["vector_store"]["qdrant_status"] = result.get("qdrant_status", "unknown")
+                    health_info["components"]["vector_store"]["vector_count"] = result.get("vector_count", 0)
                     self._connected = True
-                    self._collection_exists = health_info['collection_status'] == 'exists'
-                    
+                    self._collection_exists = health_info["components"]["vector_store"]["collection_status"] == "exists"
                 else:
                     error_text = await response.text()
-                    health_info['status'] = 'error'
-                    health_info['error'] = f"HTTP {response.status}: {error_text}"
+                    health_info["status"] = "error"
+                    health_info["error"] = f"HTTP {response.status}: {error_text}"
                     self._connected = False
-        
         except Exception as e:
-            health_info['status'] = 'error'
-            # include exception type to aid diagnostics (timeouts often have empty str)
-            health_info['error'] = f"{type(e).__name__}: {e}"
+            health_info["status"] = "error"
+            health_info["error"] = f"{type(e).__name__}: {e}"
             self._connected = False
-            
+
         return health_info
     
     async def _async_get_collection_info(self) -> Dict[str, Any]:

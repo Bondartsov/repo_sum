@@ -134,7 +134,7 @@ class TestRAGIntegration:
         # Позитивный тест - корректная конфигурация
         assert test_config.rag.embeddings.provider in ["fastembed", "sentence-transformers"]
         assert test_config.rag.embeddings.model_name != ""
-        assert 256 <= test_config.rag.embeddings.truncate_dim <= 384
+        assert test_config.rag.embeddings.truncate_dim == 1024
         assert test_config.rag.vector_store.vector_size > 0
         assert test_config.rag.vector_store.distance in ["cosine", "dot", "euclidean"]
         
@@ -195,7 +195,7 @@ class TestRAGIntegration:
         
         assert embeddings is not None
         assert len(embeddings) == 3
-        assert embeddings.shape[1] == 384  # Размерность вектора
+        assert embeddings.shape[1] == 1024  # Размерность вектора
         
         # Проверяем статистику
         stats = embedder.get_stats()

@@ -44,9 +44,9 @@
 ### 2.3 Обновление документации
 **ОБЯЗАТЕЛЬНО** обновлять ВСЕ необходимые документы:
 - **Не создавать новых файлов в папке rules, работать только с существующими, т.е. всегда их обновлять
-- **[Technical Debt.md](Technical Debt.md)** - статус задач
+- **[Technical Debt.md](Technical Debt.md)** - технический долг
 - **[Development Roadmap.md](Development Roadmap.md)** - прогресс выполнения
-- **[Technical Architecture.md](Technical Architecture.md)** - технический долг
+- **[Technical Architecture.md](Technical Architecture.md)** - архитектурные правила проекта
 - **[rules/](rules/)** - правила и контекст проекта
 
 ---
@@ -84,16 +84,14 @@
 4. Проверить тестовую стратегию в **[tests/rag/TESTING_STRATEGY.md](tests/rag/TESTING_STRATEGY.md)**
 
 ### 4.2 Реализация
-1. **Создать задачу** в **[Technical Debt.md](Technical Debt.md)**
-2. **Реализовать** функционал с соблюдением стандартов
-3. **Написать тесты** (unit, integration, e2e)
-4. **Обновить документацию** параллельно с кодом
+1. **Реализовать** функционал с соблюдением стандартов
+2. **Написать тесты** (unit, integration, e2e и т.д.)
+3. **Обновить документацию** в соответствующих файлах в папке rules/, параллельно с кодом. Поставить необходимые отметки в чекбоксах, если задачи из техдолга, то обновить её статус выполгнения.
 
 ### 4.3 Завершение работы
 1. **Проверить** все тесты проходят
-2. **Обновить** статус в **[Technical Debt.md](Technical Debt.md)**
+2. **Обновить** статус в **[Technical Debt.md](Technical Debt.md)** если задача от туда, если нет, то в соответствующем файле в папке rules/
 3. **Создать** отчет о проделанной работе
-4. **Обновить** технический долг в **[Technical Debt.md](Technical Debt.md)**
 
 ---
 
@@ -106,7 +104,6 @@
 - **Сервис ориентрованная архитектура** с четким разделением ответственности
 
 ### 5.2 Ключевые компоненты
-- **Jina v3 embeddings** (570M параметров) - **[JINA_V3_VM_MIGRATION_PLAN.md](JINA_V3_VM_MIGRATION_PLAN.md)**
 - **Гибридный эмбеддер** - **[rag/embedder.py](rag/embedder.py)**
 - **Векторное хранилище** - **[rag/vector_store.py](rag/vector_store.py)**
 - **Поисковый сервис** - **[rag/search_service.py](rag/search_service.py)**
@@ -154,7 +151,7 @@ python tests/test_offline_no_network.py
 - **Property-based тесты**: edge cases и граничные условия
 
 ### 6.4 Mock правила
-См. **[Technical Debt.md](Technical Debt.md)** для детальных правил создания mock объектов.
+См. **[Technical Architecture.md](Technical Architecture.md)** для детальных правил создания mock объектов.
 
 ---
 
@@ -174,8 +171,8 @@ python tests/test_offline_no_network.py
 - **[tests/test_offline_no_network.py](../tests/test_offline_no_network.py)** - Offline тесты
 
 ### 7.4 Разработка
-- **[Technical Architecture.md](Technical Architecture.md)** - Правила Memory Bank
-- **[Technical Debt.md](Technical Debt.md)** - Правила mock объектов и результаты аудита
+- **[Technical Architecture.md](Technical Architecture.md)** - Правила архитектуры
+- **[Technical Debt.md](Technical Debt.md)** - технический долг
 
 ---
 
@@ -208,7 +205,7 @@ pytest tests/ -k "property"
 ### 8.3 Обслуживание
 ```bash
 # Очистка кэша
-python clean_pycache.py
+python scripts/clean_pycache.py
 
 # Валидация окружения
 python scripts/validate_vm_env.py

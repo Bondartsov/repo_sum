@@ -237,7 +237,7 @@ class PerformanceBenchmarker:
                 embedder=bge_embedder,
                 texts=test_texts[:batch_size],
                 model_name="BGE-small",
-                vector_dim=384
+                vector_dim=1024
             )
             
             # Тестируем Jina v3
@@ -355,7 +355,7 @@ class PerformanceBenchmarker:
             search_service=bge_search_service,
             queries=test_queries,
             model_name="BGE-small",
-            vector_dim=384
+            vector_dim=1024
         )
         
         # Измеряем Jina поиск
@@ -462,7 +462,7 @@ class TestJinaV3PerformanceImpact:
                     def bge_embed(texts):
                         # Имитируем обработку - меньше времени для 384d
                         time.sleep(0.001 * len(texts))  # 1ms per text
-                        return [np.random.random(384).astype(np.float32) for _ in texts]
+                        return [np.random.random(1024).astype(np.float32) for _ in texts]
                     bge_model.embed = bge_embed
                     mock_fastembed.return_value = bge_model
                     
@@ -484,7 +484,7 @@ class TestJinaV3PerformanceImpact:
                             embeddings=EmbeddingConfig(
                                 provider="fastembed",
                                 model_name="BAAI/bge-small-en-v1.5",
-                                truncate_dim=384,
+                                truncate_dim=1024,
                                 batch_size_max=128
                             ),
                             parallelism=ParallelismConfig(torch_num_threads=4)

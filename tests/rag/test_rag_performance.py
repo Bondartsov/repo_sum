@@ -130,7 +130,7 @@ class TestRAGPerformance:
                     provider="fastembed",
                     model_name="BAAI/bge-small-en-v1.5",
                     precision="int8",
-                    truncate_dim=384,
+                    truncate_dim=1024,
                     batch_size_min=16,
                     batch_size_max=128,
                     normalize_embeddings=True,
@@ -142,7 +142,7 @@ class TestRAGPerformance:
                     host=os.getenv("QDRANT_HOST", "localhost"),
                     port=int(os.getenv("QDRANT_PORT", "6333")),
                     collection_name="perf_test_collection",
-                    vector_size=384,
+                    vector_size=1024,
                     distance="cosine",
                     hnsw_m=24,
                     hnsw_ef_construct=128,
@@ -371,7 +371,7 @@ class TestRAGPerformance:
         def generate_embeddings(texts):
             # Имитация времени обработки
             time.sleep(0.001 * len(texts))  # 1мс на текст
-            return [np.random.random(384).astype(np.float32) for _ in texts]
+            return [np.random.random(1024).astype(np.float32) for _ in texts]
         
         mock_model.embed = generate_embeddings
         
@@ -433,7 +433,7 @@ class TestRAGPerformance:
             for i, text in enumerate(texts[:batch_size]):
                 documents.append({
                     'id': f'perf_test_{i}',
-                    'vector': np.random.random(384).tolist(),
+                    'vector': np.random.random(1024).tolist(),
                     'payload': {
                         'content': text,
                         'file_path': f'test/file_{i}.py',
@@ -497,7 +497,7 @@ class TestRAGPerformance:
         with patch('rag.search_service.CPUEmbedder') as mock_embedder_class:
             # Настраиваем быстрый embedder
             mock_embedder = Mock()
-            mock_embedder.embed_texts.return_value = np.array([np.random.random(384)])
+            mock_embedder.embed_texts.return_value = np.array([np.random.random(1024)])
             mock_embedder_class.return_value = mock_embedder
             
             search_service = SearchService(perf_config)
@@ -588,7 +588,7 @@ class TestRAGPerformance:
             with patch('rag.query_engine.QdrantVectorStore') as mock_store_class:
                 # Настраиваем мocks
                 mock_embedder = Mock()
-                mock_embedder.embed_texts.return_value = np.array([np.random.random(384)])
+                mock_embedder.embed_texts.return_value = np.array([np.random.random(1024)])
                 mock_embedder.embedding_config.model_name = "test_model"
                 mock_embedder_class.return_value = mock_embedder
                 
@@ -722,7 +722,7 @@ class TestRAGPerformance:
                                 mock_model = Mock()
                                 mock_text_embedding.return_value = mock_model
                                 mock_model.embed = lambda texts: [
-                                    np.random.random(384).astype(np.float32) for _ in texts
+                                    np.random.random(1024).astype(np.float32) for _ in texts
                                 ]
                                 
                                 # Настраиваем file scanner
@@ -816,7 +816,7 @@ class TestRAGPerformance:
              patch('rag.vector_store.QdrantVectorStore.search') as mock_vector_search:
             # Мокаем embedder
             mock_embedder = Mock()
-            mock_embedder.embed_texts.return_value = np.array([np.random.random(384)])
+            mock_embedder.embed_texts.return_value = np.array([np.random.random(1024)])
             mock_embedder_class.return_value = mock_embedder
             
             # Мокаем SearchService.search для ускорения
@@ -908,7 +908,7 @@ class TestRAGPerformance:
                 mock_model = Mock()
                 mock_text_embedding.return_value = mock_model
                 mock_model.embed = lambda texts: [
-                    np.random.random(384).astype(np.float32) for _ in texts
+                    np.random.random(1024).astype(np.float32) for _ in texts
                 ]
                 
                 embedder = CPUEmbedder(perf_config.rag.embeddings, perf_config.rag.parallelism)
@@ -968,7 +968,7 @@ class TestRAGPerformance:
                 mock_model = Mock()
                 mock_text_embedding.return_value = mock_model
                 mock_model.embed = lambda texts: [
-                    np.random.random(384).astype(np.float32) for _ in texts
+                    np.random.random(1024).astype(np.float32) for _ in texts
                 ]
                 
                 embedder = CPUEmbedder(perf_config.rag.embeddings, perf_config.rag.parallelism)
@@ -1011,7 +1011,7 @@ class TestRAGPerformance:
                 mock_model = Mock()
                 mock_text_embedding.return_value = mock_model
                 mock_model.embed = lambda texts: [
-                    np.random.random(384).astype(np.float32) for _ in texts
+                    np.random.random(1024).astype(np.float32) for _ in texts
                 ]
                 
                 embedder = CPUEmbedder(perf_config.rag.embeddings, perf_config.rag.parallelism)
@@ -1045,7 +1045,7 @@ class _TestRAGBenchmarks:
                 mock_model = Mock()
                 mock_text_embedding.return_value = mock_model
                 mock_model.embed = lambda texts: [
-                    np.random.random(384).astype(np.float32) for _ in texts
+                    np.random.random(1024).astype(np.float32) for _ in texts
                 ]
                 
                 embedder = CPUEmbedder(perf_config.rag.embeddings, perf_config.rag.parallelism)

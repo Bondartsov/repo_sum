@@ -223,7 +223,7 @@ async def test_async_operation():
 @pytest.fixture
 def fast_mock_embedder():
     with patch('rag.embedder.CPUEmbedder.embed_texts') as mock_embed:
-        mock_embed.return_value = np.zeros((batch_size, 384))
+        mock_embed.return_value = np.zeros((batch_size, 1024))
         yield mock_embed
 ```
 
