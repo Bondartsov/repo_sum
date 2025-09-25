@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from rag.exceptions import EmbeddingException
 
 from rag.remote_embedder import RemoteVMEmbedder
 from rag.remote_vector_store import RemoteVMVectorStore
@@ -27,8 +28,8 @@ def test_remote_embedder_fallback(monkeypatch):
 
     monkeypatch.setattr(embedder, "_async_embed_texts", failing_async_embed)
 
-    result = embedder.embed_texts(["demo"])
-    assert np.array_equal(result, np.zeros((1, embedder.truncate_dim), dtype=np.float32))
+    with pytest.raises(EmbeddingException):
+        embedder.embed_texts(["demo"])
     assert embedder.stats['error_count'] >= 1
 
 

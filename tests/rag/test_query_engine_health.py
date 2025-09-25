@@ -191,9 +191,9 @@ class TestQueryEngineHealthFixes:
             # Вызываем метод
             query_engine._ensure_embeddings(test_results)
             
-            # Проверяем что используется размерность по умолчанию (384)
+            # Проверяем что используется размерность по умолчанию (1024)
             assert test_results[0].embedding is not None
-            assert len(test_results[0].embedding) == 384  # Default размерность
+            assert len(test_results[0].embedding) == 1024  # Default размерность
     
     def test_ensure_embeddings_successful_case(self):
         """Тестирует успешный случай получения эмбеддингов без fallback"""

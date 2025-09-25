@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 class EmbeddingRequest(BaseModel):
     texts: List[str] = Field(..., description="Список текстов для эмбеддинга")
     task: Optional[str] = Field("retrieval.passage", description="Задача для dual task архитектуры")
-    truncate_dim: Optional[int] = Field(384, description="Размерность для Matryoshka сжатия")
+    truncate_dim: Optional[int] = Field(None, description="Желаемая размерность эмбеддингов (по умолчанию 1024)")
     normalize: bool = Field(True, description="Применять L2 нормализацию")
 
 class SearchRequest(BaseModel):
@@ -222,7 +222,7 @@ async def root():
     """Корневой эндпоинт"""
     return {
         "service": "RAG-as-a-Service VM",
-        "version": "1.0.0",
+        "version": "0.5",
         "model": "jinaai/jina-embeddings-v3",
         "status": "running"
     }
@@ -286,10 +286,10 @@ async def get_embeddings(request: EmbeddingRequest):
             deadline_ms=30000
         )
         
-        # Применяем Matryoshka сжатие если нужно
-        if request.truncate_dim and request.truncate_dim < embeddings.shape[1]:
-            embeddings = embeddings[:, :request.truncate_dim]
         
+        expected_dim = embeddings.shape[1]
+        if request.truncate_dim and request.truncate_dim != expected_dim:
+            logger.warning(f"Запрошено усечение до {request.truncate_dim}d, но сервис возвращает {expected_dim}d. Сжатие отключено.")
         processing_time = asyncio.get_event_loop().time() - start_time
         
         return EmbeddingResponse(

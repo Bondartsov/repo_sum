@@ -1,8 +1,8 @@
 # Техническая архитектура
 
 **Дата:** 23 сентября 2025
-**Версия:** 2.0.0 (M2.5 VM Migration BREAKTHROUGH)
-**Статус:** RAG-as-a-Service архитектура реализована
+**Версия:** 0.5 (переход на 0.6 в разработке)
+**Статус:** RAG-as-a-Service архитектура в активной стабилизации
 
 ---
 
@@ -18,7 +18,7 @@
 ### 🔗 Активные технические компоненты:
 - **RepositoryAnalyzer** - основной координатор анализа ✅
 - **RAG System** - семантический поиск с Jina v3 (VM-based) ✅
-- **Parser System** - многоязычный парсинг кода (заявлено 9+ языков, фактически реализовано только 5: Python, JavaScript, TypeScript, C#, C++). Требуется расширение поддержки (Java, Go, Ruby и др.) ⚠️
+- **Parser System** - парсинг кода для 5 языков (Python, JavaScript, TypeScript, C#, C++); расширение фиксируется отдельно при появлении новых требований
 - **UI System** - CLI + Web интерфейсы (Streamlit + REST API) ✅
 - **Testing System** - комплексное тестирование (5872+ тестов) ✅
 
@@ -91,7 +91,7 @@ repo_sum/
 - **Jina v3 Dual Task**: sentence-transformers с task-specific LoRA адаптерами
 - **Adaptive HNSW**: динамические параметры (m=24, ef_construct=128 для 1024d)
 - **Trust Remote Code**: безопасная загрузка jinaai/jina-embeddings-v3
-- FastEmbed fallback с ONNX Runtime для совместимости
+- FastEmbed использовался на ранних этапах; текущая рабочая конфигурация использует только VM-эмбеддинги
 - Управление потоками через OMP_NUM_THREADS, MKL_NUM_THREADS
 - Адаптивные батчи в зависимости от доступной RAM и размерности векторов
 
@@ -149,7 +149,7 @@ class EmbeddingConfig:
 
 #### Liskov Substitution Principle (LSP)
 - Любой `BaseParser` взаимозаменяем (PythonParser для .py файлов)
-- `FastEmbedProvider`/`SentenceTransformersProvider` взаимозаменяемы в эмбеддере
+- `FastEmbedProvider`/`SentenceTransformersProvider` используются только для тестовых/offline сценариев; рабочий сервис использует VM-эмбеддинги
 
 #### Interface Segregation Principle (ISP)
 - Раздельные интерфейсы для чтения/записи/эмбеддинга
@@ -212,7 +212,7 @@ class ParserRegistry:
 
 #### Memory-Aware Processing Pattern
 - Мониторинг `psutil.virtual_memory().available`
-- Адаптивный batch_size при низкой RAM (fallback на меньшие чанки)
+- Адаптивный batch_size при низкой RAM (уменьшение чанков при нехватке памяти)
 
 ### 2.4 Performance Patterns
 

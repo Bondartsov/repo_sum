@@ -1,9 +1,9 @@
 # План развития проекта
 
 **Дата:** 24 сентября 2025
-**Статус:** M2.5 VM Migration - ФИНАЛИЗАЦИЯ (устранение блокеров VM backend и performance benchmarking)
-**Версия:** 2.0.0 (VM Migration революция)
-**Ветка:** jina-embeddings-v3 → master (готов к мержу)
+**Статус:** Подготовка релиза 0.6 (vm интеграция и performance benchmarking в работе)
+**Версия:** 0.5 (переход на 0.6)
+**Ветка:** jina-embeddings-v3 → master (готовится к мержу)
 
 > 📚 **Система памяти**: [`rules/`](rules/) - консолидированная документация проекта
 
@@ -48,7 +48,7 @@
 **Статус:** 100% ЗАВЕРШЁН ✅
 **Достижения:**
 - ✅ CPU-оптимизированная RAG (FastEmbed + Qdrant)
-- ✅ Dense search с BAAI/bge-small-en-v1.5 (384d)
+- ✅ Dense search с BAAI/bge-small-en-v1.5 (базовый этап, затем переход на 1024d Jina v3)
 - ✅ CLI + Web UI интеграция
 - ✅ Production конфигурация (.env)
 - ✅ 149+ стабильных тестов
@@ -57,6 +57,7 @@
 **Статус:** 100% ЗАВЕРШЁН ✅
 **Достижения:**
 - ✅ Sparse vectors (BM25 + SPLADE)
+- ✅ Parser System: стабильная поддержка Python/JavaScript/TypeScript/C#/C++
 - ✅ RRF fusion + MMR re-ranking
 - ✅ Code tokenization specialization
 - ✅ Метрики: Precision@10 +15-20%, Recall@100 +25-30%
@@ -85,7 +86,7 @@
 - 🔄 **Integration Testing**: финальное тестирование RAG поиска
 - 🔄 **Web UI Testing**: Streamlit RAG функции
 - 🔄 **Performance Testing**: бенчмарки Jina v3 vs BGE
-- 🔄 **Error Handling**: улучшение fallback логики
+- 🔄 **Error Handling**: усиление проверки ошибок и ретраев без локальных fallback-режимов
 
 #### **Новые компоненты M2.5:**
 - `vm_start.py` - автоматизация VM развертывания
@@ -134,7 +135,7 @@ flowchart TD
 
 ### **Критические проблемы для завершения:**
 1. **Integration Testing**: Полный workflow тестирование CLI + Web UI
-2. **Error Handling**: Улучшение fallback логики для production
+2. **Error Handling**: Улучшение обработчиков ошибок и метрик для production
 
 ---
 
@@ -312,7 +313,7 @@ flowchart TD
 **Вероятность:** Средняя | **Влияние:** Среднее
 - **Риск**: HTTP запросы к VM могут добавить значительную latency
 - **Mitigation**: Caching, batch processing, connection pooling
-- **Contingency**: Local fallback для critical operations
+- **Contingency**: План ручного вмешательства и уведомлений для критических операций
 
 ### **Бизнес-риски:**
 
@@ -402,6 +403,6 @@ flowchart TD
 **Статус**: VM Migration Breakthrough - стадия финализации (устранение блокеров VM backend и performance benchmarking)
 **Следующее обновление**: После устранения блокеров и успешного benchmarking
 
-⚠️ Примечание: Все компоненты системы унифицированы на 1024d. Matryoshka-сжатие (1024→384) исключено из production-конфигурации для предотвращения несоответствий.
+⚠️ Примечание: Все компоненты системы унифицированы на 1024d. Matryoshka-сжатие не используется и не планируется к включению в версии 0.5/0.6.
 
 ⚠️ Обновлено по результатам аудита от 24 сентября 2025

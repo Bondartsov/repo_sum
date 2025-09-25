@@ -75,6 +75,18 @@ class TokenManagementConfig:
     cache_expiry_days: int = 7
 
 
+# Значения по умолчанию для санитайзинга секретов
+def _default_sanitize_patterns() -> List[str]:
+    """Возвращает список регулярных выражений для маскировки секретов."""
+    return [
+        r"(?i)(api[_-]?key\s*[:=]\s*)(['\"]?[A-Za-z0-9\-_]{16,}['\"]?)",
+        r"(?i)(secret[_-]?key\s*[:=]\s*)(['\"]?[A-Za-z0-9\-_]{16,}['\"]?)",
+        r"(?i)(bearer\s+)([A-Za-z0-9\-_\.]{16,})",
+        r"(?i)(password\s*[:=]\s*)(['\"][^'\"]+['\"])",
+        r"-----BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+ PRIVATE KEY-----"
+    ]
+
+
 @dataclass
 class AnalysisConfig:
     """Конфигурация анализа кода"""
@@ -84,8 +96,8 @@ class AnalysisConfig:
     languages_priority: List[str] = field(default_factory=lambda: ["python", "javascript", "java"])
     # Новые опции расширенного анализа
     enable_advanced_scoring: bool = False  # приоритизация чанков по «важности»
-    sanitize_enabled: bool = False         # санитайзинг секретов перед отправкой в LLM
-    sanitize_patterns: List[str] = field(default_factory=list)  # регулярные выражения для вырезания
+    sanitize_enabled: bool = True          # санитайзинг секретов перед отправкой в LLM
+    sanitize_patterns: List[str] = field(default_factory=_default_sanitize_patterns)  # регулярные выражения для вырезания
 
 
 @dataclass
@@ -165,7 +177,7 @@ class VectorStoreConfig:
     prefer_grpc: bool = field(default_factory=lambda: safe_bool("QDRANT_PREFER_GRPC", "true"))
     collection_name: str = field(default_factory=lambda: os.getenv("QDRANT_COLLECTION_NAME", "code_chunks"))
     # Векторная размерность коллекции по умолчанию берётся из EMB_TRUNCATE_DIM,
-    # иначе EMB_DIM, иначе явный EMBEDDING_DIMENSION. Это обеспечивает согласованность с Matryoshka truncation.
+        # иначе EMB_DIM, иначе явный EMBEDDING_DIMENSION. Это обеспечивает согласованность размерностей между компонентами.
     vector_size: int = field(
         default_factory=lambda: safe_int(
             "EMBEDDING_DIMENSION",
@@ -383,8 +395,8 @@ class Config:
         if self.rag.embeddings.precision not in ["int8", "float32"]:
             errors.append("embeddings.precision должен быть 'int8' или 'float32'")
         
-        if not 256 <= self.rag.embeddings.truncate_dim <= 1024:
-            errors.append("embeddings.truncate_dim должен быть в диапазоне 256-1024")
+        if self.rag.embeddings.truncate_dim != self.rag.embeddings.embedding_dim:
+            errors.append("embeddings.truncate_dim должен совпадать с embeddings.embedding_dim (стандарт 1024d)")
         
         # Валидация новых полей Jina v3
         if self.rag.embeddings.task_query.strip() == "":

@@ -47,7 +47,7 @@ def test_config_creation():
         port=6333,
         prefer_grpc=True,
         collection_name="test_collection",
-        vector_size=384,
+        vector_size=1024,
         distance="cosine"
     )
     
@@ -56,7 +56,7 @@ def test_config_creation():
     assert config.port == 6333
     assert config.prefer_grpc == True
     assert config.collection_name == "test_collection"
-    assert config.vector_size == 384
+    assert config.vector_size == 1024
     assert config.distance == "cosine"
     
     # Проверяем значения по умолчанию
@@ -80,7 +80,7 @@ def test_qdrant_initialization():
             host="localhost",  # Не подключаемся реально
             port=6333,
             collection_name="test_collection",
-            vector_size=384
+            vector_size=1024
         )
         
         # Инициализация (должна пройти без реального подключения)
@@ -118,7 +118,7 @@ def test_collection_config_generation():
         {
             "name": "SQ квантование",
             "quantization_type": "SQ",
-            "vector_size": 384,
+            "vector_size": 1024,
             "hnsw_m": 16
         },
         {
@@ -131,7 +131,7 @@ def test_collection_config_generation():
             "name": "Без квантования",
             "quantization_type": "SQ",
             "enable_quantization": False,
-            "vector_size": 384,
+            "vector_size": 1024,
             "hnsw_m": 24
         }
     ]
@@ -170,7 +170,7 @@ def test_points_validation():
     from config import VectorStoreConfig
     from rag.vector_store import QdrantVectorStore
     
-    config = VectorStoreConfig(vector_size=384)
+    config = VectorStoreConfig(vector_size=1024)
     vector_store = QdrantVectorStore(config)
     
     # Тестовые точки
@@ -178,7 +178,7 @@ def test_points_validation():
         {
             # Корректная точка
             "id": "test_1",
-            "vector": np.random.random(384).astype(np.float32),
+            "vector": np.random.random(1024).astype(np.float32),
             "payload": {
                 "file": "test.py",
                 "chunk_id": "chunk_1",
@@ -187,7 +187,7 @@ def test_points_validation():
         },
         {
             # Точка без ID (должен быть сгенерирован)
-            "vector": np.random.random(384).astype(np.float32),
+            "vector": np.random.random(1024).astype(np.float32),
             "payload": {"file": "test2.py"}
         },
         {

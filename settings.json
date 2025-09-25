@@ -8,7 +8,14 @@
       "javascript",
       "java"
     ],
-    "sanitize_enabled": true
+    "sanitize_enabled": true,
+    "sanitize_patterns": [
+      "(?i)(api[_-]?key\\s*[:=]\\s*)(['\\\"]?[A-Za-z0-9\\-_]{16,}['\\\"]?)",
+      "(?i)(secret[_-]?key\\s*[:=]\\s*)(['\\\"]?[A-Za-z0-9\\-_]{16,}['\\\"]?)",
+      "(?i)(bearer\\s+)([A-Za-z0-9\\-_\\.]{16,})",
+      "(?i)(password\\s*[:=]\\s*)(['\\\"][^'\\\"]+['\\\"])",
+      "-----BEGIN [A-Z ]+ PRIVATE KEY-----[\\s\\S]+?-----END [A-Z ]+ PRIVATE KEY-----"
+    ]
   },
   "file_scanner": {
     "max_file_size": 10485760,

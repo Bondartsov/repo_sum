@@ -120,7 +120,7 @@ class CPUEmbedder:
         # Инициализация модели
         self._offline_mode = _is_offline_mode()
         # Установим размерность эмбеддингов для оффлайн-режима
-        self.embedding_dim = self.embedding_config.truncate_dim or 384
+        self.embedding_dim = getattr(self.embedding_config, "embedding_dim", 1024)
         if self._offline_mode:
             # Гарантируем оффлайн окружение для потенциальных зависимостей
             os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -431,10 +431,6 @@ class CPUEmbedder:
             if all_embeddings:
                 result = np.vstack(all_embeddings)
                 
-                # Применяем truncate_dim если необходимо
-                if (self.embedding_config.truncate_dim > 0 and 
-                    result.shape[1] > self.embedding_config.truncate_dim):
-                    result = result[:, :self.embedding_config.truncate_dim]
                 
                 # Обновляем статистику
                 total_time = time.time() - start_time
@@ -450,13 +446,13 @@ class CPUEmbedder:
                 return result
             else:
                 # Fallback - возвращаем пустой массив нужной размерности
-                embedding_dim = self.embedding_config.truncate_dim or 384
+                embedding_dim = self.embedding_dim
                 return np.zeros((len(texts), embedding_dim))
                 
         except Exception as e:
             logger.error(f"Критическая ошибка кодирования: {e}")
             # Возвращаем нулевые эмбеддинги как последний fallback
-            embedding_dim = self.embedding_config.truncate_dim or 384
+            embedding_dim = self.embedding_dim
             return np.zeros((len(texts), embedding_dim))
     
     def _encode_batch(self, texts: List[str], task: Optional[str] = None) -> np.ndarray:
@@ -481,8 +477,8 @@ class CPUEmbedder:
                 embeddings = list(embeddings_gen)
                 embeddings_array = np.array(embeddings)
                 
-                # Применяем Matryoshka сжатие и нормализацию для FastEmbed
-                return self._apply_matryoshka_and_normalize(embeddings_array)
+                # Выполняем L2-нормализацию результата FastEmbed
+                return self._normalize_embeddings(embeddings_array)
                 
             else:  # sentence-transformers
                 # Dual task support для Jina v3 и других моделей с task switching
@@ -502,11 +498,10 @@ class CPUEmbedder:
                     except Exception as e:
                         logger.warning(f"Не удалось переключить задачу на '{current_task}': {e}")
                 
-                # ВАЖНО: Для Jina v3 Matryoshka - кодируем БЕЗ нормализации,
-                # затем применяем MRL сжатие, потом L2-нормализация
+                # Для Jina v3 кодируем без нормализации, а затем выполняем ручную L2-нормализацию
                 embeddings = self.model.encode(
                     texts,
-                    normalize_embeddings=False,  # Нормализуем вручную после MRL
+                    normalize_embeddings=False,  # Нормализуем вручную после кодирования
                     batch_size=len(texts),
                     show_progress_bar=False,
                     convert_to_numpy=True
@@ -515,50 +510,37 @@ class CPUEmbedder:
                 if task_switched:
                     logger.debug(f"Закодировано {len(texts)} текстов с задачей '{current_task}'")
                 
-                # Применяем Matryoshka сжатие и нормализацию
-                return self._apply_matryoshka_and_normalize(embeddings)
+                # Выполняем L2-нормализацию результата
+                return self._normalize_embeddings(embeddings)
                 
         except Exception as e:
             logger.error(f"Ошибка кодирования батча с {self.provider_name}: {e}")
             raise
     
-    def _apply_matryoshka_and_normalize(self, embeddings: np.ndarray) -> np.ndarray:
+    def _normalize_embeddings(self, embeddings: np.ndarray) -> np.ndarray:
         """
-        Применяет Matryoshka сжатие и L2-нормализацию к эмбеддингам.
-        
-        ВАЖНО: Порядок операций для Jina v3 MRL:
-        1. Matryoshka truncation (1024d → 384d)
-        2. L2 normalization
-        
+        Выполняет L2-нормализацию эмбеддингов без изменения размерности.
+
         Args:
-            embeddings: numpy массив эмбеддингов размером [batch_size, original_dim]
-            
+            embeddings: numpy массив эмбеддингов размером [batch_size, embedding_dim]
+
         Returns:
-            numpy массив эмбеддингов размером [batch_size, truncate_dim] с L2-нормализацией
+            numpy массив эмбеддингов размером [batch_size, embedding_dim] с L2-нормализацией
         """
         if embeddings.size == 0:
             return embeddings
-            
+
         try:
-            # 1. Matryoshka truncation (если необходимо)
-            if (self.embedding_config.truncate_dim > 0 and 
-                embeddings.shape[1] > self.embedding_config.truncate_dim):
-                embeddings = embeddings[:, :self.embedding_config.truncate_dim]
-                logger.debug(f"Применено Matryoshka сжатие: {embeddings.shape[1]}d → {self.embedding_config.truncate_dim}d")
-            
-            # 2. L2 normalization (если включено в конфигурации)
             if self.embedding_config.normalize_embeddings:
                 norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-                # Избегаем деления на ноль
                 norms[norms == 0.0] = 1.0
                 embeddings = embeddings / norms
                 logger.debug(f"Применена L2-нормализация для {embeddings.shape[0]} эмбеддингов")
-                
+
             return embeddings
-            
+
         except Exception as e:
-            logger.error(f"Ошибка применения Matryoshka и нормализации: {e}")
-            # Возвращаем исходные эмбеддинги в случае ошибки
+            logger.error(f"Ошибка нормализации эмбеддингов: {e}")
             return embeddings
 
     def _encode_fallback(self, texts: List[str], task: Optional[str] = None) -> np.ndarray:
@@ -593,7 +575,7 @@ class CPUEmbedder:
                     zero_embedding = np.zeros_like(embeddings[-1])
                 else:
                     # Используем дефолтную размерность
-                    embedding_dim = self.embedding_config.truncate_dim or 384
+                    embedding_dim = self.embedding_dim
                     zero_embedding = np.zeros((1, embedding_dim))
                 embeddings.append(zero_embedding)
         

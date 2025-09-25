@@ -22,7 +22,7 @@
     pytest tests/rag/ -m "real"
 """
 
-__version__ = "1.0.0"
+__version__ = "0.5"
 __author__ = "RAG System Testing Suite"
 
 # Экспортируем основные утилиты для тестирования

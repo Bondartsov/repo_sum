@@ -607,7 +607,7 @@ services:
 # ✅ Хорошо: изолированный тест с mock'ами
 def test_search_with_mock_embedder():
     with patch('rag.embedder.CPUEmbedder.embed_texts') as mock_embed:
-        mock_embed.return_value = np.zeros((1, 384))
+        mock_embed.return_value = np.zeros((1, 1024))
         # тест логики без зависимости от реальной модели
 
 # ❌ Плохо: тест зависит от внешнего сервиса

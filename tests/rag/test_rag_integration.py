@@ -53,7 +53,7 @@ class TestRAGIntegration:
                     provider="fastembed",
                     model_name="BAAI/bge-small-en-v1.5",
                     precision="int8",
-                    truncate_dim=384,
+                    truncate_dim=1024,
                     batch_size_min=8,
                     batch_size_max=64,
                     normalize_embeddings=True,
@@ -64,7 +64,7 @@ class TestRAGIntegration:
                     host=os.getenv("QDRANT_HOST", "localhost"),
                     port=int(os.getenv("QDRANT_PORT", "6333")),
                     collection_name="test_collection",
-                    vector_size=384,
+                    vector_size=1024,
                     distance="cosine",
                     hnsw_m=16,
                     hnsw_ef_construct=64,
@@ -180,7 +180,7 @@ class TestRAGIntegration:
         
         # Mock должен возвращать эмбеддинги только для переданных текстов
         def generate_embeddings(texts):
-            return [np.random.random(384) for _ in texts]
+            return [np.random.random(1024) for _ in texts]
         
         mock_model.embed = generate_embeddings
         
@@ -291,7 +291,7 @@ class TestRAGIntegration:
         test_points = [
             {
                 'id': 'test_1',
-                'vector': np.random.random(384).tolist(),
+                'vector': np.random.random(1024).tolist(),
                 'payload': {
                     'content': 'test content 1',
                     'file_path': 'test/file1.py',
@@ -300,7 +300,7 @@ class TestRAGIntegration:
             },
             {
                 'id': 'test_2', 
-                'vector': np.random.random(384).tolist(),
+                'vector': np.random.random(1024).tolist(),
                 'payload': {
                     'content': 'test content 2',
                     'file_path': 'test/file2.js',
@@ -317,7 +317,7 @@ class TestRAGIntegration:
         mock_client.upsert.assert_called()
         
         # Тестируем поиск
-        query_vector = np.random.random(384)
+        query_vector = np.random.random(1024)
         results = await vector_store.search(
             query_vector=query_vector,
             top_k=5,
@@ -335,7 +335,7 @@ class TestRAGIntegration:
         # Настраиваем мocks
         mock_model = Mock()
         mock_text_embedding.return_value = mock_model
-        mock_model.embed.return_value = [np.random.random(384) for _ in range(5)]
+        mock_model.embed.return_value = [np.random.random(1024) for _ in range(5)]
         
         # Создаем временную директорию с тестовыми файлами
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -426,7 +426,7 @@ class TestRAGIntegration:
         # Настраиваем embedder mock
         with patch('rag.search_service.CPUEmbedder') as mock_embedder_class:
             mock_embedder = Mock()
-            mock_embedder.embed_texts.return_value = np.array([np.random.random(384)])
+            mock_embedder.embed_texts.return_value = np.array([np.random.random(1024)])
             mock_embedder_class.return_value = mock_embedder
             
             search_service = SearchService(test_config)
@@ -460,7 +460,7 @@ class TestRAGIntegration:
             with patch('rag.query_engine.QdrantVectorStore') as mock_store_class:
                 # Настраиваем embedder mock
                 mock_embedder = Mock()
-                mock_embedder.embed_texts.return_value = np.array([np.random.random(384)])
+                mock_embedder.embed_texts.return_value = np.array([np.random.random(1024)])
                 mock_embedder.embedding_config.model_name = "test_model"
                 mock_embedder_class.return_value = mock_embedder
                 
@@ -577,7 +577,7 @@ class DatabaseConnection:
                                 mock_model = Mock()
                                 mock_text_embedding.return_value = mock_model
                                 mock_model.embed.return_value = [
-                                    np.random.random(384) for _ in range(6)
+                                    np.random.random(1024) for _ in range(6)
                                 ]
                                 
                                 # Настраиваем file scanner
@@ -739,7 +739,7 @@ class DatabaseConnection:
             with patch('rag.embedder.TextEmbedding') as mock_text_embedding:
                 mock_model = Mock()
                 mock_text_embedding.return_value = mock_model
-                mock_model.embed.return_value = [np.random.random(384) for _ in range(5)]
+                mock_model.embed.return_value = [np.random.random(1024) for _ in range(5)]
                 
                 embedder = CPUEmbedder(
                     test_config.rag.embeddings,
@@ -790,7 +790,7 @@ class DatabaseConnection:
         
         with patch('rag.search_service.CPUEmbedder') as mock_embedder_class:
             mock_embedder = Mock()
-            mock_embedder.embed_texts.return_value = np.array([np.random.random(384)])
+            mock_embedder.embed_texts.return_value = np.array([np.random.random(1024)])
             mock_embedder_class.return_value = mock_embedder
             
             search_service = SearchService(test_config)
@@ -829,7 +829,7 @@ class DatabaseConnection:
                     "provider": "fastembed",
                     "model_name": "BAAI/bge-small-en-v1.5",
                     "precision": "int8",
-                    "truncate_dim": 384,
+                    "truncate_dim": 1024,
                     "batch_size_min": 8,
                     "batch_size_max": 64,
                     "normalize_embeddings": True,
@@ -839,7 +839,7 @@ class DatabaseConnection:
                     "host": "localhost",
                     "port": 6333,
                     "collection_name": "test_collection",
-                    "vector_size": 384,
+                    "vector_size": 1024,
                     "distance": "cosine"
                 },
                 "query_engine": {

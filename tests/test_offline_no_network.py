@@ -48,7 +48,7 @@ def test_cpu_embedder_offline_skips_model_init(monkeypatch):
     emb_cfg = EmbeddingConfig(
         provider="fastembed",
         model_name="BAAI/bge-small-en-v1.5",
-        truncate_dim=384,
+        truncate_dim=1024,
         batch_size_min=2,
         batch_size_max=8,
         normalize_embeddings=True,
@@ -62,5 +62,5 @@ def test_cpu_embedder_offline_skips_model_init(monkeypatch):
     assert embedder.provider_name == "offline", "В offline режиме provider_name должен быть 'offline'"
 
     vectors = embedder.embed_texts(["hello", "world"])
-    assert vectors.shape == (2, emb_cfg.truncate_dim or 384)
+    assert vectors.shape == (2, emb_cfg.embedding_dim)
     assert np.allclose(vectors, 0.0), "Ожидаются нулевые оффлайн-эмбеддинги без сети"

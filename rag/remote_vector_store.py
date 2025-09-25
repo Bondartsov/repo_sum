@@ -119,12 +119,14 @@ class RemoteVMVectorStore:
             timeout=60
         )
 
-    def check_health(self) -> Dict[str, Any]:
+    def health_check(self) -> Dict[str, Any]:
         """Синхронный health-check удалённого сервиса (унифицированный формат)."""
         return run_async_safe(
             self._async_health_check(),
             timeout=30
         )
+
+    check_health = health_check
 
     def get_collection_info(self) -> Dict[str, Any]:
         """Синхронное получение сведений о коллекции с правильным event loop management."""

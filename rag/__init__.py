@@ -84,6 +84,6 @@ __all__ = [
     'OutOfMemoryException',
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.5"
 __author__ = "RAG Team"
 __description__ = "CPU-оптимизированная RAG система для анализа кода"

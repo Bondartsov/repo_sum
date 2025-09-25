@@ -498,7 +498,7 @@ def main():
             try:
                 config = get_config(require_api_key=False)
                 model_name = config.rag.embeddings.model_name
-                vector_size = config.rag.embeddings.truncate_dim
+                vector_size = config.rag.embeddings.embedding_dim
                 
                 if "jinaai/jina-embeddings-v3" in model_name:
                     st.info(f"🚀 **Jina v3 Architecture**: {model_name} ({vector_size}d векторы, dual task)")
@@ -541,7 +541,7 @@ def main():
                                 tech_col1, tech_col2, tech_col3 = st.columns(3)
                                 with tech_col1:
                                     st.metric("Параметры модели", "570M")
-                                    st.metric("Размерность", f"{config.rag.embeddings.truncate_dim}d")
+                                    st.metric("Размерность", f"{config.rag.embeddings.embedding_dim}d")
                                 with tech_col2:
                                     st.metric("Task Query", config.rag.embeddings.task_query)
                                     st.metric("Task Passage", config.rag.embeddings.task_passage)

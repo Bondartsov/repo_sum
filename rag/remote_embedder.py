@@ -12,6 +12,7 @@ from typing import List, Optional, Dict, Any
 from config import EmbeddingConfig, ParallelismConfig, RemoteServiceConfig
 import numpy as np
 import json
+from .exceptions import EmbeddingException
 from .event_loop_manager import run_async_safe, get_shared_http_session
 
 logger = logging.getLogger(__name__)
@@ -37,9 +38,9 @@ class RemoteVMEmbedder:
     Возможности:
     - HTTP запросы к FastAPI сервису на VM (10.61.11.54:8000)
     - Jina v3 dual task support (retrieval.query/passage)
-    - Matryoshka сжатие (1024d → 384d)
+    - Контроль целостности размерности 1024d
     - Батчевая обработка через HTTP
-    - Fallback и retry логика
+    - Retry логика с понятными сообщениями об ошибках
     """
     
     def __init__(self, embedding_config: Optional[EmbeddingConfig] = None, 
@@ -70,7 +71,7 @@ class RemoteVMEmbedder:
             embedding_config.provider if embedding_config and getattr(embedding_config, "provider", None) else os.getenv("EMBEDDING_PROVIDER", "remote-vm")
         )
         self.embedding_dim = getattr(embedding_config, "embedding_dim", int(os.getenv("EMB_DIM", "1024")))
-        self.truncate_dim = getattr(embedding_config, "truncate_dim", int(os.getenv("EMB_TRUNCATE_DIM", str(self.embedding_dim))))
+        self.truncate_dim = self.embedding_dim
 
         # HTTP параметры 
         self.timeout_seconds = int(os.getenv("RAG_TIMEOUT_SECONDS", str(self.remote_config.timeout_seconds)))
@@ -110,9 +111,10 @@ class RemoteVMEmbedder:
                 timeout=deadline_seconds
             )
         except Exception as exc:
-            _log(logger.error, f"Error requesting embeddings from VM: {exc}", exc_info=True)
             self.stats['error_count'] += 1
-            return np.zeros((len(texts), self.truncate_dim), dtype=np.float32)
+            message = f"Удалённый сервис эмбеддингов недоступен: {exc}"
+            _log(logger.error, message, exc_info=True)
+            raise EmbeddingException(message, provider=self.provider_name, model_name=self.model_name)
 
     async def _async_embed_texts(
         self,
@@ -170,8 +172,7 @@ class RemoteVMEmbedder:
         except Exception as e:
             self.stats['error_count'] += 1
             _log(logger.error, f"Ошибка получения embeddings с VM: {e}")
-
-            return np.zeros((len(texts), self.truncate_dim), dtype=np.float32)
+            raise EmbeddingException("Удалённый сервис эмбеддингов вернул ошибку", provider=self.provider_name, model_name=self.model_name, details=str(e))
 
     async def _make_request_with_retry(
         self, 

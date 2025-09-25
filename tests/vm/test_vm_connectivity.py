@@ -239,7 +239,7 @@ class VMConnectivityTester:
         test_payload = {
             "texts": ["test connectivity"],
             "task": "retrieval.query",
-            "truncate_dim": 384,
+            "truncate_dim": 1024,
             "normalize": True
         }
         

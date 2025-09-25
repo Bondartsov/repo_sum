@@ -5,7 +5,7 @@
 Выполняет:
 1. Проверку конфигурации на совместимость с Jina v3  
 2. Backup существующих эмбеддингов (опционально)
-3. Пересоздание коллекции с параметрами для 384d векторов (Matryoshka)
+3. Подтверждение стандартной размерности 1024d для коллекции
 4. Валидацию новой коллекции
 """
 
@@ -74,12 +74,12 @@ async def validate_jina_v3_config():
                 "❌ task_query и task_passage должны быть заданы"
             )
         
-        # 5. Размерность векторов должна соответствовать truncate_dim
-        expected_dim = embedding_config.truncate_dim
+        # 5. Размерность векторов должна соответствовать стандарту 1024d
+        expected_dim = getattr(embedding_config, 'embedding_dim', vector_config.vector_size)
         if vector_config.vector_size != expected_dim:
             validation_errors.append(
                 f"❌ Несоответствие размерностей: vector_size={vector_config.vector_size}, "
-                f"truncate_dim={expected_dim}"
+                f"embedding_dim={expected_dim}"
             )
         
         # 6. Коллекция должна иметь новое имя для избежания конфликтов
@@ -204,7 +204,7 @@ async def validate_embedder_initialization():
             return False
         
         # Проверяем размерность
-        expected_dim = embedding_config.truncate_dim
+        expected_dim = getattr(embedding_config, 'embedding_dim', embedder.embedding_dim)
         if embedder.embedding_dim != expected_dim:
             logger.error(
                 f"❌ Несоответствие размерностей эмбеддера: "
