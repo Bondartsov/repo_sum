@@ -13,6 +13,7 @@ import sys
 import os
 import warnings
 import tempfile
+import pytest
 
 # Добавляем путь к модулям
 sys.path.insert(0, os.path.abspath('.'))
@@ -54,11 +55,9 @@ def test_event_loop_manager():
             assert result == "test_result", f"Неожиданный результат: {result}"
         
         print("✅ run_async_safe работает без warnings")
-        return True
-        
+
     except Exception as e:
-        print(f"❌ EventLoopManager тест не пройден: {e}")
-        return False
+        pytest.fail(f"❌ EventLoopManager тест не пройден: {e}")
 
 
 def test_remote_embedder():
@@ -204,9 +203,16 @@ def main():
     total = len(tests)
     
     for test_func in tests:
-        if test_func():
+        try:
+            test_func()
             passed += 1
-        print()
+            print()
+        except AssertionError as err:
+            print(f"Assertion failed: {err}")
+            print()
+        except Exception as err:
+            print(f"Unexpected error: {err}")
+            print()
     
     print("=" * 60)
     print(f"📊 Результаты: {passed}/{total} тестов пройдено")

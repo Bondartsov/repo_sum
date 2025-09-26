@@ -100,9 +100,22 @@ class SparseEncoder:
                 except Exception:
                     self.model = model
             else:
-                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=True)
-                self.model = AutoModelForMaskedLM.from_pretrained(self.model_name, local_files_only=True).to(self.device)
-                self.model.eval()
+                try:
+                    self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=True)
+                    self.model = AutoModelForMaskedLM.from_pretrained(self.model_name, local_files_only=True).to(self.device)
+                    self.model.eval()
+                except OSError as error:
+                    logging.warning("SparseEncoder: не удалось загрузить модель локально (%s), используем mock", error)
+                    if MockTokenizer is not None and MockSparseModel is not None:
+                        self.tokenizer = MockTokenizer()
+                        model = MockSparseModel()
+                        try:
+                            moved = model.to(self.device)
+                            self.model = moved if moved is not None else model
+                        except Exception:
+                            self.model = model
+                    else:
+                        raise
 
 
     def encode(self, texts: List[str]) -> List[Dict[int, float]]:

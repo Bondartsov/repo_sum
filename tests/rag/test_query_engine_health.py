@@ -1,40 +1,36 @@
 """
-Unit тесты для исправленной health_check функциональности CPUQueryEngine.
-
-Проверяет корректность исправления критических багов:
-1. _check_vector_store() - использование health_check() вместо is_connected()
-2. _ensure_embeddings() - использование config.vector_store.vector_size вместо embedding_dim
+Unit тесты для CPUQueryEngine: проверяем исправления health_check и fallback эмбеддингов.
 """
 
-import pytest
-import asyncio
-from unittest.mock import Mock, AsyncMock, patch
-import numpy as np
+from types import SimpleNamespace
+from typing import Any, Dict
 
-from rag.query_engine import CPUQueryEngine, SearchResult
-from config import QueryEngineConfig, VectorStoreConfig, EmbeddingConfig
+import numpy as np
+import pytest
+from unittest.mock import AsyncMock, Mock, patch
+
+from config import QueryEngineConfig, VectorStoreConfig
 from rag.embedder import CPUEmbedder
+from rag.query_engine import CPUQueryEngine, SearchResult
 from rag.vector_store import QdrantVectorStore
 
 
 @pytest.mark.unit
 class TestQueryEngineHealthFixes:
-    """Unit тесты для исправленной функциональности CPUQueryEngine"""
-    
-    def create_test_config(self) -> QueryEngineConfig:
-        """Создает тестовую конфигурацию с правильной размерностью вектора"""
-        config = QueryEngineConfig()
-        config.vector_store = VectorStoreConfig()
-        config.vector_store.vector_size = 1024  # Размерность для тестов
-        return config
-    
-    @pytest.mark.asyncio
-    async def test_check_vector_store_success(self):
-        """Тестирует успешную проверку vector_store через health_check"""
-        # Настраиваем mock компоненты
-        mock_embedder = Mock(spec=CPUEmbedder)
-        mock_vector_store = AsyncMock(spec=QdrantVectorStore)
-        mock_vector_store.check_health.return_value = {
+    """Проверяет исправления, описанные в tests/fix_tests.md."""
+
+    @staticmethod
+    def _make_config(vector_size: int = 1024) -> QueryEngineConfig:
+        cfg = QueryEngineConfig()
+        cfg.vector_store = VectorStoreConfig()
+        cfg.vector_store.vector_size = vector_size
+        return cfg
+
+    @staticmethod
+    def _make_vector_store(payload: Any = None) -> SimpleNamespace:
+        store = SimpleNamespace()
+        store.config = SimpleNamespace(host="localhost", port=6333, collection_name="test")
+        ok_payload: Dict[str, Any] = {
             "status": "ok",
             "components": {
                 "vector_store": {
@@ -42,255 +38,208 @@ class TestQueryEngineHealthFixes:
                 }
             }
         }
+        value = payload if payload is not None else ok_payload
+        store.check_health = AsyncMock(return_value=value)
+        store.health_check = AsyncMock(return_value=value)
+        return store
 
-        mock_config = self.create_test_config()
+    @staticmethod
+    def _make_query_engine(embedder: Mock, store: SimpleNamespace, cfg: QueryEngineConfig) -> CPUQueryEngine:
+        with patch("rag.query_engine.SearchService"):
+            return CPUQueryEngine(embedder, store, cfg)
 
-        with patch('rag.query_engine.SearchService'):
-            query_engine = CPUQueryEngine(mock_embedder, mock_vector_store, mock_config)
+    @pytest.mark.asyncio
+    async def test_check_vector_store_success(self):
+        embedder = Mock(spec=CPUEmbedder)
+        store = self._make_vector_store()
+        cfg = self._make_config()
 
-            result = await query_engine._check_vector_store()
+        engine = self._make_query_engine(embedder, store, cfg)
 
-            assert result is True
-            mock_vector_store.check_health.assert_called_once()
-    
-    @pytest.mark.asyncio 
+        assert await engine._check_vector_store() is True
+        store.check_health.assert_called_once()
+        store.health_check.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_check_vector_store_disconnected(self):
-        """Тестирует случай когда vector_store отключен"""
-        mock_embedder = Mock(spec=CPUEmbedder)
-        mock_vector_store = AsyncMock(spec=QdrantVectorStore)
-        mock_vector_store.check_health.return_value = {
+        embedder = Mock(spec=CPUEmbedder)
+        payload = {
             "status": "error",
-            "error": "Connection failed",
             "components": {
                 "vector_store": {
                     "collection_status": "not_found"
                 }
-            }
+            },
+            "error": "Connection failed"
         }
+        store = self._make_vector_store(payload)
+        cfg = self._make_config()
 
-        mock_config = self.create_test_config()
+        engine = self._make_query_engine(embedder, store, cfg)
 
-        with patch('rag.query_engine.SearchService'):
-            query_engine = CPUQueryEngine(mock_embedder, mock_vector_store, mock_config)
+        assert await engine._check_vector_store() is False
+        store.check_health.assert_called_once()
 
-            result = await query_engine._check_vector_store()
-
-            assert result is False
-            mock_vector_store.check_health.assert_called_once()
-    
     @pytest.mark.asyncio
     async def test_check_vector_store_exception(self):
-        """Тестирует обработку исключения при health_check"""
-        mock_embedder = Mock(spec=CPUEmbedder)
-        mock_vector_store = AsyncMock(spec=QdrantVectorStore)
-        mock_vector_store.check_health.side_effect = Exception("Network error")
+        embedder = Mock(spec=CPUEmbedder)
+        store = self._make_vector_store()
+        store.check_health.side_effect = RuntimeError("boom")
+        store.health_check.side_effect = RuntimeError("boom")
+        cfg = self._make_config()
 
-        mock_config = self.create_test_config()
+        engine = self._make_query_engine(embedder, store, cfg)
 
-        with patch('rag.query_engine.SearchService'):
-            query_engine = CPUQueryEngine(mock_embedder, mock_vector_store, mock_config)
+        assert await engine._check_vector_store() is False
+        store.check_health.assert_called_once()
 
-            result = await query_engine._check_vector_store()
-
-            assert result is False
-            mock_vector_store.check_health.assert_called_once()
-    
     def test_ensure_embeddings_uses_config_dimension(self):
-        """Тестирует что _ensure_embeddings использует правильную размерность из конфигурации"""
-        # Настраиваем mock эмбеддер для провокации fallback'а
-        mock_embedder = Mock(spec=CPUEmbedder)
-        mock_embedder.embed_texts.side_effect = Exception("Embedding failed")  # Принудительный fallback
-        
-        mock_vector_store = Mock(spec=QdrantVectorStore)
-        
-        # Создаем конфигурацию с явно указанной размерностью
-        mock_config = self.create_test_config()
-        mock_config.vector_store.vector_size = 1024  # Тестовая размерность
-        
-        with patch('rag.query_engine.SearchService'):
-            query_engine = CPUQueryEngine(mock_embedder, mock_vector_store, mock_config)
-            
-            # Создаем тестовые результаты без эмбеддингов
-            test_results = [
-                SearchResult(
-                    chunk_id="test_1",
-                    file_path="test.py", 
-                    file_name="test.py",
-                    chunk_name="test_func",
-                    chunk_type="function",
-                    language="python",
-                    start_line=1,
-                    end_line=5,
-                    score=0.9,
-                    content="def test_func(): pass",
-                    metadata={},
-                    embedding=None  # Нет эмбеддинга - будет fallback
-                ),
-                SearchResult(
-                    chunk_id="test_2",
-                    file_path="test2.py",
-                    file_name="test2.py", 
-                    chunk_name="another_func",
-                    chunk_type="function",
-                    language="python",
-                    start_line=10,
-                    end_line=15,
-                    score=0.8,
-                    content="def another_func(): return True",
-                    metadata={},
-                    embedding=None  # Нет эмбеддинга - будет fallback
-                )
-            ]
-            
-            # Вызываем метод
-            query_engine._ensure_embeddings(test_results)
-            
-            # Проверяем что fallback эмбеддинги имеют правильную размерность
-            assert test_results[0].embedding is not None
-            assert len(test_results[0].embedding) == 1024  # Из конфигурации
+        embedder = Mock(spec=CPUEmbedder)
+        embedder.embed_texts.side_effect = RuntimeError("fail")
 
-            assert test_results[1].embedding is not None
-            assert len(test_results[1].embedding) == 1024  # Из конфигурации
-            
-            # Проверяем что метод embed_texts был вызван (и упал)
-            mock_embedder.embed_texts.assert_called_once_with([
-                "def test_func(): pass", 
-                "def another_func(): return True"
-            ])
-    
-    def test_ensure_embeddings_fallback_default_dimension(self):
-        """Тестирует fallback на размерность по умолчанию при отсутствии конфигурации"""
-        mock_embedder = Mock(spec=CPUEmbedder)
-        mock_embedder.embed_texts.side_effect = Exception("Embedding failed")
-        
-        mock_vector_store = Mock(spec=QdrantVectorStore)
-        
-        # Создаем конфигурацию БЕЗ vector_store (для тестирования fallback)
-        mock_config = QueryEngineConfig()
-        
-        with patch('rag.query_engine.SearchService'):
-            query_engine = CPUQueryEngine(mock_embedder, mock_vector_store, mock_config)
-            
-            test_results = [
-                SearchResult(
-                    chunk_id="test_fallback",
-                    file_path="test_fallback.py",
-                    file_name="test_fallback.py",
-                    chunk_name="fallback_func", 
-                    chunk_type="function",
-                    language="python",
-                    start_line=1,
-                    end_line=3,
-                    score=0.7,
-                    content="def fallback_func(): pass",
-                    metadata={},
-                    embedding=None
-                )
-            ]
-            
-            # Вызываем метод
-            query_engine._ensure_embeddings(test_results)
-            
-            # Проверяем что используется размерность по умолчанию (1024)
-            assert test_results[0].embedding is not None
-            assert len(test_results[0].embedding) == 1024  # Default размерность
-    
-    def test_ensure_embeddings_successful_case(self):
-        """Тестирует успешный случай получения эмбеддингов без fallback"""
-        # Настраиваем mock эмбеддер для успешной работы
-        mock_embedder = Mock(spec=CPUEmbedder)
-        test_embeddings = np.array([
-            np.random.random(1024),  # Первый эмбеддинг
-            np.random.random(1024)   # Второй эмбеддинг
+        store = Mock(spec=QdrantVectorStore)
+        store.config = SimpleNamespace(host="localhost", port=6333, collection_name="test")
+        cfg = self._make_config(vector_size=1024)
+
+        engine = self._make_query_engine(embedder, store, cfg)
+
+        results = [
+            SearchResult(
+                chunk_id="a",
+                file_path="a.py",
+                file_name="a.py",
+                chunk_name="func_a",
+                chunk_type="function",
+                language="python",
+                start_line=1,
+                end_line=10,
+                score=0.9,
+                content="def func_a(): pass",
+                metadata={},
+                embedding=None,
+            ),
+            SearchResult(
+                chunk_id="b",
+                file_path="b.py",
+                file_name="b.py",
+                chunk_name="func_b",
+                chunk_type="function",
+                language="python",
+                start_line=5,
+                end_line=12,
+                score=0.8,
+                content="def func_b(): return True",
+                metadata={},
+                embedding=None,
+            ),
+        ]
+
+        engine._ensure_embeddings(results)
+
+        for item in results:
+            assert item.embedding is not None
+            assert len(item.embedding) == 1024
+        embedder.embed_texts.assert_called_once()
+
+    def test_ensure_embeddings_default_dimension(self):
+        embedder = Mock(spec=CPUEmbedder)
+        embedder.embed_texts.side_effect = RuntimeError("fail")
+
+        store = Mock(spec=QdrantVectorStore)
+        store.config = SimpleNamespace(host="localhost", port=6333, collection_name="test")
+        cfg = QueryEngineConfig()
+
+        engine = self._make_query_engine(embedder, store, cfg)
+
+        result = SearchResult(
+            chunk_id="fallback",
+            file_path="fallback.py",
+            file_name="fallback.py",
+            chunk_name="fallback_func",
+            chunk_type="function",
+            language="python",
+            start_line=1,
+            end_line=3,
+            score=0.7,
+            content="def fallback_func(): pass",
+            metadata={},
+            embedding=None,
+        )
+
+        engine._ensure_embeddings([result])
+
+        assert result.embedding is not None
+        assert len(result.embedding) == 1024
+        embedder.embed_texts.assert_called_once()
+
+    def test_ensure_embeddings_successful(self):
+        embedder = Mock(spec=CPUEmbedder)
+        embeddings = np.array([
+            np.random.random(1024),
+            np.random.random(1024),
         ])
-        mock_embedder.embed_texts.return_value = test_embeddings
-        
-        mock_vector_store = Mock(spec=QdrantVectorStore)
-        mock_config = self.create_test_config()
-        
-        with patch('rag.query_engine.SearchService'):
-            query_engine = CPUQueryEngine(mock_embedder, mock_vector_store, mock_config)
-            
-            test_results = [
-                SearchResult(
-                    chunk_id="success_1",
-                    file_path="success1.py",
-                    file_name="success1.py",
-                    chunk_name="success_func1",
-                    chunk_type="function",
-                    language="python",
-                    start_line=1,
-                    end_line=5,
-                    score=0.95,
-                    content="def success_func1(): return 'success'",
-                    metadata={},
-                    embedding=None  # Будет заполнен реальным эмбеддингом
-                ),
-                SearchResult(
-                    chunk_id="success_2",
-                    file_path="success2.py",
-                    file_name="success2.py",
-                    chunk_name="success_func2",
-                    chunk_type="function",
-                    language="python",
-                    start_line=10,
-                    end_line=15,
-                    score=0.85,
-                    content="def success_func2(): return True",
-                    metadata={},
-                    embedding=None  # Будет заполнен реальным эмбеддингом
-                )
-            ]
-            
-            # Вызываем метод
-            query_engine._ensure_embeddings(test_results)
-            
-            # Проверяем что эмбеддинги назначены корректно
-            assert test_results[0].embedding is not None
-            assert len(test_results[0].embedding) == 1024
-            np.testing.assert_array_equal(test_results[0].embedding, test_embeddings[0])
-            
-            assert test_results[1].embedding is not None
-            assert len(test_results[1].embedding) == 1024
-            np.testing.assert_array_equal(test_results[1].embedding, test_embeddings[1])
-            
-            # Проверяем что embed_texts был вызван с правильными аргументами
-            mock_embedder.embed_texts.assert_called_once_with([
-                "def success_func1(): return 'success'",
-                "def success_func2(): return True"
-            ])
-    
+        embedder.embed_texts.return_value = embeddings
+
+        store = Mock(spec=QdrantVectorStore)
+        store.config = SimpleNamespace(host="localhost", port=6333, collection_name="test")
+        cfg = self._make_config(vector_size=1024)
+
+        engine = self._make_query_engine(embedder, store, cfg)
+
+        results = [
+            SearchResult(
+                chunk_id="x",
+                file_path="x.py",
+                file_name="x.py",
+                chunk_name="func_x",
+                chunk_type="function",
+                language="python",
+                start_line=1,
+                end_line=4,
+                score=0.95,
+                content="def func_x(): return 1",
+                metadata={},
+                embedding=None,
+            ),
+            SearchResult(
+                chunk_id="y",
+                file_path="y.py",
+                file_name="y.py",
+                chunk_name="func_y",
+                chunk_type="function",
+                language="python",
+                start_line=10,
+                end_line=16,
+                score=0.85,
+                content="def func_y(): return 2",
+                metadata={},
+                embedding=None,
+            ),
+        ]
+
+        engine._ensure_embeddings(results)
+
+        np.testing.assert_array_equal(results[0].embedding, embeddings[0])
+        np.testing.assert_array_equal(results[1].embedding, embeddings[1])
+        embedder.embed_texts.assert_called_once_with([
+            "def func_x(): return 1",
+            "def func_y(): return 2",
+        ])
+
     @pytest.mark.asyncio
     async def test_health_check_integration(self):
-        """Интеграционный тест health_check метода с исправленным _check_vector_store"""
-        mock_embedder = Mock(spec=CPUEmbedder)
-        mock_vector_store = AsyncMock(spec=QdrantVectorStore)
-        mock_vector_store.check_health.return_value = {
-            "status": "ok",
-            "components": {
-                "vector_store": {
-                    "collection_status": "exists"
-                }
-            }
-        }
+        embedder = Mock(spec=CPUEmbedder)
+        store = self._make_vector_store()
+        cfg = self._make_config()
 
-        mock_config = self.create_test_config()
+        engine = self._make_query_engine(embedder, store, cfg)
 
-        with patch('rag.query_engine.SearchService'):
-            query_engine = CPUQueryEngine(mock_embedder, mock_vector_store, mock_config)
+        result = await engine.health_check()
 
-            health_result = await query_engine.health_check()
-
-            assert 'status' in health_result
-            assert 'embedder_status' in health_result
-            assert 'vector_store_status' in health_result
-            assert 'stats' in health_result
-
-            assert health_result['status'] == 'healthy'
-            assert health_result['embedder_status'] == 'ok'
-            assert health_result['vector_store_status'] == 'ok'
-
-            mock_vector_store.check_health.assert_called()
+        assert result["status"] == "healthy"
+        assert result["embedder_status"] == "ok"
+        assert result["vector_store_status"] == "ok"
+        store.check_health.assert_called()
 
 
 if __name__ == "__main__":

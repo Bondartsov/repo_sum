@@ -157,12 +157,25 @@ def test_t006_missing_required_openai_api_key(clean_env):
             if 'openai' in key.lower() or 'api' in key.lower():
                 clean_env_dict.pop(key, None)
         clean_env_dict.pop('OPENAI_API_KEY', None)
+
+        clean_env_dict.setdefault('PYTHONIOENCODING', 'utf-8')
+        clean_env_dict.setdefault('PYTHONUTF8', '1')
+        clean_env_dict.setdefault('OFFLINE_MODE', '1')
+        clean_env_dict.setdefault('USE_MOCK_EMBEDDER', '1')
+        clean_env_dict.setdefault('USE_MOCK_VECTOR_STORE', '1')
+        clean_env_dict.setdefault('EMBEDDING_PROVIDER', 'mock')
+        clean_env_dict.setdefault('VECTOR_STORE_PROVIDER', 'mock')
+        clean_env_dict.setdefault('HF_HUB_OFFLINE', '1')
+        clean_env_dict.setdefault('TRANSFORMERS_OFFLINE', '1')
+
         
         # Запускаем анализ с полностью очищенным окружением
         result = subprocess.run([
             'python', str(project_root / 'main.py'),
+            '--config', str(project_root / 'settings-test.json'),
+            '--offline',
             'analyze', temp_repo
-        ], capture_output=True, text=True, timeout=30, cwd=str(project_root), env=clean_env_dict)
+        ], capture_output=True, text=True, encoding='utf-8', errors='ignore', timeout=30, cwd=str(project_root), env=clean_env_dict)
         
         # Проверяем результат
         error_output = result.stderr.lower()

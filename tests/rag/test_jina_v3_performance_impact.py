@@ -1,4 +1,4 @@
-"""
+﻿"""
 PHASE 7: Jina v3 Performance Impact Analysis - Анализ влияния 1024d векторов на производительность.
 
 Измеряет:
@@ -64,7 +64,7 @@ class PerformanceMetrics:
 class PerformanceComparison:
     """Сравнение производительности между моделями"""
     operation: str
-    bge_metrics: PerformanceMetrics
+    reference_metrics: PerformanceMetrics
     jina_metrics: PerformanceMetrics
     latency_regression_pct: float
     throughput_regression_pct: float
@@ -76,7 +76,7 @@ class PerformanceComparison:
             'latency_regression': f"{self.latency_regression_pct:+.1f}%",
             'throughput_regression': f"{self.throughput_regression_pct:+.1f}%", 
             'memory_increase': f"{self.memory_increase_pct:+.1f}%",
-            'bge_latency': f"{self.bge_metrics.avg_latency_ms:.1f}ms",
+            'reference_latency': f"{self.reference_metrics.avg_latency_ms:.1f}ms",
             'jina_latency': f"{self.jina_metrics.avg_latency_ms:.1f}ms",
             'acceptable': self.is_acceptable_regression()
         }
@@ -223,7 +223,7 @@ class PerformanceBenchmarker:
         self.results = []
     
     async def benchmark_embedding_performance(self, 
-                                            bge_embedder: CPUEmbedder,
+                                            reference_embedder: CPUEmbedder,
                                             jina_embedder: CPUEmbedder,
                                             test_texts: List[str],
                                             batch_sizes: List[int] = [32, 64, 128]) -> List[PerformanceComparison]:
@@ -232,11 +232,11 @@ class PerformanceBenchmarker:
         comparisons = []
         
         for batch_size in batch_sizes:
-            # Тестируем BGE
-            bge_metrics = await self._measure_embedding_performance(
-                embedder=bge_embedder,
+            # Тестируем Reference
+            reference_metrics = await self._measure_embedding_performance(
+                embedder=reference_embedder,
                 texts=test_texts[:batch_size],
-                model_name="BGE-small",
+                model_name="Reference-small",
                 vector_dim=1024
             )
             
@@ -251,13 +251,13 @@ class PerformanceBenchmarker:
             # Сравниваем результаты
             comparison = self._create_performance_comparison(
                 f"embedding_batch_{batch_size}",
-                bge_metrics,
+                reference_metrics,
                 jina_metrics
             )
             
             comparisons.append(comparison)
             
-            print(f"Batch {batch_size}: BGE {bge_metrics.avg_latency_ms:.1f}ms vs Jina {jina_metrics.avg_latency_ms:.1f}ms")
+            print(f"Batch {batch_size}: Reference {reference_metrics.avg_latency_ms:.1f}ms vs Jina {jina_metrics.avg_latency_ms:.1f}ms")
         
         return comparisons
     
@@ -275,7 +275,7 @@ class PerformanceBenchmarker:
         gc.collect()
         await asyncio.sleep(0.1)
         
-        await monitor.start_monitoring()
+        monitor.start_monitoring()
         
         # Прогрев (warmup)
         embedder.embed_texts(texts[:5])
@@ -321,23 +321,23 @@ class PerformanceBenchmarker:
     
     def _create_performance_comparison(self,
                                      operation: str,
-                                     bge_metrics: PerformanceMetrics,
+                                     reference_metrics: PerformanceMetrics,
                                      jina_metrics: PerformanceMetrics) -> PerformanceComparison:
         """Создать сравнение производительности"""
         
         # Рассчитываем регрессии
-        latency_regression = ((jina_metrics.avg_latency_ms - bge_metrics.avg_latency_ms) / 
-                             bge_metrics.avg_latency_ms * 100) if bge_metrics.avg_latency_ms > 0 else 0
+        latency_regression = ((jina_metrics.avg_latency_ms - reference_metrics.avg_latency_ms) / 
+                             reference_metrics.avg_latency_ms * 100) if reference_metrics.avg_latency_ms > 0 else 0
         
-        throughput_regression = ((jina_metrics.throughput_per_sec - bge_metrics.throughput_per_sec) /
-                               bge_metrics.throughput_per_sec * 100) if bge_metrics.throughput_per_sec > 0 else 0
+        throughput_regression = ((jina_metrics.throughput_per_sec - reference_metrics.throughput_per_sec) /
+                               reference_metrics.throughput_per_sec * 100) if reference_metrics.throughput_per_sec > 0 else 0
         
-        memory_increase = ((jina_metrics.memory_peak_mb - bge_metrics.memory_peak_mb) /
-                          bge_metrics.memory_peak_mb * 100) if bge_metrics.memory_peak_mb > 0 else 0
+        memory_increase = ((jina_metrics.memory_peak_mb - reference_metrics.memory_peak_mb) /
+                          reference_metrics.memory_peak_mb * 100) if reference_metrics.memory_peak_mb > 0 else 0
         
         return PerformanceComparison(
             operation=operation,
-            bge_metrics=bge_metrics,
+            reference_metrics=reference_metrics,
             jina_metrics=jina_metrics,
             latency_regression_pct=latency_regression,
             throughput_regression_pct=throughput_regression,
@@ -345,16 +345,16 @@ class PerformanceBenchmarker:
         )
     
     async def benchmark_search_performance(self,
-                                         bge_search_service: SearchService,
+                                         reference_search_service: SearchService,
                                          jina_search_service: SearchService,
                                          test_queries: List[str]) -> PerformanceComparison:
         """Бенчмарк производительности поиска"""
         
-        # Измеряем BGE поиск
-        bge_metrics = await self._measure_search_performance(
-            search_service=bge_search_service,
+        # Измеряем Reference поиск
+        reference_metrics = await self._measure_search_performance(
+            search_service=reference_search_service,
             queries=test_queries,
-            model_name="BGE-small",
+            model_name="Reference-small",
             vector_dim=1024
         )
         
@@ -368,7 +368,7 @@ class PerformanceBenchmarker:
         
         return self._create_performance_comparison(
             "search",
-            bge_metrics,
+            reference_metrics,
             jina_metrics
         )
     
@@ -383,7 +383,7 @@ class PerformanceBenchmarker:
         profiler = LatencyProfiler()
         
         gc.collect()
-        await monitor.start_monitoring()
+        monitor.start_monitoring()
         
         # Прогрев
         await search_service.search(queries[0], top_k=5)
@@ -451,20 +451,20 @@ class TestJinaV3PerformanceImpact:
     
     @pytest.fixture
     def mock_embedders(self):
-        """Mock embedders для BGE и Jina"""
+        """Mock embedders для Reference и Jina"""
         
         with patch('rag.embedder.FASTEMBED_AVAILABLE', True):
             with patch('rag.embedder.TextEmbedding') as mock_fastembed:
                 with patch('rag.embedder.SentenceTransformer') as mock_sentence_transformer:
                     
-                    # BGE mock (384d, быстрее)
-                    bge_model = Mock()
-                    def bge_embed(texts):
+                    # Reference mock (384d, быстрее)
+                    reference_model = Mock()
+                    def reference_embed(texts):
                         # Имитируем обработку - меньше времени для 384d
                         time.sleep(0.001 * len(texts))  # 1ms per text
                         return [np.random.random(1024).astype(np.float32) for _ in texts]
-                    bge_model.embed = bge_embed
-                    mock_fastembed.return_value = bge_model
+                    reference_model.embed = reference_embed
+                    mock_fastembed.return_value = reference_model
                     
                     # Jina mock (1024d, медленнее)
                     jina_model = Mock()
@@ -477,13 +477,13 @@ class TestJinaV3PerformanceImpact:
                     mock_sentence_transformer.return_value = jina_model
                     
                     # Конфигурации
-                    bge_config = Config(
+                    reference_config = Config(
                         openai=Mock(), token_management=Mock(), analysis=Mock(),
                         file_scanner=Mock(), output=Mock(), prompts=Mock(),
                         rag=RagConfig(
                             embeddings=EmbeddingConfig(
                                 provider="fastembed",
-                                model_name="BAAI/bge-small-en-v1.5",
+                                model_name="BAAI/reference-small-en-v1.5",
                                 truncate_dim=1024,
                                 batch_size_max=128
                             ),
@@ -508,22 +508,22 @@ class TestJinaV3PerformanceImpact:
                         )
                     )
                     
-                    bge_embedder = CPUEmbedder(bge_config.rag.embeddings, bge_config.rag.parallelism)
+                    reference_embedder = CPUEmbedder(reference_config.rag.embeddings, reference_config.rag.parallelism)
                     jina_embedder = CPUEmbedder(jina_config.rag.embeddings, jina_config.rag.parallelism)
                     
-                    yield bge_embedder, jina_embedder
+                    yield reference_embedder, jina_embedder
     
     @pytest.mark.asyncio
     async def test_embedding_latency_impact(self, mock_embedders, test_texts):
         """Тест влияния размерности векторов на латентность эмбеддинга"""
         
-        bge_embedder, jina_embedder = mock_embedders
+        reference_embedder, jina_embedder = mock_embedders
         benchmarker = PerformanceBenchmarker()
         
         # Тестируем различные размеры батчей
         batch_sizes = [32, 64, 128]
         comparisons = await benchmarker.benchmark_embedding_performance(
-            bge_embedder=bge_embedder,
+            reference_embedder=reference_embedder,
             jina_embedder=jina_embedder,
             test_texts=test_texts,
             batch_sizes=batch_sizes
@@ -558,8 +558,8 @@ class TestJinaV3PerformanceImpact:
         """Тест регрессии производительности поиска"""
         
         # Mock search services с реалистичным поведением
-        async def bge_search_mock(query, **kwargs):
-            # BGE быстрее - 384d векторы
+        async def reference_search_mock(query, **kwargs):
+            # Reference быстрее - 384d векторы
             await asyncio.sleep(0.05)  # 50ms
             return [Mock(score=0.8) for _ in range(kwargs.get('top_k', 10))]
         
@@ -568,15 +568,15 @@ class TestJinaV3PerformanceImpact:
             await asyncio.sleep(0.08)  # 80ms (+60% время)
             return [Mock(score=0.85) for _ in range(kwargs.get('top_k', 10))]
         
-        bge_service = Mock(spec=SearchService)
+        reference_service = Mock(spec=SearchService)
         jina_service = Mock(spec=SearchService)
-        bge_service.search = bge_search_mock
+        reference_service.search = reference_search_mock
         jina_service.search = jina_search_mock
         
         benchmarker = PerformanceBenchmarker()
         
         comparison = await benchmarker.benchmark_search_performance(
-            bge_search_service=bge_service,
+            reference_search_service=reference_service,
             jina_search_service=jina_service,
             test_queries=test_queries
         )
@@ -585,7 +585,7 @@ class TestJinaV3PerformanceImpact:
         print(f"Сравнение: {comparison.get_summary()}")
         
         # Проверяем результаты
-        assert comparison.bge_metrics.items_processed == len(test_queries)
+        assert comparison.reference_metrics.items_processed == len(test_queries)
         assert comparison.jina_metrics.items_processed == len(test_queries)
         
         # Jina может быть до 100% медленнее (2x), но не более
@@ -598,7 +598,7 @@ class TestJinaV3PerformanceImpact:
     def test_memory_usage_scaling(self, mock_embedders, test_texts):
         """Тест масштабирования использования памяти"""
         
-        bge_embedder, jina_embedder = mock_embedders
+        reference_embedder, jina_embedder = mock_embedders
         
         # Измеряем потребление памяти для разных размеров данных
         data_sizes = [50, 100, 200]
@@ -607,14 +607,14 @@ class TestJinaV3PerformanceImpact:
         for size in data_sizes:
             batch_texts = test_texts[:size]
             
-            # BGE memory usage
+            # Reference memory usage
             process = psutil.Process()
             gc.collect()
             baseline_memory = process.memory_info().rss / 1024 / 1024
             
-            bge_result = bge_embedder.embed_texts(batch_texts)
-            bge_memory = process.memory_info().rss / 1024 / 1024
-            bge_memory_usage = bge_memory - baseline_memory
+            reference_result = reference_embedder.embed_texts(batch_texts)
+            reference_memory = process.memory_info().rss / 1024 / 1024
+            reference_memory_usage = reference_memory - baseline_memory
             
             gc.collect()
             time.sleep(0.1)
@@ -625,16 +625,17 @@ class TestJinaV3PerformanceImpact:
             jina_memory = process.memory_info().rss / 1024 / 1024
             jina_memory_usage = jina_memory - baseline_memory
             
-            memory_ratio = jina_memory_usage / bge_memory_usage if bge_memory_usage > 0 else 1
+            denominator = max(reference_memory_usage, 1.0)
+            memory_ratio = jina_memory_usage / denominator
             
             memory_results.append({
                 'size': size,
-                'bge_memory': bge_memory_usage,
+                'reference_memory': reference_memory_usage,
                 'jina_memory': jina_memory_usage,
                 'ratio': memory_ratio
             })
             
-            print(f"Размер {size}: BGE {bge_memory_usage:.1f}MB, Jina {jina_memory_usage:.1f}MB, ratio {memory_ratio:.1f}x")
+            print(f"Размер {size}: Reference {reference_memory_usage:.1f}MB, Jina {jina_memory_usage:.1f}MB, ratio {memory_ratio:.1f}x")
             
             gc.collect()
         
@@ -654,7 +655,7 @@ class TestJinaV3PerformanceImpact:
     async def test_concurrent_performance_impact(self, mock_embedders, test_texts):
         """Тест влияния размерности на производительность при конкурентной нагрузке"""
         
-        bge_embedder, jina_embedder = mock_embedders
+        reference_embedder, jina_embedder = mock_embedders
         
         # Конкурентная нагрузка - несколько параллельных задач
         num_concurrent_tasks = 5
@@ -682,11 +683,11 @@ class TestJinaV3PerformanceImpact:
                     'items': 0
                 }
         
-        # Тестируем BGE конкурентность
+        # Тестируем Reference конкурентность
         print(f"\n=== Тест конкурентной производительности ===")
         
-        bge_tasks = [concurrent_embedding_test(bge_embedder, i) for i in range(num_concurrent_tasks)]
-        bge_results = await asyncio.gather(*bge_tasks, return_exceptions=True)
+        reference_tasks = [concurrent_embedding_test(reference_embedder, i) for i in range(num_concurrent_tasks)]
+        reference_results = await asyncio.gather(*reference_tasks, return_exceptions=True)
         
         # Тестируем Jina конкурентность
         jina_tasks = [concurrent_embedding_test(jina_embedder, i) for i in range(num_concurrent_tasks)]
@@ -715,20 +716,20 @@ class TestJinaV3PerformanceImpact:
                 'throughput': throughput
             }
         
-        bge_analysis = analyze_concurrent_results(bge_results, "BGE-small")
+        reference_analysis = analyze_concurrent_results(reference_results, "Reference-small")
         jina_analysis = analyze_concurrent_results(jina_results, "Jina-v3")
         
-        print(f"BGE конкурентность: {bge_analysis}")
+        print(f"Reference конкурентность: {reference_analysis}")
         print(f"Jina конкурентность: {jina_analysis}")
         
         # Проверяем что обе модели справляются с конкурентной нагрузкой
-        assert bge_analysis['successful_tasks'] >= 3, f"BGE: слишком много неудачных задач"
+        assert reference_analysis['successful_tasks'] >= 3, f"Reference: слишком много неудачных задач"
         assert jina_analysis['successful_tasks'] >= 3, f"Jina: слишком много неудачных задач"
         
         # Сравниваем throughput
-        if bge_analysis['throughput'] > 0 and jina_analysis['throughput'] > 0:
-            throughput_ratio = jina_analysis['throughput'] / bge_analysis['throughput']
-            print(f"Относительный throughput Jina/BGE: {throughput_ratio:.2f}x")
+        if reference_analysis['throughput'] > 0 and jina_analysis['throughput'] > 0:
+            throughput_ratio = jina_analysis['throughput'] / reference_analysis['throughput']
+            print(f"Относительный throughput Jina/Reference: {throughput_ratio:.2f}x")
             
             # Допускаем снижение throughput до 0.4x (Jina может быть до 2.5x медленнее)
             assert throughput_ratio > 0.3, f"Критическая деградация concurrent throughput: {throughput_ratio:.2f}x"
@@ -736,11 +737,11 @@ class TestJinaV3PerformanceImpact:
     def test_batch_size_impact(self, mock_embedders, test_texts):
         """Тест влияния размера батча на производительность"""
         
-        bge_embedder, jina_embedder = mock_embedders
+        reference_embedder, jina_embedder = mock_embedders
         
         # Тестируем разные размеры батчей
         batch_sizes = [16, 32, 64, 128, 256]
-        results = {'bge': [], 'jina': []}
+        results = {'reference': [], 'jina': []}
         
         for batch_size in batch_sizes:
             if batch_size > len(test_texts):
@@ -748,19 +749,19 @@ class TestJinaV3PerformanceImpact:
                 
             batch_texts = test_texts[:batch_size]
             
-            # BGE тест
+            # Reference тест
             start_time = time.time()
             try:
-                bge_result = bge_embedder.embed_texts(batch_texts)
-                bge_duration = time.time() - start_time
-                bge_throughput = batch_size / bge_duration
-                results['bge'].append({
+                reference_result = reference_embedder.embed_texts(batch_texts)
+                reference_duration = time.time() - start_time
+                reference_throughput = batch_size / reference_duration
+                results['reference'].append({
                     'batch_size': batch_size,
-                    'duration': bge_duration,
-                    'throughput': bge_throughput
+                    'duration': reference_duration,
+                    'throughput': reference_throughput
                 })
             except Exception as e:
-                print(f"BGE ошибка для батча {batch_size}: {e}")
+                print(f"Reference ошибка для батча {batch_size}: {e}")
             
             # Jina тест
             start_time = time.time()
@@ -779,24 +780,24 @@ class TestJinaV3PerformanceImpact:
         print(f"\n=== Влияние размера батча на производительность ===")
         
         # Анализируем результаты
-        for i, batch_size in enumerate([r['batch_size'] for r in results['bge']]):
+        for i, batch_size in enumerate([r['batch_size'] for r in results['reference']]):
             if i < len(results['jina']):
-                bge_data = results['bge'][i]
+                reference_data = results['reference'][i]
                 jina_data = results['jina'][i]
                 
-                throughput_ratio = jina_data['throughput'] / bge_data['throughput'] if bge_data['throughput'] > 0 else 0
+                throughput_ratio = jina_data['throughput'] / reference_data['throughput'] if reference_data['throughput'] > 0 else 0
                 
-                print(f"Batch {batch_size}: BGE {bge_data['throughput']:.1f} items/s, "
+                print(f"Batch {batch_size}: Reference {reference_data['throughput']:.1f} items/s, "
                       f"Jina {jina_data['throughput']:.1f} items/s, ratio {throughput_ratio:.2f}x")
         
         # Проверяем что производительность растет с размером батча (в разумных пределах)
-        if len(results['bge']) >= 2:
-            bge_first_throughput = results['bge'][0]['throughput']
-            bge_last_throughput = results['bge'][-1]['throughput']
+        if len(results['reference']) >= 2:
+            reference_first_throughput = results['reference'][0]['throughput']
+            reference_last_throughput = results['reference'][-1]['throughput']
             
             # Ожидаем что throughput как минимум не падает катастрофически
-            throughput_change = bge_last_throughput / bge_first_throughput if bge_first_throughput > 0 else 1
-            assert throughput_change > 0.5, f"BGE throughput катастрофически падает с ростом батча: {throughput_change:.2f}x"
+            throughput_change = reference_last_throughput / reference_first_throughput if reference_first_throughput > 0 else 1
+            assert throughput_change > 0.5, f"Reference throughput катастрофически падает с ростом батча: {throughput_change:.2f}x"
         
         if len(results['jina']) >= 2:
             jina_first_throughput = results['jina'][0]['throughput']
@@ -806,31 +807,31 @@ class TestJinaV3PerformanceImpact:
             assert throughput_change > 0.5, f"Jina throughput катастрофически падает с ростом батча: {throughput_change:.2f}x"
     
     def test_cpu_utilization_comparison(self, mock_embedders, test_texts):
-        """Сравнение утилизации CPU между BGE и Jina"""
+        """Сравнение утилизации CPU между Reference и Jina"""
         
-        bge_embedder, jina_embedder = mock_embedders
+        reference_embedder, jina_embedder = mock_embedders
         process = psutil.Process()
         
         # Тестовый батч
         test_batch = test_texts[:100]
         
-        # Измеряем BGE CPU usage
-        cpu_samples_bge = []
+        # Измеряем Reference CPU usage
+        cpu_samples_reference = []
         start_time = time.time()
         
         # Прогрев и начальные измерения
         process.cpu_percent()  # Первый вызов для сброса
         time.sleep(0.1)
         
-        bge_result = bge_embedder.embed_texts(test_batch)
-        bge_duration = time.time() - start_time
+        reference_result = reference_embedder.embed_texts(test_batch)
+        reference_duration = time.time() - start_time
         
         # Собираем несколько замеров CPU
         for _ in range(5):
-            cpu_samples_bge.append(process.cpu_percent())
+            cpu_samples_reference.append(process.cpu_percent())
             time.sleep(0.1)
         
-        bge_avg_cpu = np.mean([c for c in cpu_samples_bge if c is not None])
+        reference_avg_cpu = np.mean([c for c in cpu_samples_reference if c is not None])
         
         # Пауза между тестами
         time.sleep(0.5)
@@ -854,39 +855,39 @@ class TestJinaV3PerformanceImpact:
         jina_avg_cpu = np.mean([c for c in cpu_samples_jina if c is not None])
         
         print(f"\n=== Сравнение утилизации CPU ===")
-        print(f"BGE: {bge_avg_cpu:.1f}% CPU, {bge_duration:.2f}s")
+        print(f"Reference: {reference_avg_cpu:.1f}% CPU, {reference_duration:.2f}s")
         print(f"Jina: {jina_avg_cpu:.1f}% CPU, {jina_duration:.2f}s")
         
         # CPU efficiency (items per second per CPU percent)
-        bge_efficiency = (100 / bge_duration) / max(bge_avg_cpu, 1) if bge_avg_cpu > 0 else 0
+        reference_efficiency = (100 / reference_duration) / max(reference_avg_cpu, 1) if reference_avg_cpu > 0 else 0
         jina_efficiency = (100 / jina_duration) / max(jina_avg_cpu, 1) if jina_avg_cpu > 0 else 0
         
-        print(f"BGE efficiency: {bge_efficiency:.2f} items/s/cpu%")
+        print(f"Reference efficiency: {reference_efficiency:.2f} items/s/cpu%")
         print(f"Jina efficiency: {jina_efficiency:.2f} items/s/cpu%")
         
         # Базовые проверки корректности
-        assert bge_duration > 0, "BGE duration должен быть положительным"
+        assert reference_duration > 0, "Reference duration должен быть положительным"
         assert jina_duration > 0, "Jina duration должен быть положительным"
         
         # Мягкие проверки для mock данных
-        if bge_avg_cpu > 0 and jina_avg_cpu > 0:
-            cpu_ratio = jina_avg_cpu / bge_avg_cpu
+        if reference_avg_cpu > 0 and jina_avg_cpu > 0:
+            cpu_ratio = jina_avg_cpu / reference_avg_cpu
             # Jina может использовать до 3x больше CPU (реалистично для 2.6x векторов)
             assert cpu_ratio < 5.0, f"Jina использует слишком много CPU: {cpu_ratio:.1f}x"
         
         # Проверяем что обе модели показывают разумную производительность
-        assert bge_duration < 10.0, f"BGE слишком медленный: {bge_duration:.2f}s"
+        assert reference_duration < 10.0, f"Reference слишком медленный: {reference_duration:.2f}s"
         assert jina_duration < 20.0, f"Jina слишком медленный: {jina_duration:.2f}s"
     
     def test_slo_compliance_validation(self, mock_embedders, test_texts):
         """Валидация соответствия SLO производительности"""
         
-        bge_embedder, jina_embedder = mock_embedders
+        reference_embedder, jina_embedder = mock_embedders
         
         # SLO для производительности (реалистичные для mock данных)
         slo_targets = {
-            'bge': {
-                'avg_latency_ms': 200,   # BGE должен быть быстрым
+            'reference': {
+                'avg_latency_ms': 200,   # Reference должен быть быстрым
                 'p95_latency_ms': 400,
                 'throughput_min': 50     # items/sec
             },
@@ -899,21 +900,21 @@ class TestJinaV3PerformanceImpact:
         
         test_batch = test_texts[:50]  # Средний батч
         
-        # Измеряем BGE производительность
-        bge_latencies = []
-        bge_start_total = time.time()
+        # Измеряем Reference производительность
+        reference_latencies = []
+        reference_start_total = time.time()
         
         for _ in range(10):  # 10 прогонов для статистики
             start_time = time.time()
-            result = bge_embedder.embed_texts(test_batch)
+            result = reference_embedder.embed_texts(test_batch)
             latency = (time.time() - start_time) * 1000  # ms
-            bge_latencies.append(latency)
+            reference_latencies.append(latency)
             time.sleep(0.01)  # Небольшая пауза
         
-        bge_total_time = time.time() - bge_start_total
-        bge_avg_latency = np.mean(bge_latencies)
-        bge_p95_latency = np.percentile(bge_latencies, 95)
-        bge_throughput = (len(test_batch) * len(bge_latencies)) / bge_total_time
+        reference_total_time = time.time() - reference_start_total
+        reference_avg_latency = np.mean(reference_latencies)
+        reference_p95_latency = np.percentile(reference_latencies, 95)
+        reference_throughput = (len(test_batch) * len(reference_latencies)) / reference_total_time
         
         # Измеряем Jina производительность
         jina_latencies = []
@@ -933,19 +934,19 @@ class TestJinaV3PerformanceImpact:
         
         print(f"\n=== Валидация SLO соответствия ===")
         
-        # BGE SLO проверка
-        bge_slo_compliance = {
-            'avg_latency': bge_avg_latency <= slo_targets['bge']['avg_latency_ms'],
-            'p95_latency': bge_p95_latency <= slo_targets['bge']['p95_latency_ms'],
-            'throughput': bge_throughput >= slo_targets['bge']['throughput_min']
+        # Reference SLO проверка
+        reference_slo_compliance = {
+            'avg_latency': reference_avg_latency <= slo_targets['reference']['avg_latency_ms'],
+            'p95_latency': reference_p95_latency <= slo_targets['reference']['p95_latency_ms'],
+            'throughput': reference_throughput >= slo_targets['reference']['throughput_min']
         }
         
-        print(f"BGE SLO: avg={bge_avg_latency:.1f}ms (target ≤{slo_targets['bge']['avg_latency_ms']}ms) "
-              f"{'✅' if bge_slo_compliance['avg_latency'] else '❌'}")
-        print(f"BGE SLO: p95={bge_p95_latency:.1f}ms (target ≤{slo_targets['bge']['p95_latency_ms']}ms) "
-              f"{'✅' if bge_slo_compliance['p95_latency'] else '❌'}")
-        print(f"BGE SLO: throughput={bge_throughput:.1f} items/s (target ≥{slo_targets['bge']['throughput_min']}) "
-              f"{'✅' if bge_slo_compliance['throughput'] else '❌'}")
+        print(f"Reference SLO: avg={reference_avg_latency:.1f}ms (target ≤{slo_targets['reference']['avg_latency_ms']}ms) "
+              f"{'✅' if reference_slo_compliance['avg_latency'] else '❌'}")
+        print(f"Reference SLO: p95={reference_p95_latency:.1f}ms (target ≤{slo_targets['reference']['p95_latency_ms']}ms) "
+              f"{'✅' if reference_slo_compliance['p95_latency'] else '❌'}")
+        print(f"Reference SLO: throughput={reference_throughput:.1f} items/s (target ≥{slo_targets['reference']['throughput_min']}) "
+              f"{'✅' if reference_slo_compliance['throughput'] else '❌'}")
         
         # Jina SLO проверка
         jina_slo_compliance = {
@@ -962,23 +963,23 @@ class TestJinaV3PerformanceImpact:
               f"{'✅' if jina_slo_compliance['throughput'] else '❌'}")
         
         # Итоговые проверки
-        bge_slo_passed = all(bge_slo_compliance.values())
+        reference_slo_passed = all(reference_slo_compliance.values())
         jina_slo_passed = all(jina_slo_compliance.values())
         
         # Для mock данных используем мягкие проверки
-        if not bge_slo_passed:
-            print("⚠️  BGE не прошел все SLO, но это может быть нормально для mock данных")
+        if not reference_slo_passed:
+            print("⚠️  Reference не прошел все SLO, но это может быть нормально для mock данных")
         
         if not jina_slo_passed:
             print("⚠️  Jina не прошел все SLO, но это может быть нормально для mock данных")
         
         # Критичные проверки - система должна быть хотя бы функциональной
-        assert bge_avg_latency < 10000, f"BGE критически медленный: {bge_avg_latency:.1f}ms"
+        assert reference_avg_latency < 10000, f"Reference критически медленный: {reference_avg_latency:.1f}ms"
         assert jina_avg_latency < 20000, f"Jina критически медленный: {jina_avg_latency:.1f}ms"
-        assert bge_throughput > 1, f"BGE критически низкий throughput: {bge_throughput:.1f}"
+        assert reference_throughput > 1, f"Reference критически низкий throughput: {reference_throughput:.1f}"
         assert jina_throughput > 0.5, f"Jina критически низкий throughput: {jina_throughput:.1f}"
         
-        print(f"\nОбщий результат: BGE SLO {'✅' if bge_slo_passed else '⚠️'}, Jina SLO {'✅' if jina_slo_passed else '⚠️'}")
+        print(f"\nОбщий результат: Reference SLO {'✅' if reference_slo_passed else '⚠️'}, Jina SLO {'✅' if jina_slo_passed else '⚠️'}")
 
 
 if __name__ == "__main__":

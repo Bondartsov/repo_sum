@@ -1,0 +1,112 @@
+{
+  "analysis": {
+    "chunk_strategy": "logical",
+    "min_chunk_size": 100,
+    "enable_fallback": true,
+    "languages_priority": [
+      "python",
+      "javascript",
+      "java"
+    ],
+    "sanitize_enabled": true,
+    "sanitize_patterns": [
+      "(?i)(api[_-]?key\\s*[:=]\\s*)(['\\\"]?[A-Za-z0-9\\-_]{16,}['\\\"]?)",
+      "(?i)(secret[_-]?key\\s*[:=]\\s*)(['\\\"]?[A-Za-z0-9\\-_]{16,}['\\\"]?)",
+      "(?i)(bearer\\s+)([A-Za-z0-9\\-_\\.]{16,})",
+      "(?i)(password\\s*[:=]\\s*)(['\\\"][^'\\\"]+['\\\"])",
+      "-----BEGIN [A-Z ]+ PRIVATE KEY-----[\\s\\S]+?-----END [A-Z ]+ PRIVATE KEY-----"
+    ]
+  },
+  "file_scanner": {
+    "max_file_size": 10485760,
+    "excluded_directories": [
+      ".git",
+      ".svn",
+      ".hg",
+      "node_modules",
+      "venv",
+      ".venv",
+      "__pycache__",
+      ".pytest_cache",
+      "target",
+      "build",
+      "dist",
+      ".idea",
+      ".vscode",
+      "logs",
+      "tmp",
+      "temp"
+    ],
+    "supported_extensions": {
+      ".py": "python",
+      ".js": "javascript",
+      ".ts": "typescript",
+      ".jsx": "javascript",
+      ".tsx": "typescript",
+      ".java": "java",
+      ".cpp": "cpp",
+      ".cc": "cpp",
+      ".cxx": "cpp",
+      ".h": "cpp",
+      ".hpp": "cpp",
+      ".cs": "csharp",
+      ".go": "go",
+      ".rs": "rust",
+      ".php": "php",
+      ".rb": "ruby"
+    }
+  },
+  "output": {
+    "default_output_dir": "./docs",
+    "file_template": "minimal_file.md",
+    "index_template": "index_template.md"
+  },
+  "prompts": {
+    "code_analysis_prompt_file": "prompts/code_analysis_prompt.md"
+  },
+  "rag": {
+    "remote_service": {
+      "host": "127.0.0.1",
+      "port": 8900,
+      "endpoints": {
+        "embeddings": "/embeddings",
+        "search": "/search",
+        "index": "/index",
+        "health": "/health"
+      },
+      "timeout_seconds": 60,
+      "max_retries": 3,
+      "retry_delay": 2.0
+    },
+    "sparse": {
+      "method": "SPLADE"
+    },
+    "embeddings": {
+      "provider": "fastembed",
+      "model_name": "BAAI/bge-small-en-v1.5",
+      "truncate_dim": 1024,
+      "normalize_embeddings": true,
+      "task_query": "retrieval.query",
+      "task_passage": "retrieval.passage",
+      "trust_remote_code": false,
+      "batch_size_min": 4,
+      "batch_size_max": 16
+    },
+    "vector_store": {
+      "collection_name": "code_chunks",
+      "vector_size": 1024,
+      "distance": "cosine"
+    },
+    "query_engine": {
+      "rrf_enabled": true,
+      "use_hybrid": true,
+      "mmr_enabled": true,
+      "mmr_lambda": 0.7,
+      "concurrent_users_target": 20,
+      "cache_ttl_seconds": 300,
+      "cache_max_entries": 1000,
+      "max_results": 10,
+      "score_threshold": 0.0
+    }
+  }
+}

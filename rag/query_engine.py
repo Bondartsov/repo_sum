@@ -10,6 +10,7 @@
 """
 
 import asyncio
+import inspect
 import hashlib
 import logging
 import time
@@ -531,9 +532,15 @@ class CPUQueryEngine:
             except Exception as e:
                 logger.warning(f"Не удалось получить эмбеддинги для MMR: {e}")
                 # Fallback: используем случайные эмбеддинги правильной размерности
-                vector_dim = self.config.vector_store.vector_size if hasattr(self.config, 'vector_store') else 384
+                vector_config = getattr(self.config, 'vector_store', None)
+                vector_dim = getattr(vector_config, 'vector_size', None) if vector_config else None
+                if not vector_dim and hasattr(self.embedder, 'embedding_dim'):
+                    vector_dim = getattr(self.embedder, 'embedding_dim', None)
+                if not vector_dim:
+                    vector_dim = 1024
+
                 for i in indices_to_embed:
-                    results[i].embedding = np.random.random(vector_dim)
+                    results[i].embedding = np.random.random(vector_dim).astype(np.float32)
 
     def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
         """Вычисляет косинусное сходство между векторами"""
@@ -638,10 +645,31 @@ class CPUQueryEngine:
             }
 
     async def _check_vector_store(self) -> bool:
-        """Проверяет доступность векторного хранилища"""
+        """Проверяет доступность векторного хранилища."""
         try:
-            health_info = await self.vector_store.health_check()
-            return health_info.get("status") == "connected"
+            checker = getattr(self.vector_store, "check_health", None)
+            if checker is None:
+                checker = getattr(self.vector_store, "health_check", None)
+            if checker is None:
+                return False
+
+            result = checker()
+            if inspect.isawaitable(result):
+                health_info = await result
+            else:
+                health_info = result
+
+            if not isinstance(health_info, dict):
+                return False
+
+            status = str(health_info.get("status", "")).lower()
+            if status in {"ok", "healthy", "connected"}:
+                return True
+
+            components = health_info.get("components", {}) or {}
+            vector_info = components.get("vector_store", {}) or {}
+            collection_status = str(vector_info.get("collection_status", "")).lower()
+            return collection_status in {"exists", "ready", "green"}
         except Exception:
             return False
 

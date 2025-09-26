@@ -6,6 +6,7 @@
 """
 
 import logging
+import os
 import time
 import asyncio
 import threading
@@ -75,16 +76,31 @@ class SearchService:
             config.rag.parallelism,
             config.rag.remote_service
         )
-        try:
-            self.vector_store = QdrantVectorStore(
-                config.rag.vector_store,
-                config.rag.remote_service
-            )
-        except TypeError:
-            # Local QdrantVectorStore expects only one argument
-            self.vector_store = QdrantVectorStore(
-                config.rag.vector_store
-            )
+        import os as _os
+        env_true = {'1', 'true', 'yes', 'on'}
+        use_mock_vs = str(_os.getenv('USE_MOCK_VECTOR_STORE', '')).lower() in env_true or str(_os.getenv('OFFLINE_MODE', '')).lower() in env_true
+
+        if use_mock_vs:
+            try:
+                from .memory_vector_store import InMemoryVectorStore
+                self.vector_store = InMemoryVectorStore(config.rag.vector_store, config.rag.remote_service)
+            except Exception as error:
+                logger.warning(f'Не удалось инициализировать InMemoryVectorStore: {error}')
+                self.vector_store = None
+        else:
+            self.vector_store = None
+
+        if self.vector_store is None:
+            try:
+                self.vector_store = QdrantVectorStore(
+                    config.rag.vector_store,
+                    config.rag.remote_service
+                )
+            except TypeError:
+                # Local QdrantVectorStore expects only one argument
+                self.vector_store = QdrantVectorStore(
+                    config.rag.vector_store
+                )
         
         # Thread-safe кэш запросов с блокировками
         self._query_cache = {}

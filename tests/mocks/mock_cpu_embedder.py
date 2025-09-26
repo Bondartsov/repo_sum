@@ -56,16 +56,22 @@ class MockCPUEmbedder:
     Поддерживает все методы оригинального класса для полной совместимости.
     """
     
-    def __init__(self, embedding_config: EmbeddingConfig, parallelism_config: ParallelismConfig):
+    def __init__(self, embedding_config: EmbeddingConfig | None = None, parallelism_config: ParallelismConfig | None = None, remote_config=None):
         """
         Инициализация mock эмбеддера.
         
         Args:
             embedding_config: Конфигурация эмбеддингов
             parallelism_config: Конфигурация параллелизма
+            remote_config: Дополнительные параметры удалённого сервиса (игнорируются)
         """
+        if embedding_config is None:
+            embedding_config = EmbeddingConfig()
+        if parallelism_config is None:
+            parallelism_config = ParallelismConfig()
         self.embedding_config = embedding_config
         self.parallelism_config = parallelism_config
+        self.remote_config = remote_config
         
         # Имитируем настройку provider_name как в оригинале
         self.provider_name = "mock_" + embedding_config.provider

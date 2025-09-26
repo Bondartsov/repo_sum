@@ -9,6 +9,7 @@ VM Firewall Configuration Tests - Тестирование настроек fire
 """
 
 import pytest
+pytest.importorskip('paramiko')
 import subprocess
 import socket
 import time

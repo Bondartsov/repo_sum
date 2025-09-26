@@ -4,23 +4,16 @@
 Тесты T-001 и T-002 согласно техническому заданию.
 """
 
-import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
+from tests.utils_cli import run_cli
 
 @pytest.mark.functional
 class TestAdditionalCLI:
     """Дополнительные тесты CLI интерфейса"""
     
-    @pytest.fixture
-    def main_script_path(self):
-        """Путь к основному скрипту main.py"""
-        return Path(__file__).parent.parent / "main.py"
-    
-    def test_t001_unknown_subcommand(self, main_script_path):
+    def test_t001_unknown_subcommand(self):
         """
         T-001 - CLI: неизвестная подкоманда
         
@@ -30,11 +23,7 @@ class TestAdditionalCLI:
         Не должно быть трассировки исключения
         """
         # Выполняем команду с неизвестной подкомандой
-        result = subprocess.run(
-            [sys.executable, str(main_script_path), "do-nothing"],
-            capture_output=True,
-            text=True
-        )
+        result = run_cli(["do-nothing"])
         
         # Проверяем ненулевой код выхода
         assert result.returncode != 0, (
@@ -80,7 +69,7 @@ class TestAdditionalCLI:
         print(f"Код выхода: {result.returncode}")
         print(f"Вывод: {output[:200]}...")  # Первые 200 символов для отладки
     
-    def test_t002_conflicting_flags(self, main_script_path):
+    def test_t002_conflicting_flags(self):
         """
         T-002 - CLI: взаимоисключающие флаги
         
@@ -89,11 +78,7 @@ class TestAdditionalCLI:
                   корректный код выхода
         """
         # Выполняем команду с конфликтующими флагами
-        result = subprocess.run(
-            [sys.executable, str(main_script_path), "--generate-docs", "--run-web"],
-            capture_output=True,
-            text=True
-        )
+        result = run_cli(["--generate-docs", "--run-web"], use_test_config=False)
         
         # Проверяем ненулевой код выхода
         assert result.returncode != 0, (

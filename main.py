@@ -1,10 +1,11 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Главный модуль анализатора репозиториев с генерацией MD документации через OpenAI GPT.
 Теперь включает RAG систему для семантического поиска по коду.
 """
 
 import asyncio
+import os
 import logging
 import sys
 from pathlib import Path
@@ -34,8 +35,10 @@ from rag.search_service import SearchService
 from rag.exceptions import VectorStoreException, VectorStoreConnectionError
 
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='ignore')
-    sys.stderr.reconfigure(encoding='utf-8', errors='ignore')
+    if getattr(sys.stdout, "isatty", lambda: False)():
+        sys.stdout.reconfigure(encoding="utf-8", errors="ignore")
+    if getattr(sys.stderr, "isatty", lambda: False)():
+        sys.stderr.reconfigure(encoding="utf-8", errors="ignore")
 except Exception:
     pass
 
@@ -44,7 +47,7 @@ class RepositoryAnalyzer:
     
     def __init__(self):
         self.config = get_config()
-        self.console = Console()
+        self.console = Console(emoji=False)
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Инициализируем компоненты
@@ -337,8 +340,9 @@ class RepositoryAnalyzer:
 @click.option('--config', '-c', default='settings.json', help='Путь к файлу конфигурации')
 @click.option('--verbose', '-v', is_flag=True, help='Подробный вывод')
 @click.option('--quiet', '-q', is_flag=True, help='Тихий режим')
+@click.option('--offline', is_flag=True, help='Работать без сетевых вызовов (mock провайдеры)')
 @click.pass_context
-def cli(ctx, config, verbose, quiet):
+def cli(ctx, config, verbose, quiet, offline):
     """Анализатор репозиториев с генерацией MD документации через OpenAI GPT."""
     ctx.ensure_object(dict)
     
@@ -351,7 +355,17 @@ def cli(ctx, config, verbose, quiet):
         log_level = "INFO"
     
     setup_logging(log_level)
-    
+
+    if offline:
+        os.environ.setdefault("OFFLINE_MODE", "1")
+        os.environ.setdefault("USE_MOCK_EMBEDDER", "1")
+        os.environ.setdefault("USE_MOCK_VECTOR_STORE", "1")
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+        os.environ.setdefault("PYTHONIOENCODING", os.environ.get("PYTHONIOENCODING", "utf-8"))
+        os.environ.setdefault("PYTHONUTF8", "1")
+        ctx.obj["offline"] = True
+   
     # Загружаем конфигурацию
     try:
         if config != 'settings.json':
@@ -359,7 +373,7 @@ def cli(ctx, config, verbose, quiet):
         else:
             get_config()  # Загружаем стандартную конфигурацию
     except Exception as e:
-        console = Console()
+        console = Console(emoji=False)
         console.print(f"[bold red]Ошибка загрузки конфигурации: {e}[/bold red]")
         sys.exit(1)
 
@@ -371,7 +385,7 @@ def cli(ctx, config, verbose, quiet):
 @click.option('--incremental/--no-incremental', default=True, help='Инкрементальный анализ только изменённых файлов')
 def analyze(repo_path, output, no_progress, incremental):
     """Анализирует репозиторий и создает MD документацию."""
-    console = Console()
+    console = Console(emoji=False)
     
     try:
         # Fail-fast: проверяем что все компоненты могут быть инициализированы
@@ -393,25 +407,25 @@ def analyze(repo_path, output, no_progress, incremental):
         ))
         
         if result.get('success', True):
-            console = Console()
+            console = Console(emoji=False)
             console.print(f"[bold green]Анализ завершен успешно![/bold green]")
             saved_dir = result.get('output_directory', output)
             console.print(f"Документация сохранена в: [cyan]{saved_dir}[/cyan]")
             if result.get('index_file'):
                 console.print(f"Главный файл: [cyan]{result['index_file']}[/cyan]")
         else:
-            console = Console()
+            console = Console(emoji=False)
             console.print(f"[bold red]Ошибка: {result.get('error', 'Неизвестная ошибка')}[/bold red]")
             sys.exit(1)
             
     except KeyboardInterrupt:
-        console = Console()
+        console = Console(emoji=False)
         console.print("[yellow]Анализ прерван пользователем[/yellow]")
         sys.exit(1)
     except Exception as e:
         logger = logging.getLogger(__name__)
         logger.error(f"Критическая ошибка: {e}", exc_info=True)
-        console = Console()
+        console = Console(emoji=False)
         console.print(f"[bold red]Критическая ошибка: {e}[/bold red]")
         sys.exit(1)
 
@@ -420,7 +434,7 @@ def analyze(repo_path, output, no_progress, incremental):
 @click.argument('repo_path', type=click.Path(exists=True))
 def stats(repo_path):
     """Показывает статистику репозитория без анализа."""
-    console = Console()
+    console = Console(emoji=False)
     console.print(f"[bold blue]Сбор статистики для: {repo_path}[/bold blue]")
     
     try:
@@ -476,18 +490,18 @@ def clear_cache():
         manager = OpenAIManager()
         cleared = manager.clear_cache()
         
-        console = Console()
+        console = Console(emoji=False)
         console.print(f"[green]Очищено {cleared} записей кэша[/green]")
         
     except Exception as e:
-        console = Console()
+        console = Console(emoji=False)
         console.print(f"[bold red]Ошибка при очистке кэша: {e}[/bold red]")
 
 
 @cli.command()
 def token_stats():
     """Показывает статистику использования токенов OpenAI."""
-    console = Console()
+    console = Console(emoji=False)
     try:
         # Предвалидация API ключа: считаем ключ без префикса "sk-" некорректным
         import os as _os
@@ -538,7 +552,7 @@ def rag():
 @click.option('--no-progress', is_flag=True, help='Отключить прогресс-бар')
 def index(repo_path, batch_size, recreate, no_progress):
     """Индексация репозитория в векторную БД"""
-    console = Console()
+    console = Console(emoji=False)
     
     try:
         # Получаем конфигурацию с проверкой RAG настроек
@@ -618,7 +632,7 @@ def index(repo_path, batch_size, recreate, no_progress):
 @click.option('--max-lines', default=10, help='Максимальное количество строк контента')
 def search(query, top_k, lang, chunk_type, min_score, file_path, no_content, max_lines):
     """Семантический поиск по коду"""
-    console = Console()
+    console = Console(emoji=False)
     
     try:
         # Получаем конфигурацию
@@ -672,7 +686,7 @@ def search(query, top_k, lang, chunk_type, min_score, file_path, no_content, max
 @click.option('--detailed', is_flag=True, help='Подробная статистика')
 def status(detailed):
     """Статус RAG системы и векторной БД"""
-    console = Console()
+    console = Console(emoji=False)
     
     try:
         config = get_config()
@@ -817,7 +831,7 @@ def status(detailed):
 @click.option('--force', is_flag=True, help='Принудительная миграция без подтверждения')
 def migrate(backup, reindex_repo, batch_size, force):
     """Миграция на Jina v3 с dual task архитектурой"""
-    console = Console()
+    console = Console(emoji=False)
     
     try:
         console.print("[bold blue]🚀 Jina v3 Migration: BGE-small → Jina v3 (384d → 1024d)[/bold blue]")

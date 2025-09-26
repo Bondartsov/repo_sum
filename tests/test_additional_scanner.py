@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.utils_cli import run_cli
 from file_scanner import FileScanner
 
 
@@ -286,22 +287,15 @@ class TestFileScannerAdditional:
             subdir.mkdir()
             (subdir / "sub.py").write_text("def func(): pass", encoding='utf-8')
             
-            # Запускаем main.py analyze через subprocess
-            # Используем относительный путь к main.py
-            main_py_path = Path(__file__).parent.parent / "main.py"
-            
+            # Запускаем main.py analyze через helper run_cli
             try:
-                result = subprocess.run([
-                    sys.executable, str(main_py_path),
-                    "analyze", str(temp_path),
-                    "--output", str(output_path),
-                    "--no-progress"
-                ], 
-                capture_output=True, 
-                text=True, 
-                timeout=30,
-                env={**os.environ, "OPENAI_API_KEY": "test-key-for-mock"}
-                )
+                result = run_cli([
+                    "analyze",
+                    str(temp_path),
+                    "--output",
+                    str(output_path),
+                    "--no-progress",
+                ], env={"OPENAI_API_KEY": "test-key-for-mock"}, timeout=30)
                 
                 # Проверяем что команда выполнилась (может завершиться с ошибкой из-за отсутствия API ключа)
                 # Но должна найти файлы и начать обработку

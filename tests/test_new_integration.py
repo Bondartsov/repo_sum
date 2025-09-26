@@ -8,6 +8,8 @@ from typing import List
 
 import pytest
 
+from tests.utils_cli import run_cli
+
 from openai_integration import OpenAIManager, GPTCache
 from utils import CodeChunk, GPTAnalysisRequest, compute_file_hash
 from file_scanner import FileScanner
@@ -156,7 +158,6 @@ def test_cli_clear_cache_integration(monkeypatch, tmp_path):
     """
     # путь к main.py и корню проекта
     project_root = Path(__file__).resolve().parents[1]
-    main_py = project_root / "main.py"
 
     # создаём фейковые записи кэша в CWD проекта
     cache_dir = project_root / "cache"
@@ -164,17 +165,9 @@ def test_cli_clear_cache_integration(monkeypatch, tmp_path):
     for i in range(3):
         (cache_dir / f"entry_{i}.json").write_text('{"cached_at":"2025-01-01T00:00:00"}', encoding="utf-8")
 
-    env = os.environ.copy()
-    if "OPENAI_API_KEY" not in env:
-        env["OPENAI_API_KEY"] = "fake-key"
+    env = {"OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", "fake-key")}
 
-    proc = subprocess.run(
-        [sys.executable, str(main_py), "clear-cache"],
-        cwd=str(project_root),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+    proc = run_cli(["clear-cache"], env=env)
     assert proc.returncode == 0
     assert "Очищено" in proc.stdout
     # директория cache пуста

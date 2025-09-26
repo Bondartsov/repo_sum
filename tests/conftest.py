@@ -13,6 +13,20 @@ def pytest_addoption(parser):
         help="Явно попытаться запускать тесты, создающие symlink (Windows требует права администратора/Developer Mode)"
     )
 
+@pytest.fixture(autouse=True)
+def force_offline_env(monkeypatch):
+    """Гарантирует offline-профиль по умолчанию для тестов"""
+    monkeypatch.setenv("PYTHONIOENCODING", "utf-8")
+    monkeypatch.setenv("PYTHONUTF8", "1")
+    monkeypatch.setenv("OFFLINE_MODE", "1")
+    monkeypatch.setenv("USE_MOCK_EMBEDDER", "1")
+    monkeypatch.setenv("USE_MOCK_VECTOR_STORE", "1")
+    monkeypatch.setenv("EMBEDDING_PROVIDER", os.getenv("EMBEDDING_PROVIDER", "mock"))
+    monkeypatch.setenv("VECTOR_STORE_PROVIDER", os.getenv("VECTOR_STORE_PROVIDER", "mock"))
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "1")
+    yield
+
 # Здесь можно определить фикстуры для всего проекта
 
 # Автоматический патчинг CPUEmbedder для offline тестов
@@ -22,8 +36,10 @@ def pytest_configure(config):
     # Проверяем, нужно ли использовать mock эмбеддеры
     from tests.mocks.mock_cpu_embedder import should_use_mock_embedder
     
-    if should_use_mock_embedder():
-        print("\n🔄 Обнаружен offline режим - активируем mock эмбеддеры")
+    force_mock = os.getenv("USE_MOCK_EMBEDDER", "1").lower() in ("1", "true", "yes")
+
+    if force_mock or should_use_mock_embedder():
+        print("\n[offline] Обнаружен offline режим - активируем mock эмбеддеры")
         
         # Патчим CPUEmbedder на уровне модуля
         try:
@@ -38,6 +54,9 @@ def pytest_configure(config):
             search_embedder_patcher.start()
             query_engine_embedder_patcher = patch('rag.query_engine.CPUEmbedder', MockCPUEmbedder)
             query_engine_embedder_patcher.start()
+            from tests.mocks.mock_remote_embedder import MockRemoteEmbedder
+            remote_embedder_patcher = patch('rag.remote_embedder.RemoteVMEmbedder', MockRemoteEmbedder)
+            remote_embedder_patcher.start()
             
             # Сохраняем патчеры для отключения в конце
             if not hasattr(config, '_mock_patchers'):
@@ -46,12 +65,13 @@ def pytest_configure(config):
                 indexer_embedder_patcher,
                 search_embedder_patcher,
                 query_engine_embedder_patcher,
+                remote_embedder_patcher,
             ])
             
-            print("✅ Mock эмбеддеры активированы")
+            print("[offline] Mock эмбеддеры активированы")
             
         except ImportError as e:
-            print(f"⚠️  Не удалось активировать mock эмбеддеры: {e}")
+            print(f"[offline] Не удалось активировать mock эмбеддеры: {e}")
 
 
 def pytest_unconfigure(config):

@@ -2,10 +2,10 @@ import os
 import sys
 import json
 import subprocess
-from pathlib import Path
 
 import pytest
 
+from tests.utils_cli import run_cli
 
 @pytest.mark.e2e
 @pytest.mark.integration
@@ -41,23 +41,16 @@ def test_e2e_cli_analyze_incremental_skip(monkeypatch, tmp_path):
     index = {str(src): {"hash": file_hash, "analyzed_at": "2025-01-01T00:00:00"}}
     (idx_dir / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # Подготовим окружение и вызов CLI из корня проекта (для корректной загрузки settings.json)
-    project_root = Path(__file__).resolve().parents[2]
-    main_py = project_root / "main.py"
-
-    env = os.environ.copy()
-    # Ключ нужен только для инициализации OpenAIManager (анализ не запускается)
-    env["OPENAI_API_KEY"] = "fake-key"
-
+    env = {"OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", "fake-key")}
     out_dir = tmp_path / "out"
 
-    run = subprocess.run(
-        [sys.executable, str(main_py), "analyze", str(repo), "-o", str(out_dir), "--no-progress"],
-        cwd=str(project_root),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+    run = run_cli([
+        "analyze",
+        str(repo),
+        "-o",
+        str(out_dir),
+        "--no-progress",
+    ], env=env)
 
     # E2E критерии: успешное завершение и отсутствие критической ошибки
     assert run.returncode == 0, f"STDOUT:\n{run.stdout}\nSTDERR:\n{run.stderr}"

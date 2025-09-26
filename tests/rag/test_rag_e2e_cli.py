@@ -21,6 +21,7 @@ from typing import Dict, Any, List
 from unittest.mock import patch, Mock
 
 import click
+from tests.utils_cli import run_cli
 from click.testing import CliRunner
 
 from main import cli
@@ -576,18 +577,15 @@ class TestRAGCliE2E:
 
     def test_subprocess_cli_execution(self, test_repo_path, temp_settings_file):
         """Тестирует выполнение CLI команд через subprocess (интеграционный тест)"""
-        import sys
-        python_executable = sys.executable
-        main_script = "main.py"
-        
-        if not os.path.exists(main_script):
+        main_script = Path(__file__).resolve().parents[2] / "main.py"
+        if not main_script.exists():
+            pytest.skip("main.py не найден в текущей директории")
+
             pytest.skip("main.py не найден в текущей директории")
         
         # Тест команды help с увеличенным timeout и мягкой обработкой ошибок
         try:
-            result = subprocess.run([
-                python_executable, main_script, '--help'
-            ], capture_output=True, text=True, timeout=60)
+            result = run_cli(['--help'], use_test_config=False, timeout=60)
             
             if result.returncode == 0:
                 assert 'rag' in result.stdout.lower()
@@ -602,11 +600,7 @@ class TestRAGCliE2E:
         
         # Тест команды rag status с мягкой обработкой ошибок
         try:
-            result = subprocess.run([
-                python_executable, main_script,
-                '--config', temp_settings_file,
-                'rag', 'status'
-            ], capture_output=True, text=True, timeout=90)
+            result = run_cli(['--config', temp_settings_file, 'rag', 'status'], use_test_config=False, timeout=90)
             
             # Допускаем различные коды возврата в зависимости от состояния системы
             if result.returncode not in [0, 1]:

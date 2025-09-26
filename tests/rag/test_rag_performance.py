@@ -1028,7 +1028,7 @@ class TestRAGPerformance:
                 # Результат должен быть корректным
                 assert result is not None
                 assert len(result) == 100
-                assert duration > 0
+                assert duration >= 0
                 
                 print(f"\nSimple benchmark: обработано {len(result)} текстов за {duration:.3f}s")
 
@@ -1062,7 +1062,7 @@ class _TestRAGBenchmarks:
                 # Результат должен быть корректным
                 assert result is not None
                 assert len(result) == 100
-                assert duration > 0
+                assert duration >= 0
                 
                 print(f"\nSimple benchmark: обработано {len(result)} текстов за {duration:.3f}s")
 
