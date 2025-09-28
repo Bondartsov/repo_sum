@@ -461,7 +461,7 @@ except Exception as e:
             'QDRANT_HOST': 'localhost',
             'QDRANT_PORT': os.getenv('QDRANT_PORT', '6333'),
             'QDRANT_PREFER_GRPC': 'false',
-            'EMBEDDING_PROVIDER': 'fastembed',
+            'EMBEDDING_PROVIDER': 'remote-vm',
             'VECTOR_STORE_PROVIDER': 'local',
         }
 
