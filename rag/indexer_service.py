@@ -595,6 +595,8 @@ class IndexerService:
             health_info['components']['vector_store'] = vs_health
             
             # Проверка эмбеддера
+            # Добавляем прогрев перед получением статистики
+            self.embedder.warmup()
             embedder_stats = self.embedder.get_stats()
             health_info['components']['embedder'] = {
                 'status': 'healthy' if embedder_stats['is_warmed_up'] else 'warming_up',
