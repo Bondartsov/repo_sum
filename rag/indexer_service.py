@@ -625,39 +625,72 @@ class IndexerService:
         status_colors = {
             "green": {"ok", "healthy", "connected"},
             "yellow": {"degraded", "warming", "initializing"},
-            "red": {"error", "failed", "unavailable"},
+            "red": {"error", "failed", "unavailable", "unhealthy"},
         }
 
         def colorize(status: str) -> str:
-            s = (status or "unknown").lower()
+            raw = status or "unknown"
+            s = raw.strip().lower()
+
+            # Fallback: если статус "ok", всегда зелёный
+            if s == "ok":
+                return f"[green]{raw}[/green]"
+
+            # Проверяем остальные статусы по категориям
             for color, states in status_colors.items():
                 if s in states:
-                    return f"[{color}]{s}[/{color}]"
-            return f"[white]{s}[/white]"
+                    return f"[{color}]{raw}[/{color}]"
+
+            # Fallback для неизвестных статусов - жёлтый (требует внимания)
+            return f"[yellow]{raw}[/yellow]"
 
         table = Table(title="Состояние компонентов", show_header=True, header_style="bold magenta")
         table.add_column("Компонент", style="bold")
-        table.add_column("Статус")
-        table.add_column("Детали")
+        table.add_column("Статус", style="green")
+        table.add_column("Детали", style="dim")
 
         components = health_info.get("components", {})
 
         # Vector Store (Qdrant)
         vs = components.get("vector_store", {})
         if vs:
-            details = []
-            cfg = getattr(self.vector_store, "config", None)
-            if cfg:
-                host = getattr(cfg, "host", None) or getattr(cfg, "service_host", None)
-                collection = getattr(cfg, "collection_name", None)
-                dim = getattr(cfg, "vector_size", None)
-                if host:
-                    details.append(f"Хост: {host}")
-                if collection:
-                    details.append(f"Коллекция: {collection}")
-                if dim:
-                    details.append(f"Размерность: {dim}")
-            table.add_row("Qdrant Vector Store", colorize(vs.get("status")), ", ".join(details) or "-")
+            # Реализуем правильную логику fallback для получения атрибутов из разных источников
+            def get_qdrant_attribute(attr_name: str, default: str = "-") -> str:
+                """Получаем атрибут Qdrant с fallback из разных источников"""
+                # Пробуем получить из конфига векторного хранилища
+                cfg = getattr(self.vector_store, "config", None)
+                if cfg:
+                    value = getattr(cfg, attr_name, None)
+                    if value:
+                        return str(value)
+
+                # Пробуем получить из конфига RAG
+                if hasattr(self.config, 'rag') and hasattr(self.config.rag, 'vector_store'):
+                    value = getattr(self.config.rag.vector_store, attr_name, None)
+                    if value:
+                        return str(value)
+
+                # Пробуем получить напрямую из векторного хранилища
+                value = getattr(self.vector_store, attr_name, None)
+                if value:
+                    return str(value)
+
+                return default
+
+            # Получаем атрибуты с правильным fallback
+            host = get_qdrant_attribute('host') or get_qdrant_attribute('service_host')
+            collection = get_qdrant_attribute('collection_name') or get_qdrant_attribute('collection')
+            dim = get_qdrant_attribute('vector_size') or get_qdrant_attribute('dim')
+
+            # Формируем строку деталей в требуемом формате
+            qdrant_details = f"Хост: {host}, Коллекция: {collection}, Размерность: {dim}"
+
+            qdrant_status = (vs.get("status") or "unknown").strip()
+            table.add_row(
+                "Qdrant Vector Store",
+                colorize(qdrant_status),
+                qdrant_details
+            )
 
         # Embedder
         emb = components.get("embedder", {})
