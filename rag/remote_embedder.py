@@ -310,7 +310,7 @@ class RemoteVMEmbedder:
     async def _async_warmup(self) -> None:
         """Асинхронный прогрев сервиса"""
         try:
-            health_info = await self.health_check()
+            health_info = await self._async_health_check()
             
             if health_info['status'] == 'healthy':
                 self._is_warmed_up = True
