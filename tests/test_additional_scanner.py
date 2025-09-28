@@ -302,7 +302,9 @@ class TestFileScannerAdditional:
                 assert result.returncode in [0, 1]  # 0 - успех, 1 - ошибка API
                 
                 # Проверяем что в выводе есть информация о найденных файлах
-                output_text = result.stdout + result.stderr
+                stdout_output = result.stdout or ""
+                stderr_output = result.stderr or ""
+                output_text = stdout_output + stderr_output
                 assert "test.py" in output_text or "Найдено" in output_text or "файлов" in output_text
                 
             except (subprocess.TimeoutExpired, FileNotFoundError) as e:

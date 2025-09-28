@@ -32,7 +32,9 @@ class TestAdditionalCLI:
         )
         
         # Объединяем stdout и stderr для анализа
-        output = result.stdout + result.stderr
+        stdout_output = result.stdout or ""
+        stderr_output = result.stderr or ""
+        output = stdout_output + stderr_output
         output_lower = output.lower()
         
         # Проверяем, что есть сообщение об ошибке
@@ -87,7 +89,9 @@ class TestAdditionalCLI:
         )
         
         # Объединяем stdout и stderr для анализа
-        output = result.stdout + result.stderr
+        stdout_output = result.stdout or ""
+        stderr_output = result.stderr or ""
+        output = stdout_output + stderr_output
         output_lower = output.lower()
         
         # Проверяем, что есть сообщение о конфликте или ошибке

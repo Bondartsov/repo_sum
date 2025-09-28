@@ -33,9 +33,11 @@ def test_cli_analyze_incremental_no_changes_success(monkeypatch, tmp_path):
         [sys.executable, "-c", helper, str(src)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
-    file_hash = proc.stdout.strip()
+    file_hash = (proc.stdout or "").strip()
 
     idx_dir = repo / ".repo_sum"
     idx_dir.mkdir(parents=True, exist_ok=True)
@@ -59,7 +61,8 @@ def test_cli_analyze_incremental_no_changes_success(monkeypatch, tmp_path):
     assert proc2.returncode == 0
     # В stdout обычно печатается "Анализ завершен успешно!", но при отсутствии изменений
     # analyze_repository возвращает success=True и короткую сводку — проверим, что не было критической ошибки:
-    assert "Критическая ошибка" not in (proc2.stdout + proc2.stderr)
+    stdout_output, stderr_output = proc2.stdout or "", proc2.stderr or ""
+    assert "Критическая ошибка" not in (stdout_output + stderr_output)
 
 
 @pytest.mark.functional
@@ -76,7 +79,7 @@ def test_cli_stats_outputs_tables(tmp_path):
     proc = run_cli(["stats", str(repo)])
 
     assert proc.returncode == 0
-    out = proc.stdout
+    out = proc.stdout or ""
     assert "Общая статистика" in out
     # Таблица по языкам может печататься при наличии статистики
     assert ("По языкам программирования" in out) or ("Самые большие файлы" in out)
@@ -93,7 +96,8 @@ def test_cli_token_stats_handles_error_gracefully(monkeypatch, tmp_path):
     # Команда не должна аварийно завершаться
     assert proc.returncode == 0
     # Ожидаем сообщение об ошибке получения статистики (из-за несовпадения ключей)
-    assert "Ошибка при получении статистики" in (proc.stdout + proc.stderr)
+    ts_stdout, ts_stderr = proc.stdout or "", proc.stderr or ""
+    assert "Ошибка при получении статистики" in (ts_stdout + ts_stderr)
 
 
 @pytest.mark.functional
@@ -111,7 +115,8 @@ def test_cli_subcommands_help(tmp_path):
     for args in subcommands:
         proc = run_cli(args)
         assert proc.returncode == 0, f"Команда {' '.join(args)} завершилась с ошибкой"
-        assert ("Options" in proc.stdout) or ("Опции" in proc.stdout) or ("help" in proc.stdout.lower())
+        stdout_output = proc.stdout or ""
+        assert ("Options" in stdout_output) or ("Опции" in stdout_output) or ("help" in stdout_output.lower())
 
 
 @pytest.mark.functional
@@ -126,4 +131,5 @@ def test_cli_settings_validation_error(tmp_path):
 
     proc = run_cli(["-c", str(bad_cfg), "stats", str(tmp_path)], use_test_config=False, cwd=tmp_path)
     assert proc.returncode == 1
-    assert "Ошибка загрузки конфигурации" in (proc.stdout + proc.stderr)
+    cfg_stdout, cfg_stderr = proc.stdout or "", proc.stderr or ""
+    assert "Ошибка загрузки конфигурации" in (cfg_stdout + cfg_stderr)

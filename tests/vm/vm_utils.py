@@ -133,11 +133,13 @@ class NetworkUtils:
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout
             )
             
             if process.returncode == 0:
-                output = process.stdout
+                output = process.stdout or ""
                 result["success"] = True
                 
                 # Парсим результаты
@@ -186,7 +188,8 @@ class NetworkUtils:
                     )
                     
             else:
-                result["error"] = f"Ping failed: {process.stderr}"
+                stderr_output = process.stderr or ""
+                result["error"] = f"Ping failed: {stderr_output}"
                 
         except subprocess.TimeoutExpired:
             result["error"] = f"Ping timeout after {timeout} seconds"
@@ -230,11 +233,13 @@ class NetworkUtils:
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=60
             )
-            
+
             if process.returncode == 0:
-                lines = process.stdout.split('\n')
+                lines = (process.stdout or "").split('\n')
                 for i, line in enumerate(lines):
                     if line.strip() and not line.startswith('Tracing') and not line.startswith('traceroute'):
                         hops.append({
@@ -261,8 +266,15 @@ class ProcessUtils:
             else:
                 cmd = ["pgrep", "-f", process_name]
             
-            process = subprocess.run(cmd, capture_output=True, text=True)
-            return process.returncode == 0 and process_name in process.stdout
+            process = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace"
+            )
+            stdout_output = process.stdout or ""
+            return process.returncode == 0 and process_name in stdout_output
             
         except Exception:
             return False
@@ -278,10 +290,16 @@ class ProcessUtils:
             else:
                 cmd = ["ps", "aux"]
             
-            process = subprocess.run(cmd, capture_output=True, text=True)
-            
+            process = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace"
+            )
+
             if process.returncode == 0:
-                lines = process.stdout.split('\n')
+                lines = (process.stdout or "").split('\n')
                 for line in lines:
                     if process_name in line:
                         processes.append({
@@ -478,7 +496,14 @@ class TestEnvironment:
         
         for tool in required_tools:
             try:
-                subprocess.run([tool], capture_output=True, timeout=5)
+                subprocess.run(
+                    [tool],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5
+                )
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 return False
         

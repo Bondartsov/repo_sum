@@ -32,8 +32,15 @@ def test_e2e_cli_analyze_incremental_skip(monkeypatch, tmp_path):
         "p=sys.argv[1];"
         "print(hashlib.sha256(open(p,'rb').read()).hexdigest())"
     )
-    proc = subprocess.run([sys.executable, "-c", helper, str(src)], capture_output=True, text=True, check=True)
-    file_hash = proc.stdout.strip()
+    proc = subprocess.run(
+        [sys.executable, "-c", helper, str(src)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=True,
+    )
+    file_hash = (proc.stdout or "").strip()
 
     # Индекс, соответствующий текущему хешу файла
     idx_dir = repo / ".repo_sum"
@@ -53,8 +60,10 @@ def test_e2e_cli_analyze_incremental_skip(monkeypatch, tmp_path):
     ], env=env)
 
     # E2E критерии: успешное завершение и отсутствие критической ошибки
-    assert run.returncode == 0, f"STDOUT:\n{run.stdout}\nSTDERR:\n{run.stderr}"
-    assert "Критическая ошибка" not in (run.stdout + run.stderr)
+    stdout_output, stderr_output = run.stdout or "", run.stderr or ""
+    assert run.returncode == 0, f"STDOUT:\n{stdout_output}\nSTDERR:\n{stderr_output}"
+    combined_output = stdout_output + stderr_output
+    assert "Критическая ошибка" not in combined_output
     # analyze_repository при отсутствии изменений возвращает success=True и короткую сводку
     # (проверим, что команда не упала и не вернула неизвестную ошибку)
-    assert "Ошибка загрузки конфигурации" not in (run.stdout + run.stderr)
+    assert "Ошибка загрузки конфигурации" not in combined_output

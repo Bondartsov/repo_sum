@@ -111,13 +111,15 @@ if __name__ == "__main__":
             # Запускаем тестовый скрипт с --port 9000
             result = subprocess.run([
                 'python', str(test_script), '--port', '9000'
-            ], capture_output=True, text=True, timeout=10, cwd=str(project_root))
+            ], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10, cwd=str(project_root))
             
             # Проверяем, что процесс завершился корректно
-            assert result.returncode == 0, f"Процесс завершился с кодом {result.returncode}. stderr: {result.stderr}"
-            
+            stderr_output = result.stderr or ""
+            assert result.returncode == 0, f"Процесс завершился с кодом {result.returncode}. stderr: {stderr_output}"
+
             # Проверяем, что в выводе указан порт 9000 (приоритет CLI)
-            assert '9000' in result.stdout, f"Порт 9000 не найден в stdout: {result.stdout}"
+            stdout_output = result.stdout or ""
+            assert '9000' in stdout_output, f"Порт 9000 не найден в stdout: {stdout_output}"
             
         finally:
             # Удаляем временный файл
@@ -175,11 +177,11 @@ def test_t006_missing_required_openai_api_key(clean_env):
             '--config', str(project_root / 'settings-test.json'),
             '--offline',
             'analyze', temp_repo
-        ], capture_output=True, text=True, encoding='utf-8', errors='ignore', timeout=30, cwd=str(project_root), env=clean_env_dict)
-        
+        ], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30, cwd=str(project_root), env=clean_env_dict)
+
         # Проверяем результат
-        error_output = result.stderr.lower()
-        stdout_output = result.stdout.lower()
+        error_output = (result.stderr or "").lower()
+        stdout_output = (result.stdout or "").lower()
         combined_output = error_output + stdout_output
         
         # Ищем различные варианты сообщений об ошибке или успешной работы

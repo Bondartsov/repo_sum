@@ -380,20 +380,23 @@ import tiktoken
             temp_path = self.create_temp_project(temp_dir, requirements_content, python_files)
             
             result = subprocess.run([
-                sys.executable, 
+                sys.executable,
                 str(Path(__file__).parent.parent / "scripts" / "verify_requirements.py")
-            ], 
-            cwd=str(temp_path), 
-            capture_output=True, 
-            text=True
+            ],
+            cwd=str(temp_path),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace"
             )
             
             # Без Python файлов нет импортов, поэтому все пакеты будут "лишние"
             # Теперь extras корректно учитываются, поэтому тест проверяет только успешное завершение
             assert result.returncode in (0, 1)
             # Допускаем как успешное завершение, так и выход с кодом 1, если скрипт сообщает о MISSING
+            stdout_output = result.stdout or ""
             assert (
-                "Requirements look consistent" in result.stdout
-                or "POTENTIALLY EXTRA packages" in result.stdout
-                or "MISSING packages" in result.stdout
+                "Requirements look consistent" in stdout_output
+                or "POTENTIALLY EXTRA packages" in stdout_output
+                or "MISSING packages" in stdout_output
             )

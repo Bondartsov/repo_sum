@@ -169,7 +169,8 @@ def test_cli_clear_cache_integration(monkeypatch, tmp_path):
 
     proc = run_cli(["clear-cache"], env=env)
     assert proc.returncode == 0
-    assert "Очищено" in proc.stdout
+    stdout_output = proc.stdout or ""
+    assert "Очищено" in stdout_output
     # директория cache пуста
     assert not any(cache_dir.glob("*.json"))
 

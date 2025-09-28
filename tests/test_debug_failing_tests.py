@@ -62,7 +62,7 @@ def debug_test_t006_missing_required_openai_api_key():
             result = subprocess.run([
                 'python', str(project_root / 'main.py'),
                 'analyze', temp_repo
-            ], capture_output=True, text=True, timeout=30, cwd=str(project_root), env=clean_env_dict)
+            ], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, cwd=str(project_root), env=clean_env_dict)
 
             # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ РЕЗУЛЬТАТА
             print(f"DEBUG: subprocess returncode: {result.returncode}")
@@ -72,8 +72,8 @@ def debug_test_t006_missing_required_openai_api_key():
             print(f"DEBUG: subprocess stderr type: {type(result.stderr)}")
 
             # Проверяем результат
-            error_output = result.stderr.lower()
-            stdout_output = result.stdout.lower()
+            error_output = (result.stderr or "").lower()
+            stdout_output = (result.stdout or "").lower()
             combined_output = error_output + stdout_output
 
             print(f"DEBUG: combined_output: {repr(combined_output)}")
@@ -147,6 +147,8 @@ def debug_test_cli_stats_outputs_tables():
                 cwd=str(project_root),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30
             )
 
@@ -154,7 +156,7 @@ def debug_test_cli_stats_outputs_tables():
             print(f"DEBUG: stdout: {repr(proc.stdout)}")
             print(f"DEBUG: stderr: {repr(proc.stderr)}")
 
-            out = proc.stdout
+            out = proc.stdout or ""
 
             # Проверяем наличие ожидаемых элементов
             has_general_stats = "Общая статистика" in out
@@ -216,6 +218,8 @@ def debug_test_cli_token_stats_handles_error_gracefully():
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30
         )
 
@@ -223,7 +227,9 @@ def debug_test_cli_token_stats_handles_error_gracefully():
         print(f"DEBUG: stdout: {repr(proc.stdout)}")
         print(f"DEBUG: stderr: {repr(proc.stderr)}")
 
-        combined_output = proc.stdout + proc.stderr
+        stdout_output = proc.stdout or ""
+        stderr_output = proc.stderr or ""
+        combined_output = stdout_output + stderr_output
 
         # Проверяем наличие сообщения об ошибке
         has_error_message = "Ошибка при получении статистики" in combined_output
@@ -278,6 +284,8 @@ def debug_test_cli_subcommands_help():
                 cwd=str(project_root),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30
             )
 
@@ -286,7 +294,12 @@ def debug_test_cli_subcommands_help():
             print(f"DEBUG: stderr: {repr(proc.stderr)}")
 
             # Проверяем наличие help информации
-            has_options = ("Options" in proc.stdout) or ("Опции" in proc.stdout) or ("help" in proc.stdout.lower())
+            stdout_output = proc.stdout or ""
+            has_options = (
+                ("Options" in stdout_output)
+                or ("Опции" in stdout_output)
+                or ("help" in stdout_output.lower())
+            )
 
             print(f"DEBUG: has_options: {has_options}")
 
@@ -340,6 +353,8 @@ def debug_test_cli_settings_validation_error():
                 cwd=str(tmp_path),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30
             )
 
@@ -347,7 +362,9 @@ def debug_test_cli_settings_validation_error():
             print(f"DEBUG: stdout: {repr(proc.stdout)}")
             print(f"DEBUG: stderr: {repr(proc.stderr)}")
 
-            combined_output = proc.stdout + proc.stderr
+            stdout_output = proc.stdout or ""
+            stderr_output = proc.stderr or ""
+            combined_output = stdout_output + stderr_output
 
             # Проверяем наличие сообщения об ошибке
             has_error_message = "Ошибка загрузки конфигурации" in combined_output
@@ -407,6 +424,8 @@ def debug_test_cli_clear_cache_integration():
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30
         )
 
@@ -414,7 +433,9 @@ def debug_test_cli_clear_cache_integration():
         print(f"DEBUG: stdout: {repr(proc.stdout)}")
         print(f"DEBUG: stderr: {repr(proc.stderr)}")
 
-        combined_output = proc.stdout + proc.stderr
+        stdout_output = proc.stdout or ""
+        stderr_output = proc.stderr or ""
+        combined_output = stdout_output + stderr_output
 
         # Проверяем наличие сообщения об очистке
         has_cleared_message = "Очищено" in combined_output

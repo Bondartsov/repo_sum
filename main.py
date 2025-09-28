@@ -8,6 +8,7 @@ import asyncio
 import os
 import logging
 import sys
+import io
 from pathlib import Path
 from typing import List, Tuple
 
@@ -35,10 +36,10 @@ from rag.search_service import SearchService
 from rag.exceptions import VectorStoreException, VectorStoreConnectionError
 
 try:
-    if getattr(sys.stdout, "isatty", lambda: False)():
-        sys.stdout.reconfigure(encoding="utf-8", errors="ignore")
-    if getattr(sys.stderr, "isatty", lambda: False)():
-        sys.stderr.reconfigure(encoding="utf-8", errors="ignore")
+    if hasattr(sys.stdout, "buffer") and sys.stdout.encoding != "utf-8":
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "buffer") and sys.stderr.encoding != "utf-8":
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 except Exception:
     pass
 

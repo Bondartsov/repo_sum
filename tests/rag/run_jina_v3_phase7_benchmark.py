@@ -71,7 +71,14 @@ class Phase7BenchmarkRunner:
             print(f"🏃 Выполняем: {' '.join(cmd)}")
             
             start_time = time.time()
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=Path.cwd())
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=Path.cwd()
+            )
             duration = time.time() - start_time
             
             quality_results.update({
@@ -122,7 +129,14 @@ class Phase7BenchmarkRunner:
             print(f"🏃 Выполняем: {' '.join(cmd)}")
             
             start_time = time.time()
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=Path.cwd())
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=Path.cwd()
+            )
             duration = time.time() - start_time
             
             performance_results.update({
