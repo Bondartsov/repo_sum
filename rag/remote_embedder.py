@@ -312,9 +312,9 @@ class RemoteVMEmbedder:
         try:
             health_info = await self._async_health_check()
             
-            if health_info['status'] == 'healthy':
+            if health_info['status'] == 'ok':
                 self._is_warmed_up = True
-                _log(logger.info, f"VM сервис готов: {health_info.get('actual_embedding_dim', 'N/A')}d векторы")
+                _log(logger.info, f"VM сервис готов: {health_info['components']['embedder'].get('actual_embedding_dim', 'N/A')}d векторы")
             else:
                 _log(logger.warning, f"VM сервис не готов: {health_info.get('error', 'Unknown error')}")
                 
