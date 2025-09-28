@@ -455,9 +455,9 @@ except Exception as e:
         overrides = {
             'RAG_SERVICE_HOST': '0.0.0.0',
             'RAG_SERVICE_PORT': port,
-            'RAG_EMBEDDINGS_ENDPOINT': f'http://127.0.0.1:{port}/embeddings',
-            'RAG_SEARCH_ENDPOINT': f'http://127.0.0.1:{port}/search',
-            'RAG_INDEX_ENDPOINT': f'http://127.0.0.1:{port}/index',
+            'RAG_EMBEDDINGS_ENDPOINT': f'http://{self.vm_host}:{port}/embeddings',
+            'RAG_SEARCH_ENDPOINT': f'http://{self.vm_host}:{port}/search',
+            'RAG_INDEX_ENDPOINT': f'http://{self.vm_host}:{port}/index',
             'QDRANT_HOST': 'localhost',
             'QDRANT_PORT': os.getenv('QDRANT_PORT', '6333'),
             'QDRANT_PREFER_GRPC': 'false',
