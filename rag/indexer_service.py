@@ -606,7 +606,7 @@ class IndexerService:
             }
             
             # Общий статус
-            if vs_health['status'] != 'connected':
+            if vs_health['status'].lower() not in {"connected", "healthy", "ok"}:
                 health_info['status'] = 'degraded'
             
         except Exception as e:
