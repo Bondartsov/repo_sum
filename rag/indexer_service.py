@@ -655,32 +655,32 @@ class IndexerService:
         vs = components.get("vector_store", {})
         if vs:
             # Реализуем правильную логику fallback для получения атрибутов из разных источников
-            def get_qdrant_attribute(attr_name: str, default: str = "-") -> str:
+            def get_qdrant_attribute(attr_name: str, default: str = None) -> str:
                 """Получаем атрибут Qdrant с fallback из разных источников"""
                 # Пробуем получить из конфига векторного хранилища
                 cfg = getattr(self.vector_store, "config", None)
                 if cfg:
                     value = getattr(cfg, attr_name, None)
-                    if value:
+                    if value is not None:
                         return str(value)
 
                 # Пробуем получить из конфига RAG
                 if hasattr(self.config, 'rag') and hasattr(self.config.rag, 'vector_store'):
                     value = getattr(self.config.rag.vector_store, attr_name, None)
-                    if value:
+                    if value is not None:
                         return str(value)
 
                 # Пробуем получить напрямую из векторного хранилища
                 value = getattr(self.vector_store, attr_name, None)
-                if value:
+                if value is not None:
                     return str(value)
 
-                return default
+                return default or "-"
 
             # Получаем атрибуты с правильным fallback
-            host = get_qdrant_attribute('host') or get_qdrant_attribute('service_host')
-            collection = get_qdrant_attribute('collection_name') or get_qdrant_attribute('collection')
-            dim = get_qdrant_attribute('vector_size') or get_qdrant_attribute('dim')
+            host = get_qdrant_attribute('host', '') or get_qdrant_attribute('service_host', '') or '-'
+            collection = get_qdrant_attribute('collection_name', '') or get_qdrant_attribute('collection', '') or '-'
+            dim = get_qdrant_attribute('vector_size', '') or get_qdrant_attribute('dim', '') or '-'
 
             # Формируем строку деталей в требуемом формате
             qdrant_details = f"Хост: {host}, Коллекция: {collection}, Размерность: {dim}"

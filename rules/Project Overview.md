@@ -254,7 +254,7 @@
 ### Контакты и ресурсы:
 - **GitHub репозиторий**: https://github.com/Bondartsov/repo_sum.git
 - **Production Qdrant**: 10.61.11.54:6333
-- **Документация**: README.md, .clinerules/QUICK_START_RAG_ported.md, .clinerules/RAG_architecture.md
+- **Документация**: .rules
 
 ---
 

@@ -315,29 +315,17 @@ python main.py rag index /path/to/repository --recreate
 
 ### Техническая Документация:
 - 🗺️ **[Development Roadmap.md](rules/Development Roadmap.md)** - полная дорожная карта развития
-- 📋 **[.clinerules/](.clinerules/)** - система памяти проекта
+- 📋 **[.rules/](.rules/)** - система памяти проекта
 - 🏗️ **[SETUP.md](SETUP.md)** - детальная инструкция по настройке
 - 🧪 **[AGENTS.md](AGENTS.md)** - правила работы с кодом
 
-### Архитектурная Документация:
-- **RAG Architecture**: `.clinerules/RAG_architecture.md`
-- **VM Migration**: `.clinerules/QUICK_START_RAG_ported.md`
-- **Testing Strategy**: `tests/rag/TESTING_STRATEGY.md`
 
 ---
 
 ## 📚 Консолидированная документация
 
-### 📋 Основная документация проекта:
-- **[📖 Обзор проекта](rules/projectContext.md)** - Общее назначение и функционал системы
-- **[🏗️ Техническая архитектура](rules/technical_architecture.md)** - Детальное описание архитектуры системы
-- **[🗺️ Дорожная карта](rules/roadmap.md)** - Roadmap развития проекта и планы на будущее
-- **[💳 Технический долг](rules/technical_debt.md)** - Список накопленного технического долга и приоритеты
-- **[✅ Активные задачи](rules/active_tasks.md)** - Текущие задачи и статус их выполнения
-- **[👥 Инструкции для агентов](rules/agents.md)** - Правила и инструкции для AI агентов
 
 ### 📋 Документация соответствия:
-- **[📋 Roadmap соответствия](rules/compliance_roadmap.md)** - План обеспечения соответствия стандартам и требованиям
 
 ---
 
