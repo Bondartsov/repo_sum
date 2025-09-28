@@ -24,15 +24,26 @@ from rag.vector_store import QdrantVectorStore
 from rag.embedder import CPUEmbedder
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('migration_jina_v3.log')
-    ]
-)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Удаляем старые хендлеры
+for h in list(logger.handlers):
+    logger.removeHandler(h)
+
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+# Консольный хендлер
+stream_handler = logging.StreamHandler()
+stream_handler.setLevel(logging.INFO)
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
+
+# Файловый хендлер (без закрытия глобальных потоков)
+file_handler = logging.FileHandler('migration_jina_v3.log', encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 
 async def validate_jina_v3_config():

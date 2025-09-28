@@ -65,16 +65,17 @@ class SearchService:
             config: Конфигурация системы
             silent_mode: Отключить консольный вывод (для web UI)
         """
-        self.config = config
+        # Унификация: поддержка как Config с секцией rag, так и RagConfig без неё
+        self.config = getattr(config, "rag", config)
         # Use Rich console without emojis to avoid Windows charmap issues
         self.console = Console(emoji=False) if not silent_mode else None
         self.silent_mode = silent_mode
         
         # Инициализация компонентов
         self.embedder = CPUEmbedder(
-            config.rag.embeddings,
-            config.rag.parallelism,
-            config.rag.remote_service
+            self.config.embeddings,
+            self.config.parallelism,
+            self.config.remote_service
         )
         import os as _os
         env_true = {'1', 'true', 'yes', 'on'}
@@ -83,7 +84,7 @@ class SearchService:
         if use_mock_vs:
             try:
                 from .memory_vector_store import InMemoryVectorStore
-                self.vector_store = InMemoryVectorStore(config.rag.vector_store, config.rag.remote_service)
+                self.vector_store = InMemoryVectorStore(self.config.vector_store, self.config.remote_service)
             except Exception as error:
                 logger.warning(f'Не удалось инициализировать InMemoryVectorStore: {error}')
                 self.vector_store = None
@@ -93,20 +94,20 @@ class SearchService:
         if self.vector_store is None:
             try:
                 self.vector_store = QdrantVectorStore(
-                    config.rag.vector_store,
-                    config.rag.remote_service
+                    self.config.vector_store,
+                    self.config.remote_service
                 )
             except TypeError:
                 # Local QdrantVectorStore expects only one argument
                 self.vector_store = QdrantVectorStore(
-                    config.rag.vector_store
+                    self.config.vector_store
                 )
         
         # Thread-safe кэш запросов с блокировками
         self._query_cache = {}
         self._cache_lock = threading.RLock()  # RLock для поддержки вложенных вызовов
-        self._cache_max_size = config.rag.query_engine.cache_max_entries
-        self._cache_ttl = config.rag.query_engine.cache_ttl_seconds
+        self._cache_max_size = self.config.query_engine.cache_max_entries
+        self._cache_ttl = self.config.query_engine.cache_ttl_seconds
         
         # Thread-safe статистика поиска с блокировкой
         self._stats_lock = threading.RLock()
@@ -179,7 +180,7 @@ class SearchService:
             
             # Генерируем эмбеддинг для запроса с задачей retrieval.query (Jina v3)
             embed_start = time.time()
-            query_task = task or getattr(self.config.rag.embeddings, 'task_query', 'retrieval.query')
+            query_task = task or getattr(self.config.embeddings, 'task_query', 'retrieval.query')
             query_embeddings = await asyncio.to_thread(
                 self.embedder.embed_texts,
                 [query],
@@ -206,11 +207,11 @@ class SearchService:
             # Выполняем поиск в векторном хранилище
             search_start = time.time()
             sparse_vector = None
-            if self.config.rag.query_engine.use_hybrid:
+            if self.config.query_engine.use_hybrid:
                 try:
                     from .sparse_encoder import SparseEncoder
                     from config import get_config
-                    cfg = get_config().rag.sparse
+                    cfg = get_config().sparse
                     encoder = SparseEncoder(method=cfg.method)
                     sparse_vector = encoder.encode([query])[0]
                 except Exception as e:
@@ -218,7 +219,7 @@ class SearchService:
             hybrid_enabled = (
                 use_hybrid
                 if use_hybrid is not None
-                else self.config.rag.query_engine.use_hybrid
+                else self.config.query_engine.use_hybrid
             )
 
             raw_results = await asyncio.to_thread(
@@ -234,13 +235,13 @@ class SearchService:
             logger.debug(f"Поиск выполнен за {search_time:.3f}s, найдено {len(raw_results)} результатов")
             
             # Обрабатываем и фильтруем результаты
-            effective_min_score = min_score if min_score is not None else self.config.rag.query_engine.score_threshold
+            effective_min_score = min_score if min_score is not None else self.config.query_engine.score_threshold
             processed_results = self._process_search_results(
                 raw_results, effective_min_score
             )
             
             # Применяем MMR если включено
-            if self.config.rag.query_engine.mmr_enabled and len(processed_results) > top_k:
+            if self.config.query_engine.mmr_enabled and len(processed_results) > top_k:
                 processed_results = self._apply_mmr_ranking(
                     processed_results, query_vector, top_k
                 )
@@ -351,7 +352,7 @@ class SearchService:
         if len(results) <= top_k:
             return results
         
-        lambda_param = self.config.rag.query_engine.mmr_lambda
+        lambda_param = self.config.query_engine.mmr_lambda
         selected = []
         remaining = results.copy()
         
@@ -598,7 +599,7 @@ class SearchService:
             stats['cache_max_size'] = self._cache_max_size
         
         # Добавляем порог релевантности из конфигурации
-        stats['score_threshold'] = self.config.rag.query_engine.score_threshold
+        stats['score_threshold'] = self.config.query_engine.score_threshold
         
         return stats
     

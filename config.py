@@ -298,12 +298,12 @@ class RagConfig:
 @dataclass
 class Config:
     """Основной класс конфигурации"""
-    openai: OpenAIConfig
-    token_management: TokenManagementConfig
-    analysis: AnalysisConfig
-    file_scanner: FileScannerConfig
-    output: OutputConfig
-    prompts: PromptsConfig
+    openai: OpenAIConfig = field(default_factory=OpenAIConfig)
+    token_management: TokenManagementConfig = field(default_factory=TokenManagementConfig)
+    analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
+    file_scanner: FileScannerConfig = field(default_factory=FileScannerConfig)
+    output: OutputConfig = field(default_factory=OutputConfig)
+    prompts: PromptsConfig = field(default_factory=PromptsConfig)
     rag: RagConfig = field(default_factory=RagConfig)
 
     @classmethod

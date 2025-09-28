@@ -17,11 +17,15 @@ from utils import FileInfo, ParsedFile, ParsedElement
 class TestChunkingSystem:
     """Тесты системы чанкинга кода"""
     
-    def create_temp_python_file(self, content: str) -> str:
+    def create_temp_python_file(self, content: str, tmp_path=None) -> str:
         """Создаёт временный Python файл с заданным содержимым"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
-            f.write(content)
-            return f.name
+        if tmp_path is None:
+            import pathlib, uuid
+            tmp_path = pathlib.Path("tests") / "tmp"
+            tmp_path.mkdir(exist_ok=True)
+        file_path = tmp_path / f"temp_{uuid.uuid4().hex}.py"
+        file_path.write_text(content, encoding="utf-8")
+        return str(file_path)
     
     def cleanup_temp_file(self, filepath: str):
         """Удаляет временный файл"""

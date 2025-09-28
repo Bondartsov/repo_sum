@@ -27,15 +27,26 @@ from rich.panel import Panel
 from rich.table import Table
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('vm_setup.log'),
-        logging.StreamHandler()
-    ]
-)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Удаляем старые хендлеры, чтобы избежать дублирования
+for h in list(logger.handlers):
+    logger.removeHandler(h)
+
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+# Консольный хендлер
+stream_handler = logging.StreamHandler()
+stream_handler.setLevel(logging.INFO)
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
+
+# Файловый хендлер (без закрытия глобальных потоков)
+file_handler = logging.FileHandler('vm_setup.log', encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 class VMSetupManager:
     """Управление автоматической настройкой VM"""

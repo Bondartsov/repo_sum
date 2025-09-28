@@ -55,7 +55,20 @@ class MockRemoteEmbedder:
         task: Optional[str] = None,
         deadline_ms: int = 30000,
     ) -> np.ndarray:
-        return self.embed_texts(texts, task=task, deadline_ms=deadline_ms)
+        """Асинхронная версия эмбеддинга текстов"""
+        if not texts:
+            return np.zeros((0, self.truncate_dim), dtype=np.float32)
+
+        self.stats["total_requests"] += 1
+        self.stats["total_texts"] += len(texts)
+
+        # Создаем векторы для каждого текста
+        vectors = []
+        for text in texts:
+            vector = self._create_vector(text)
+            vectors.append(vector)
+
+        return np.array(vectors, dtype=np.float32)
 
     def _create_vector(self, text: str) -> np.ndarray:
         rng = np.random.default_rng(abs(hash(text)) % (2**32))

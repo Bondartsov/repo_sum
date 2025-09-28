@@ -999,25 +999,74 @@ def main():
             # Поисковый интерфейс
             query = st.text_input(
                 "Введите запрос для поиска по коду",
-                placeholder="например: authentication middleware, database connection, error handling"
+                placeholder="например: authentication middleware, database connection, error handling",
+                key="query"
             )
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                top_k = st.slider("Количество результатов", 1, 20, 10)
+                top_k = st.slider("Количество результатов", min_value=1, max_value=20, value=10, step=1, key="top_k")
             with col2:
                 lang_filter = st.selectbox(
                     "Язык",
-                    ["все", "python", "javascript", "typescript", "cpp", "csharp", "java", "go", "rust"]
+                    ["python", "javascript", "csharp", "cpp"],
+                    key="lang_filter"
                 )
             with col3:
-                chunk_type = st.selectbox(
-                    "Тип",
-                    ["все", "function", "class", "imports", "other"]
+                chunk_type_filter = st.selectbox(
+                    "Тип чанка",
+                    ["function", "class", "module"],
+                    key="chunk_type"
                 )
             
             # Кнопка поиска
-            if st.button("🔍 Поиск", type="primary", disabled=not search_service or not query.strip()):
+            search_button = st.button("Поиск", key="search_button")
+            if search_button and not query.strip():
+                st.warning("⚠️ Введите поисковый запрос")
+            elif search_button and not search_service:
+                st.error("❌ RAG система недоступна")
+            elif search_button:
+                try:
+                    with st.spinner("Выполнение семантического поиска..."):
+                        # Подготовка параметров поиска
+                        language_filter = lang_filter
+                        chunk_type_filter = chunk_type_filter
+                        
+                        # Выполнение поиска
+                        results = run_async(search_service.search(
+                            query=query,
+                            top_k=top_k,
+                            language_filter=language_filter,
+                            chunk_type_filter=chunk_type_filter,
+                            min_score=0.5
+                        ))
+                        
+                        # Отображение результатов
+                        if results:
+                            st.success(f"🎯 Найдено {len(results)} результатов")
+                            
+                            # Форматирование результатов для отображения
+                            formatted_results = format_search_results_for_display(results)
+                            
+                            for result in formatted_results:
+                                with st.expander(f"{result['title']} - {result['subtitle']}", expanded=False):
+                                    st.caption(result['metadata'])
+                                    
+                                    # Отображение кода с подсветкой синтаксиса
+                                    st.code(
+                                        result['content'],
+                                        language=result['language'],
+                                        line_numbers=True
+                                    )
+                                    
+                                    # Дополнительная информация
+                                    st.caption(f"📍 Строки: {result['start_line']}-{result['original_result'].end_line}")
+                        else:
+                            st.info("🔍 Результаты не найдены. Попробуйте изменить запрос или параметры поиска.")
+                            
+                except Exception as e:
+                    st.error(f"❌ Ошибка поиска: {e}")
+                    logger.exception("Ошибка выполнения семантического поиска")
                 if not query.strip():
                     st.warning("⚠️ Введите поисковый запрос")
                 elif not search_service:

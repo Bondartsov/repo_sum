@@ -15,15 +15,12 @@ from unittest.mock import patch
 
 
 @pytest.fixture
-def temp_env_file():
+def temp_env_file(tmp_path):
     """Создает временный .env файл для тестов"""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.env', delete=False) as f:
-        yield f.name
-    # Cleanup
-    try:
-        os.unlink(f.name)
-    except OSError:
-        pass
+    env_file = tmp_path / "test.env"
+    yield str(env_file)
+    if env_file.exists():
+        env_file.unlink()
 
 
 @pytest.fixture
