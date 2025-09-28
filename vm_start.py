@@ -453,7 +453,7 @@ except Exception as e:
             port = os.getenv('RAG_SERVICE_PORT', '8000')
 
         overrides = {
-            'RAG_SERVICE_HOST': '127.0.0.1',
+            'RAG_SERVICE_HOST': '0.0.0.0',
             'RAG_SERVICE_PORT': port,
             'RAG_EMBEDDINGS_ENDPOINT': f'http://127.0.0.1:{port}/embeddings',
             'RAG_SEARCH_ENDPOINT': f'http://127.0.0.1:{port}/search',
