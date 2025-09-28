@@ -63,3 +63,11 @@ class MockRemoteEmbedder:
 
     def close(self) -> None:
         return None
+
+    def health_check(self) -> bool:
+        """Проверка доступности mock-эмбеддера (всегда True в offline-режиме)."""
+        return True
+
+    def warmup(self) -> bool:
+        """Прогревочный метод для совместимости с RemoteVMEmbedder (всегда True)."""
+        return True

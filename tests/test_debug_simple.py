@@ -30,18 +30,18 @@ def check_env_file():
                     print(f"✅ Успешно декодирован как {encoding}")
                     if 'OPENAI_API_KEY' in decoded:
                         print("✅ Найден OPENAI_API_KEY в .env файле!")
-                        return True
+                        assert True
                     print("❌ OPENAI_API_KEY НЕ найден в .env файле")
-                    return False
+                    assert False
                 except UnicodeDecodeError:
                     print(f"❌ Не удалось декодировать как {encoding}")
                     continue
 
             print("❌ Не удалось декодировать .env файл ни в одной кодировке")
-            return False
+            assert False
         except Exception as exc:
             print(f"❌ Ошибка чтения .env файла: {exc}")
-            return False
+        assert False
     else:
         print("❌ .env файл НЕ найден")
         return False
@@ -193,7 +193,7 @@ def main():
         return False
 
     print("\n✅ Все базовые проверки прошли!")
-    return True
+    assert True
 
 if __name__ == "__main__":
     success = main()

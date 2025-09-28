@@ -265,10 +265,11 @@ class IndexerService:
                 except Exception as e:
                     logger.error(f"Ошибка обработки файла {file_info.path}: {e}")
                     self.stats['failed_files'] += 1
+                    from datetime import datetime, timezone
                     self.stats['errors'].append({
                         'file': file_info.path,
                         'error': str(e),
-                        'timestamp': datetime.utcnow().isoformat()
+                        'timestamp': datetime.now(timezone.utc).isoformat()
                     })
                 
                 progress.advance(task)
@@ -296,10 +297,11 @@ class IndexerService:
             except Exception as e:
                 logger.error(f"Ошибка обработки файла {file_info.path}: {e}")
                 self.stats['failed_files'] += 1
+                from datetime import datetime, timezone
                 self.stats['errors'].append({
                     'file': file_info.path,
                     'error': str(e),
-                    'timestamp': datetime.utcnow().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 })
         
         self.stats['total_chunks'] = len(all_chunks)
@@ -342,6 +344,7 @@ class IndexerService:
             relative_path = Path(file_info.path).relative_to(repo_path)
             
             for chunk in chunks:
+                from datetime import datetime, timezone
                 metadata = {
                     'file_path': str(relative_path),
                     'file_name': file_info.name,
@@ -352,7 +355,7 @@ class IndexerService:
                     'end_line': chunk.end_line,
                     'tokens_estimate': chunk.tokens_estimate,
                     'file_size': file_info.size,
-                    'indexed_at': datetime.utcnow().isoformat(),
+                    'indexed_at': datetime.now(timezone.utc).isoformat(),
                     'repository': repo_path.name
                 }
                 
@@ -517,7 +520,8 @@ class IndexerService:
             for j, doc in enumerate(batch_docs):
                 point_id = str(doc.get('id') or uuid.uuid4())
                 metadata = dict(doc.get('metadata') or {})
-                ts = doc.get('timestamp') or datetime.utcnow().isoformat()
+                from datetime import datetime, timezone
+                ts = doc.get('timestamp') or datetime.now(timezone.utc).isoformat()
 
                 vec = embeddings[j]
                 vec = vec.tolist() if hasattr(vec, 'tolist') else vec
@@ -557,11 +561,12 @@ class IndexerService:
         vector_store_stats = self.vector_store.get_stats()
         
         # Объединяем со статистикой индексации
+        from datetime import datetime, timezone
         combined_stats = {
             'indexer': self.stats.copy(),
             'embedder': embedder_stats,
             'vector_store': vector_store_stats,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
         
         return combined_stats
@@ -573,8 +578,9 @@ class IndexerService:
         Returns:
             Информация о состоянии системы
         """
+        from datetime import datetime, timezone
         health_info = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'status': 'healthy',
             'components': {}
         }
@@ -635,4 +641,3 @@ class IndexerService:
             logger.info("IndexerService закрыт")
         except Exception as e:
             logger.error(f"Ошибка закрытия IndexerService: {e}")
-

@@ -105,11 +105,11 @@ def test_remote_embedder():
         
         print("✅ RemoteVMEmbedder sync методы работают без coroutine warnings")
         print("   (сетевые ошибки выше ожидаемы - VM не запущен во время тестов)")
-        return True
+        assert True
         
     except Exception as e:
         print(f"❌ RemoteVMEmbedder тест не пройден: {e}")
-        return False
+        assert False
 
 
 def test_remote_vector_store():
@@ -156,11 +156,11 @@ def test_remote_vector_store():
         
         print("✅ RemoteVMVectorStore sync методы работают без coroutine warnings")
         print("   (сетевые ошибки выше ожидаемы - VM не запущен во время тестов)")
-        return True
+        assert True
         
     except Exception as e:
         print(f"❌ RemoteVMVectorStore тест не пройден: {e}")
-        return False
+        assert False
 
 
 def test_backwards_compatibility():
@@ -180,11 +180,11 @@ def test_backwards_compatibility():
         vector_store = QdrantVectorStore()
         
         print("✅ Обратная совместимость алиасов работает")
-        return True
+        assert True
         
     except Exception as e:
         print(f"❌ Обратная совместимость не пройдена: {e}")
-        return False
+        assert False
 
 
 def main():

@@ -127,7 +127,8 @@ class RepositoryAnalyzer:
         # Обновляем индекс для успешно обработанных файлов
         try:
             index = read_index(index_path)
-            now = __import__('datetime').datetime.utcnow().isoformat()
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).isoformat()
             for parsed_file, _ in analyzed_files:
                 try:
                     h = compute_file_hash(parsed_file.file_info.path)
@@ -367,6 +368,20 @@ def cli(ctx, config, verbose, quiet, offline):
         os.environ.setdefault("PYTHONUTF8", "1")
         ctx.obj["offline"] = True
    
+    # Fail-fast проверка переменных окружения
+    try:
+        offline_mode = ctx.obj.get("offline", False)
+        if not offline_mode:
+            api_key = os.getenv("OPENAI_API_KEY", "")
+            if not api_key or not api_key.startswith("sk-"):
+                console = Console(emoji=False)
+                console.print("[bold red]Ошибка: отсутствует обязательная переменная OPENAI_API_KEY[/bold red]")
+                sys.exit(1)
+    except Exception as e:
+        console = Console(emoji=False)
+        console.print(f"[bold red]Ошибка проверки окружения: {e}[/bold red]")
+        sys.exit(1)
+
     # Загружаем конфигурацию
     try:
         if config != 'settings.json':

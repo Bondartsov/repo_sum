@@ -344,7 +344,8 @@ class CPUQueryEngine:
                 total_time = time.time() - start_time
                 self.stats.total_queries += 1
                 self.stats.update_latency(total_time)
-                self.stats.last_query_time = datetime.utcnow().isoformat()
+                from datetime import datetime, timezone
+                self.stats.last_query_time = datetime.now(timezone.utc).isoformat()
 
                 logger.info(
                     f"[{request_id}] Поиск завершён: {len(output_results)} результатов за {total_time:.3f}s"

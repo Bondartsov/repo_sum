@@ -252,10 +252,11 @@ class SearchService:
             
             # Thread-safe обновление статистики
             total_time = time.time() - start_time
+            from datetime import datetime, timezone
             self._update_stats_safely(
                 total_queries_incr=1,
                 total_search_time_incr=total_time,
-                last_query_time=datetime.utcnow().isoformat()
+                last_query_time=datetime.now(timezone.utc).isoformat()
             )
             
             logger.info(
