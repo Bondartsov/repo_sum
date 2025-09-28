@@ -18,6 +18,7 @@ import numpy as np
 
 from rich.progress import Progress, TaskID, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 from rich.console import Console
+from rich.table import Table
 
 from config import Config
 from file_scanner import FileScanner
@@ -615,6 +616,63 @@ class IndexerService:
             logger.error(f"Health check failed: {e}")
         
         return health_info
+
+    def print_health_status(self, health_info: Dict[str, Any]) -> None:
+        """Выводит таблицу статусов компонентов в консоль."""
+        if not self.console:
+            return
+
+        status_colors = {
+            "green": {"ok", "healthy", "connected"},
+            "yellow": {"degraded", "warming", "initializing"},
+            "red": {"error", "failed", "unavailable"},
+        }
+
+        def colorize(status: str) -> str:
+            s = (status or "unknown").lower()
+            for color, states in status_colors.items():
+                if s in states:
+                    return f"[{color}]{s}[/{color}]"
+            return f"[white]{s}[/white]"
+
+        table = Table(title="Состояние компонентов", show_header=True, header_style="bold magenta")
+        table.add_column("Компонент", style="bold")
+        table.add_column("Статус")
+        table.add_column("Детали")
+
+        components = health_info.get("components", {})
+
+        # Vector Store (Qdrant)
+        vs = components.get("vector_store", {})
+        if vs:
+            details = []
+            cfg = getattr(self.vector_store, "config", None)
+            if cfg:
+                host = getattr(cfg, "host", None) or getattr(cfg, "service_host", None)
+                collection = getattr(cfg, "collection_name", None)
+                dim = getattr(cfg, "vector_size", None)
+                if host:
+                    details.append(f"Хост: {host}")
+                if collection:
+                    details.append(f"Коллекция: {collection}")
+                if dim:
+                    details.append(f"Размерность: {dim}")
+            table.add_row("Qdrant Vector Store", colorize(vs.get("status")), ", ".join(details) or "-")
+
+        # Embedder
+        emb = components.get("embedder", {})
+        if emb:
+            details = []
+            if emb.get("provider"):
+                details.append(f"Провайдер: {emb['provider']}")
+            if emb.get("model"):
+                details.append(f"Модель: {emb['model']}")
+            stats = emb.get("stats", {})
+            if stats.get("embedding_dim"):
+                details.append(f"Размерность: {stats['embedding_dim']}")
+            table.add_row("Embedder", colorize(emb.get("status")), ", ".join(details) or "-")
+
+        self.console.print(table)
     
     def reset_stats(self) -> None:
         """Сбрасывает статистику индексации"""
