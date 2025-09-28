@@ -314,7 +314,7 @@ async def search_documents(request: SearchRequest):
         
         # Выполняем поиск через SearchService
         results = await services['search_service'].search(
-            query_text=request.query,
+            query=request.query,
             top_k=request.top_k,
             filters=request.filters,
             use_hybrid=request.use_hybrid,

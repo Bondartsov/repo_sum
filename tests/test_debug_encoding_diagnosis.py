@@ -91,6 +91,8 @@ def diagnose_subprocess_encoding():
                 [sys.executable, str(main_py), 'stats', str(repo_path)],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 timeout=10
             )
 
@@ -124,6 +126,7 @@ def diagnose_subprocess_encoding():
                 capture_output=True,
                 text=True,
                 encoding='utf-8',
+                errors='replace',
                 timeout=10
             )
 

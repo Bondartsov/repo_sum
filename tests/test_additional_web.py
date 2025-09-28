@@ -99,6 +99,8 @@ def web_server_process(port=None, timeout=30):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             cwd=Path(__file__).parent.parent,  # Корень проекта
             env=dict(os.environ, PYTHONIOENCODING='utf-8')  # Исправляем кодировку для Windows
         )
@@ -187,6 +189,8 @@ class TestAdditionalWeb:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 cwd=Path(__file__).parent.parent,  # Корень проекта
                 env=test_env
             )
@@ -195,7 +199,9 @@ class TestAdditionalWeb:
                 # Ждем завершения процесса с таймаутом
                 stdout, stderr = process.communicate(timeout=30)
                 return_code = process.returncode
-                output = stdout + stderr
+                stdout_output = stdout or ""
+                stderr_output = stderr or ""
+                output = stdout_output + stderr_output
                 
                 # Основная проверка - процесс должен либо:
                 # 1) Завершиться с ненулевым кодом (любая ошибка)
@@ -255,6 +261,8 @@ class TestAdditionalWeb:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 cwd=Path(__file__).parent.parent,
                 env=dict(os.environ, PYTHONIOENCODING='utf-8')
             )
@@ -265,7 +273,8 @@ class TestAdditionalWeb:
             if process.poll() is not None:
                 # Процесс завершился - проверим почему
                 stdout, stderr = process.communicate()
-                pytest.skip(f"Веб-сервер не смог запуститься: {stderr}")
+                stderr_output = stderr or ""
+                pytest.skip(f"Веб-сервер не смог запуститься: {stderr_output}")
             
             try:
                 # Делаем запрос к основной странице

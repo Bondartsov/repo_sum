@@ -38,9 +38,11 @@ def test_e2e_cli_analyze_generates_docs_without_openai(monkeypatch, tmp_path):
         "--no-incremental",
     ], env=env)
 
-    assert proc.returncode == 0, f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
-    assert "Ошибка загрузки конфигурации" not in (proc.stdout + proc.stderr)
-    assert "Критическая ошибка" not in (proc.stdout + proc.stderr)
+    stdout_output, stderr_output = proc.stdout or "", proc.stderr or ""
+    assert proc.returncode == 0, f"STDOUT:\n{stdout_output}\nSTDERR:\n{stderr_output}"
+    combined_output = stdout_output + stderr_output
+    assert "Ошибка загрузки конфигурации" not in combined_output
+    assert "Критическая ошибка" not in combined_output
 
     summary_root = out_dir / f"SUMMARY_REPORT_{repo.name}"
     index_md = summary_root / "README.md"

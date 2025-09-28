@@ -128,7 +128,11 @@ class SearchService:
         language_filter: Optional[str] = None,
         chunk_type_filter: Optional[str] = None,
         min_score: Optional[float] = None,
-        file_path_filter: Optional[str] = None
+        file_path_filter: Optional[str] = None,
+        *,
+        filters: Optional[Dict[str, Any]] = None,
+        use_hybrid: Optional[bool] = None,
+        task: Optional[str] = None
     ) -> List[SearchResult]:
         """
         Выполняет семантический поиск по коду.
@@ -148,8 +152,21 @@ class SearchService:
         
         try:
             # Проверяем кэш
+            # Расширяем фильтры данными из словаря filters, если он задан
+            extra_filters_for_cache = dict(filters) if isinstance(filters, dict) else None
+            if isinstance(filters, dict) and filters:
+                language_filter = language_filter or filters.get('language')
+                chunk_type_filter = chunk_type_filter or filters.get('chunk_type')
+                file_path_filter = file_path_filter or filters.get('file_path')
+
             cache_key = self._generate_cache_key(
-                query, top_k, language_filter, chunk_type_filter, min_score, file_path_filter
+                query,
+                top_k,
+                language_filter,
+                chunk_type_filter,
+                min_score,
+                file_path_filter,
+                extra_filters=extra_filters_for_cache
             )
             
             cached_result = self._get_from_cache(cache_key)
@@ -162,7 +179,7 @@ class SearchService:
             
             # Генерируем эмбеддинг для запроса с задачей retrieval.query (Jina v3)
             embed_start = time.time()
-            query_task = getattr(self.config.rag.embeddings, 'task_query', 'retrieval.query')
+            query_task = task or getattr(self.config.rag.embeddings, 'task_query', 'retrieval.query')
             query_embeddings = await asyncio.to_thread(
                 self.embedder.embed_texts,
                 [query],
@@ -178,9 +195,13 @@ class SearchService:
             logger.debug(f"Эмбеддинг сгенерирован с task='{query_task}' за {embed_time:.3f}s")
             
             # Строим фильтры для Qdrant
-            filters = self._build_search_filters(
+            structured_filters = self._build_search_filters(
                 language_filter, chunk_type_filter, file_path_filter
             )
+            if isinstance(filters, dict) and filters:
+                merged_filters = dict(structured_filters or {})
+                merged_filters.update(filters)
+                structured_filters = merged_filters
             
             # Выполняем поиск в векторном хранилище
             search_start = time.time()
@@ -194,12 +215,18 @@ class SearchService:
                     sparse_vector = encoder.encode([query])[0]
                 except Exception as e:
                     logger.warning(f"Ошибка генерации sparse-вектора: {e}")
+            hybrid_enabled = (
+                use_hybrid
+                if use_hybrid is not None
+                else self.config.rag.query_engine.use_hybrid
+            )
+
             raw_results = await asyncio.to_thread(
                 self.vector_store.search,
                 query_vector,
                 top_k * 2,  # запросим больше результатов для reranking
-                filters,
-                self.config.rag.query_engine.use_hybrid,
+                structured_filters,
+                hybrid_enabled,
                 sparse_vector
             )
             search_time = time.time() - search_start
@@ -376,18 +403,28 @@ class SearchService:
         language_filter: Optional[str],
         chunk_type_filter: Optional[str],
         min_score: Optional[float],
-        file_path_filter: Optional[str]
+        file_path_filter: Optional[str],
+        extra_filters: Optional[Dict[str, Any]] = None
     ) -> str:
         """Генерирует ключ для кэширования запроса"""
         import hashlib
         
+        extra_filters_part = ""
+        if extra_filters:
+            try:
+                serialized = sorted(extra_filters.items())
+            except Exception:
+                serialized = []
+            extra_filters_part = str(serialized)
+
         key_parts = [
             query,
             str(top_k),
             language_filter or '',
             chunk_type_filter or '',
             str(min_score) if min_score is not None else '',
-            file_path_filter or ''
+            file_path_filter or '',
+            extra_filters_part
         ]
         
         key_string = '|'.join(key_parts)

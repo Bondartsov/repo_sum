@@ -27,6 +27,24 @@ def force_offline_env(monkeypatch):
     monkeypatch.setenv("TRANSFORMERS_OFFLINE", "1")
     yield
 
+@pytest.fixture(autouse=True)
+def ensure_utf8_subprocess(monkeypatch):
+    """Гарантирует корректное декодирование stdout/stderr в subprocess.run."""
+    import subprocess
+
+    original_run = subprocess.run
+
+    def patched_run(*popenargs, **kwargs):
+        if kwargs.get("capture_output"):
+            kwargs.setdefault("text", True)
+        if kwargs.get("text") or kwargs.get("universal_newlines"):
+            kwargs.setdefault("encoding", "utf-8")
+            kwargs.setdefault("errors", "replace")
+        return original_run(*popenargs, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", patched_run)
+    yield
+
 # Здесь можно определить фикстуры для всего проекта
 
 # Автоматический патчинг CPUEmbedder для offline тестов

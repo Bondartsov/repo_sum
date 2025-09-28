@@ -229,6 +229,24 @@ embeddings = self.embedder.embed_texts(texts)  # Синхронный вызов
 **Оценка:** 2 дня, сложность: высокая
 **Приоритет:** P1 (валидация key value proposition)
 
+### **4. Windows CLI encoding & subprocess regressions**
+**Статус:** ✅ РЕШЕНО (октябрь 2025)
+**Влияние:** Массовые падения functional/e2e тестов на Windows из-за `UnicodeDecodeError` и `None` в `stdout`
+**Файлы:** `main.py`, `tests/conftest.py`, `tests/test_debug_failing_tests.py`, `tests/test_new_functional.py`, `tests/vm/test_vm_connectivity.py`
+
+**Проблемы были:**
+- `subprocess.run(..., text=True)` использовал системную `cp1251`, фоновые потоки `_readerthread` падали
+- Проверки делали `proc.stdout + proc.stderr`, получая `TypeError` при `None`
+- Сервер VM ожидал `query`, но передавался `query_text`, что роняло `/search`
+
+**Исправления:**
+- Явное принудительное кодирование stdout/stderr в UTF-8 с `errors='replace'`
+- Патчинг `subprocess.run` в тестах для единой кодировки, защитные геттеры вывода
+- Расширение `SearchService.search()` до поддержки `filters/use_hybrid/task`
+- Принудительная UTF-8 оболочка stdout/stderr в `main.py`
+
+**Результат:** Тесты на Windows больше не падают из-за декодирования; CLI вывод корректно читается, VM `/search` обрабатывает новые параметры.
+
 ---
 
 ## 📚 Документационные несоответствия

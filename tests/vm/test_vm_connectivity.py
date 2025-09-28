@@ -20,6 +20,14 @@ from typing import Dict, Any, Optional, Tuple
 from unittest.mock import patch, MagicMock
 import logging
 
+from tests.network_utils import is_network_available
+
+
+pytestmark = pytest.mark.skipif(
+    not is_network_available(host="10.61.11.54", port=8000),
+    reason="VM недоступна для сетевых тестов"
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -94,14 +102,16 @@ class VMConnectivityTester:
             
             # Выполняем ping
             process = subprocess.run(
-                cmd, 
-                capture_output=True, 
-                text=True, 
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10
             )
-            
+
             if process.returncode == 0:
-                output = process.stdout
+                output = process.stdout or ""
                 result["success"] = True
                 
                 # Парсим вывод для Windows/Linux
@@ -131,7 +141,8 @@ class VMConnectivityTester:
                                 
                 result["packet_loss"] = "0%" if result["success"] else "unknown"
             else:
-                result["error"] = f"Ping failed: {process.stderr}"
+                stderr_output = process.stderr or ""
+                result["error"] = f"Ping failed: {stderr_output}"
                 
         except subprocess.TimeoutExpired:
             result["error"] = "Ping timeout after 10 seconds"

@@ -53,7 +53,7 @@ def _run_cli(args, *, timeout=10):
         capture_output=True,
         text=True,
         encoding='utf-8',
-        errors='ignore',
+        errors='replace',
         timeout=timeout
     )
 
@@ -67,9 +67,10 @@ def test_subprocess_basic():
     except Exception as exc:
         pytest.fail(f"[ERROR] Ошибка subprocess: {exc}")
 
-    print(f"[OK] subprocess работает: {result.stdout.strip()}")
+    stdout_output = result.stdout or ""
+    print(f"[OK] subprocess работает: {stdout_output.strip()}")
     assert result.returncode == 0, 'Команда python --version завершилась с ошибкой'
-    assert result.stdout.strip(), 'Команда python --version не вернула вывод'
+    assert stdout_output.strip(), 'Команда python --version не вернула вывод'
 
 def test_main_py_exists():
     print("\n" + "=" * 50)
@@ -110,7 +111,8 @@ def test_cli_help():
     print(f"stderr: {repr(result.stderr)}")
 
     assert result.returncode == 0, 'Команда --help завершилась с ошибкой'
-    assert 'Options' in result.stdout, 'Вывод --help не содержит блока Options'
+    stdout_output = result.stdout or ""
+    assert 'Options' in stdout_output, 'Вывод --help не содержит блока Options'
     print("[OK] --help работает корректно")
 
 def test_cli_stats():
@@ -136,7 +138,8 @@ def test_cli_stats():
         print(f"stderr: {repr(result.stderr)}")
 
         assert result.returncode == 0, 'Команда stats завершилась с ошибкой'
-        assert 'Общая статистика' in result.stdout, 'Вывод stats не содержит ожидаемого текста'
+        stdout_output = result.stdout or ""
+        assert 'Общая статистика' in stdout_output, 'Вывод stats не содержит ожидаемого текста'
         print("[OK] stats работает корректно")
 
 def main():
