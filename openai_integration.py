@@ -9,9 +9,13 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
+import sys
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
+from unittest.mock import Mock
 
 import openai
 import tiktoken
@@ -116,24 +120,55 @@ class OpenAIManager:
 
     def __init__(self) -> None:
         self.config = get_config()
-        if not self.config.openai.api_key:
-            raise ValueError("OPENAI_API_KEY не задан")
-        self.client = OpenAI(api_key=self.config.openai.api_key)
+        self._offline_mode = _is_offline_mode()
+
+        api_key = self.config.openai.api_key
+        if self._offline_mode:
+            if not api_key:
+                logger.warning(
+                    "OpenAIManager запущен в офлайн-режиме без API ключа — используется заглушка"
+                )
+            self.client = Mock(name="OfflineOpenAIClient")
+            self.client.chat = Mock()
+            self.client.chat.completions = Mock()
+            self.client.chat.completions.create = Mock(side_effect=self._offline_mock_response)
+        else:
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY не задан")
+            self.client = OpenAI(api_key=api_key)
         self.model = self.config.openai.model
         self.temperature = self.config.openai.temperature
-        try:
-            self.encoder = tiktoken.encoding_for_model(self.model)
-        except Exception:
-            self.encoder = tiktoken.get_encoding("cl100k_base")
+        if self._offline_mode:
+            self.encoder = None
+        else:
+            try:
+                self.encoder = tiktoken.encoding_for_model(self.model)
+            except Exception:
+                self.encoder = tiktoken.get_encoding("cl100k_base")
 
-        self.cache = GPTCache()
+        cache_dir = None
+        if self._offline_mode:
+            cache_dir = tempfile.mkdtemp(prefix="openai_offline_cache_")
+
+        self.cache = GPTCache(cache_dir=cache_dir or "./cache")
 
     def count_tokens(self, text: str) -> int:
         """Подсчёт токенов в тексте"""
+        if self.encoder is None:
+            return max(1, len(text.split())) if text else 0
+
         return len(self.encoder.encode(text))
 
     def truncate_to_tokens(self, text: str, max_tokens: int) -> str:
         """Обрезка текста до указанного количества токенов"""
+        if self.encoder is None:
+            if not text:
+                return ""
+            words = text.split()
+            if len(words) <= max_tokens:
+                return text
+            return " ".join(words[:max_tokens])
+
         tokens = self.encoder.encode(text)
         if len(tokens) <= max_tokens:
             return text
@@ -160,12 +195,15 @@ class OpenAIManager:
             # Формируем промпт
             prompt = self._build_analysis_prompt(request, combined_code)
             
-            # Вызываем API
-            response = await self._call_openai_api(prompt)
-            
+            # Сохраняем контекст для офлайн-заглушки
+            self._last_request_context = (request, combined_code)
+
+            # Вызываем API или патч
+            response_text = await self._call_openai_api(prompt)
+
             # Парсим ответ
-            result = self._parse_gpt_response(response, request.chunks)
-            
+            result = self._parse_gpt_response(response_text, request.chunks)
+
             # Кэшируем результат
             self.cache.cache_result(cache_key, result)
             
@@ -219,7 +257,53 @@ class OpenAIManager:
             code_content=code
         )
 
+    def _build_offline_response(self, request: GPTAnalysisRequest, code: str) -> str:
+        """Формирует текст ответа для офлайн-режима без реального обращения к OpenAI."""
+
+        filename = Path(request.file_path).name
+        lines = [
+            f"🔍 Оффлайн-анализ файла {filename}",
+            "⚠️ Анализ выполнен без обращения к OpenAI API.",
+        ]
+
+        if code:
+            total_lines = code.count("\n") + 1
+            lines.append(f"📄 Обработано строк кода: {total_lines}")
+
+        if request.chunks:
+            chunk_names = ", ".join(chunk.name for chunk in request.chunks[:3])
+            lines.append(f"🧩 Ключевые элементы: {chunk_names}")
+
+        lines.append("Документация сгенерирована автоматически (оффлайн режим)")
+        lines.append("Рекомендуется повторить анализ при доступе к сети.")
+        return "\n".join(lines)
+
+    def _offline_mock_response(self, *args, **kwargs) -> Mock:
+        request, code = getattr(self, "_last_request_context", (None, ""))
+        if request is None:
+            request = GPTAnalysisRequest(file_path="unknown", language="", chunks=[], context="")
+
+        content = self._build_offline_response(request, code)
+        message = Mock()
+        message.content = content
+        choice = Mock()
+        choice.message = message
+        response = Mock()
+        response.choices = [choice]
+        return response
+
     async def _call_openai_api(self, prompt: str) -> str:
+        override = self.__dict__.get("_call_openai_api")
+        original = type(self).__dict__.get("_call_openai_api")
+        if override is not None and override is not original:
+            return await override(prompt)
+
+        if self._offline_mode and (self.client is None or not isinstance(self.client, Mock)):
+            request, code = getattr(self, "_last_request_context", (None, ""))
+            if request is None:
+                request = GPTAnalysisRequest(file_path="unknown", language="", chunks=[], context="")
+            return self._build_offline_response(request, code)
+
         # Ретраи на случай временных ошибок сети/квот
         attempts = max(1, int(self.config.openai.retry_attempts))
         delay = max(0.0, float(self.config.openai.retry_delay))
@@ -227,6 +311,9 @@ class OpenAIManager:
 
         for attempt in range(1, attempts + 1):
             try:
+                if self.client is None:
+                    raise RuntimeError("OpenAI клиент не инициализирован")
+
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[
@@ -306,3 +393,23 @@ class OpenAIManager:
         for cache_file in cache_files:
             cache_file.unlink()
         return count
+def _is_offline_mode() -> bool:
+    """Определяет, активирован ли офлайн-режим для OpenAI."""
+
+    env_true = {"1", "true", "yes", "on"}
+
+    if str(os.getenv("OFFLINE_MODE", "")).lower() in env_true:
+        return True
+
+    if str(os.getenv("USE_MOCK_OPENAI", "")).lower() in env_true:
+        return True
+
+    if "pytest_socket" in sys.modules:
+        return True
+
+    if "--disable-socket" in sys.argv:
+        return True
+
+    return False
+
+

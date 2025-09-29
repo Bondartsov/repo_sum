@@ -141,7 +141,7 @@ class EmbeddingConfig:
 - `FileScanner`: только сканирование и фильтрация файлов
 - `CodeChunker`: только логическое чанкирование кода
 - `CPUEmbedder`: только генерация эмбеддингов
-- `OpenAIManager`: только интеграция с OpenAI API
+- `OpenAIManager`: только интеграция с OpenAI API, включая офлайн-заглушку без сетевых вызовов
 
 #### Open-Closed Principle (OCP)
 - Новые парсеры расширяют `BaseParser` без изменения реестра

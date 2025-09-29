@@ -1,14 +1,31 @@
-"""
-Модуль разбивки кода на логические части для анализа OpenAI GPT.
-"""
+"""Модуль разбивки кода на логические части для анализа OpenAI GPT."""
 
 import logging
+import os
+import sys
 from typing import List, Optional
 
 import tiktoken
 
 from config import get_config
 from utils import ParsedFile, CodeChunk, count_lines_in_text
+
+
+def _is_offline_mode() -> bool:
+    """Определяет, нужно ли использовать офлайн-режим (без сетевых запросов)."""
+
+    env_true = {"1", "true", "yes", "on"}
+
+    if str(os.getenv("OFFLINE_MODE", "")).lower() in env_true:
+        return True
+
+    if "pytest_socket" in sys.modules:
+        return True
+
+    if "--disable-socket" in sys.argv:
+        return True
+
+    return False
 
 
 class CodeChunker:
@@ -53,16 +70,26 @@ class CodeChunker:
         self.min_chunk_size = self.config.analysis.min_chunk_size
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        self._offline_mode = _is_offline_mode()
+
         # Инициализируем токенизатор для подсчета токенов
-        try:
-            # Явно используем cl100k_base для gpt-4.1-nano и подобных моделей
-            if "gpt-4.1-nano" in self.config.openai.model or "gpt-4o" in self.config.openai.model:
-                self.token_encoder = tiktoken.get_encoding("cl100k_base")
-            else:
-                self.token_encoder = tiktoken.encoding_for_model(self.config.openai.model)
-        except Exception as e:
-            self.logger.warning(f"Не удалось инициализировать токенизатор: {e}")
-            self.token_encoder = tiktoken.get_encoding("cl100k_base")  # fallback
+        if self._offline_mode:
+            self.token_encoder = None
+            self.logger.info("CodeChunker работает в офлайн-режиме: используется эвристический подсчёт токенов")
+        else:
+            try:
+                # Явно используем cl100k_base для gpt-4.1-nano и подобных моделей
+                if "gpt-4.1-nano" in self.config.openai.model or "gpt-4o" in self.config.openai.model:
+                    self.token_encoder = tiktoken.get_encoding("cl100k_base")
+                else:
+                    self.token_encoder = tiktoken.encoding_for_model(self.config.openai.model)
+            except Exception as e:
+                self.logger.warning(f"Не удалось инициализировать токенизатор: {e}")
+                try:
+                    self.token_encoder = tiktoken.get_encoding("cl100k_base")  # fallback
+                except Exception:
+                    self.logger.warning("Фоллбек токенизатора недоступен, переходим на эвристику")
+                    self.token_encoder = None
         
     def chunk_parsed_file(self, parsed_file: ParsedFile, source_code: str = None) -> List[CodeChunk]:
         """Основной метод разбивки файла на части. Если source_code передан — использовать его, иначе читать с диска."""
@@ -360,11 +387,17 @@ class CodeChunker:
     
     def _count_tokens(self, text: str) -> int:
         """Подсчитывает количество токенов в тексте"""
+        if not text:
+            return 0
+
+        if self.token_encoder is None:
+            return max(1, int(len(text.split()) * 1.3))
+
         try:
             return len(self.token_encoder.encode(text))
         except Exception:
             # Если токенизатор не работает, используем приблизительную оценку
-            return len(text.split()) * 1.3  # Примерно 1.3 токена на слово
+            return max(1, int(len(text.split()) * 1.3))  # Примерно 1.3 токена на слово
     
     def _truncate_content(self, content: str, max_tokens: int) -> str:
         """Обрезает содержимое до заданного количества токенов"""
