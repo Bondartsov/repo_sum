@@ -370,7 +370,7 @@ flowchart TD
 ### 🧪 **Тестирование и качество:**
 - **Testing Strategy**: [tests/rag/TESTING_STRATEGY.md](tests/rag/TESTING_STRATEGY.md) - стратегия тестирования RAG компонентов
 - **RAG Tests**: [tests/rag/README.md](tests/rag/README.md) - документация RAG тестов
-- **Agent Rules**: [rules/Agent Guidelines.md](rules/Agent Guidelines.md) - правила работы с кодом проекта
+- **Agent Rules**: [rules/AGENTS.md](rules/AGENTS.md) - правила работы с кодом проекта
 
 ### 📈 **Future Plans:**
 - **Future Plans**: [rules/future_plans.md](rules/future_plans.md) - детальные планы развития

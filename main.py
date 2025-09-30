@@ -30,10 +30,10 @@ from utils import (
     compute_file_hash, read_index, write_index
 )
 
-# RAG система
-from rag.indexer_service import IndexerService
-from rag.search_service import SearchService
-from rag.exceptions import VectorStoreException, VectorStoreConnectionError
+# RAG система - импорты перенесены внутрь функций для предотвращения зависания при --help
+# from rag.indexer_service import IndexerService
+# from rag.search_service import SearchService
+# from rag.exceptions import VectorStoreException, VectorStoreConnectionError
 
 try:
     if hasattr(sys.stdout, "buffer") and sys.stdout.encoding != "utf-8":
@@ -356,42 +356,47 @@ def cli(ctx, config, verbose, quiet, offline):
     else:
         log_level = "INFO"
     
-    setup_logging(log_level)
+    # Проверяем, не вызвана ли справка (--help)
+    # Для справки не требуется полная инициализация
+    is_help = '--help' in sys.argv or '-h' in sys.argv or ctx.invoked_subcommand is None
 
-    if offline:
-        os.environ.setdefault("OFFLINE_MODE", "1")
-        os.environ.setdefault("USE_MOCK_EMBEDDER", "1")
-        os.environ.setdefault("USE_MOCK_VECTOR_STORE", "1")
-        os.environ.setdefault("HF_HUB_OFFLINE", "1")
-        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-        os.environ.setdefault("PYTHONIOENCODING", os.environ.get("PYTHONIOENCODING", "utf-8"))
-        os.environ.setdefault("PYTHONUTF8", "1")
-        ctx.obj["offline"] = True
-   
-    # Fail-fast проверка переменных окружения
-    try:
-        offline_mode = ctx.obj.get("offline", False)
-        if not offline_mode:
-            api_key = os.getenv("OPENAI_API_KEY", "")
-            if not api_key or not api_key.startswith("sk-"):
-                console = Console(emoji=False)
-                console.print("[bold red]Ошибка: отсутствует обязательная переменная OPENAI_API_KEY[/bold red]")
-                sys.exit(1)
-    except Exception as e:
-        console = Console(emoji=False)
-        console.print(f"[bold red]Ошибка проверки окружения: {e}[/bold red]")
-        sys.exit(1)
+    if not is_help:
+        setup_logging(log_level)
 
-    # Загружаем конфигурацию
-    try:
-        if config != 'settings.json':
-            reload_config(config)
-        else:
-            get_config()  # Загружаем стандартную конфигурацию
-    except Exception as e:
-        console = Console(emoji=False)
-        console.print(f"[bold red]Ошибка загрузки конфигурации: {e}[/bold red]")
-        sys.exit(1)
+        if offline:
+            os.environ.setdefault("OFFLINE_MODE", "1")
+            os.environ.setdefault("USE_MOCK_EMBEDDER", "1")
+            os.environ.setdefault("USE_MOCK_VECTOR_STORE", "1")
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+            os.environ.setdefault("PYTHONIOENCODING", os.environ.get("PYTHONIOENCODING", "utf-8"))
+            os.environ.setdefault("PYTHONUTF8", "1")
+            ctx.obj["offline"] = True
+
+        # Fail-fast проверка переменных окружения
+        try:
+            offline_mode = ctx.obj.get("offline", False)
+            if not offline_mode:
+                api_key = os.getenv("OPENAI_API_KEY", "")
+                if not api_key or not api_key.startswith("sk-"):
+                    console = Console(emoji=False)
+                    console.print("[bold red]Ошибка: отсутствует обязательная переменная OPENAI_API_KEY[/bold red]")
+                    sys.exit(1)
+        except Exception as e:
+            console = Console(emoji=False)
+            console.print(f"[bold red]Ошибка проверки окружения: {e}[/bold red]")
+            sys.exit(1)
+
+        # Загружаем конфигурацию
+        try:
+            if config != 'settings.json':
+                reload_config(config)
+            else:
+                get_config()  # Загружаем стандартную конфигурацию
+        except Exception as e:
+            console = Console(emoji=False)
+            console.print(f"[bold red]Ошибка загрузки конфигурации: {e}[/bold red]")
+            sys.exit(1)
 
 
 @cli.command()
@@ -568,8 +573,12 @@ def rag():
 @click.option('--no-progress', is_flag=True, help='Отключить прогресс-бар')
 def index(repo_path, batch_size, recreate, no_progress):
     """Индексация репозитория в векторную БД"""
+    # Локальный импорт для предотвращения зависания при --help
+    from rag.indexer_service import IndexerService
+    from rag.exceptions import VectorStoreConnectionError
+
     console = Console(emoji=False)
-    
+
     try:
         # Получаем конфигурацию с проверкой RAG настроек
         config = get_config()
@@ -648,8 +657,12 @@ def index(repo_path, batch_size, recreate, no_progress):
 @click.option('--max-lines', default=10, help='Максимальное количество строк контента')
 def search(query, top_k, lang, chunk_type, min_score, file_path, no_content, max_lines):
     """Семантический поиск по коду"""
+    # Локальный импорт для предотвращения зависания при --help
+    from rag.search_service import SearchService
+    from rag.exceptions import VectorStoreConnectionError, VectorStoreException
+
     console = Console(emoji=False)
-    
+
     try:
         # Получаем конфигурацию
         config = get_config()
@@ -702,8 +715,12 @@ def search(query, top_k, lang, chunk_type, min_score, file_path, no_content, max
 @click.option('--detailed', is_flag=True, help='Подробная статистика')
 def status(detailed):
     """Статус RAG системы и векторной БД"""
+    # Локальный импорт для предотвращения зависания при --help
+    from rag.indexer_service import IndexerService
+    from rag.search_service import SearchService
+
     console = Console(emoji=False)
-    
+
     try:
         config = get_config()
         

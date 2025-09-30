@@ -49,6 +49,8 @@ class DummyVectorStore:
     ("error", "degraded"),
 ])
 async def test_health_check_statuses(vs_status, expected):
+    # Создаём Config с использованием default factories
+    # Все параметры Config имеют default_factory, поэтому Config() создаст полный объект
     cfg = Config()
     service = IndexerService(cfg, silent_mode=True)
 

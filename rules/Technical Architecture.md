@@ -627,7 +627,7 @@ repo_sum/
 ### 🧪 Тестирование и качество:
 - **Testing Strategy**: [tests/rag/TESTING_STRATEGY.md](tests/rag/TESTING_STRATEGY.md) - стратегия тестирования
 - **RAG Tests**: [tests/rag/README.md](tests/rag/README.md) - документация RAG тестов
-- **Agent Rules**: [rules/Agent Guidelines.md](rules/Agent Guidelines.md) - правила работы с кодом
+- **Agent Rules**: [rules/AGENTS.md](rules/AGENTS.md) - правила работы с кодом
 
 ### 🔧 Техническая реализация:
 - **Main Module**: [main.py](main.py) - основной модуль с CLI
@@ -636,7 +636,7 @@ repo_sum/
 - **Configuration**: [config.py](config.py) - система конфигурации
 
 ### 📊 Статус и прогресс:
-- **Agent Guidelines**: [Agent Guidelines.md](Agent Guidelines.md) - правила работы агентов
+- **AGENTS**: [AGENTS.md](AGENTS.md) - правила работы агентов
 - **Technical Debt**: [Technical Debt.md](Technical Debt.md) - технический долг и решенные проблемы
 
 ---

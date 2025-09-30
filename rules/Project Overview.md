@@ -436,4 +436,4 @@
 - ✅ **[README.md](README.md)** - основная документация с инструкциями
 - ✅ **[Technical Architecture.md](Technical Architecture.md)** - техническая архитектура
 - ✅ **[Technical Debt.md](Technical Debt.md)** - технический долг и решённые проблемы
-- ✅ **[Agent Guidelines.md](Agent Guidelines.md)** - правила работы агентов
+- ✅ **[AGENTS.md](AGENTS.md)** - правила работы агентов

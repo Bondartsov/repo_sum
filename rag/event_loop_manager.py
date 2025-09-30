@@ -31,7 +31,22 @@ def _safe_message(message: str) -> str:
 
 
 def _log(logger_method, message: str, *args, **kwargs):
-    logger_method(_safe_message(message), *args, **kwargs)
+    """
+    Безопасное логирование с проверкой закрытых потоков.
+    Защита от ValueError: I/O operation on closed file.
+    """
+    try:
+        # Проверяем, не закрыты ли потоки у всех handlers
+        logger_instance = logger_method.__self__
+        for handler in logger_instance.handlers:
+            if hasattr(handler, 'stream') and hasattr(handler.stream, 'closed'):
+                if handler.stream.closed:
+                    # Поток закрыт, не логируем
+                    return
+        logger_method(_safe_message(message), *args, **kwargs)
+    except (ValueError, AttributeError, OSError):
+        # Если произошла ошибка логирования (закрытый поток и т.д.), игнорируем
+        pass
 
 
 # -------------------- small helpers --------------------

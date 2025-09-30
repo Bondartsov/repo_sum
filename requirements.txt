@@ -66,6 +66,7 @@ pytest>=8.3.4
 pytest-asyncio>=0.25.0
 hypothesis>=6.125.0
 pytest-benchmark
+pytest-cov
 
 ############################
 # Опциональные ускорители CPU

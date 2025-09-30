@@ -97,6 +97,25 @@ def check_streamlit_installed() -> bool:
         return False
 
 
+def is_port_available(port: int) -> bool:
+    """
+    Проверяет доступность порта.
+
+    Args:
+        port: Номер порта для проверки
+
+    Returns:
+        True если порт свободен, False если занят
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex(('localhost', port))
+            return result != 0  # 0 означает что порт занят
+    except Exception:
+        return False
+
+
 def install_requirements() -> bool:
     requirements_file = Path(__file__).parent / "requirements.txt"
     if not requirements_file.exists():
@@ -128,6 +147,11 @@ def main() -> None:
         print("[FAIL] web_ui.py not found")
         return
 
+    # Проверяем доступность порта перед запуском
+    if not is_port_available(port):
+        print(f"[FAIL] Порт {port} уже занят. Пожалуйста, используйте другой порт или освободите текущий.")
+        sys.exit(1)
+
     show_remote_status()
 
     print("[INFO] Starting Streamlit server...")
@@ -140,6 +164,9 @@ def main() -> None:
         env = os.environ.copy()
         env.setdefault("PYTHONUTF8", "1")
         env.setdefault("PYTHONIOENCODING", "utf-8")
+        # Отключаем интерактивные запросы Streamlit (например, email при первом запуске)
+        env.setdefault("STREAMLIT_BROWSER_GATHER_USAGE_STATS", "false")
+        env.setdefault("STREAMLIT_SERVER_HEADLESS", "true")
 
         subprocess.run([
             sys.executable,

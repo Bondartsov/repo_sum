@@ -16,7 +16,8 @@ def check_env_file():
     print("ПРОВЕРКА .ENV ФАЙЛА")
     print("=" * 50)
 
-    env_file = Path("d:/Scripts_Python/repo_sum/.env")
+    # Используем динамический путь относительно файла теста
+    env_file = Path(__file__).parent.parent / ".env"
     if env_file.exists():
         print(f"[OK] .env файл найден: {env_file}")
         try:
@@ -77,7 +78,8 @@ def test_main_py_exists():
     print("ПРОВЕРКА MAIN.PY")
     print("=" * 50)
 
-    main_py = Path("d:/Scripts_Python/repo_sum/main.py")
+    # Используем динамический путь относительно файла теста
+    main_py = Path(__file__).parent.parent / "main.py"
     if main_py.exists():
         print(f"[OK] main.py найден: {main_py}")
     else:
@@ -99,7 +101,8 @@ def test_cli_help():
     print("ПРОВЕРКА CLI --HELP")
     print("=" * 50)
 
-    main_py = "d:/Scripts_Python/repo_sum/main.py"
+    # Используем динамический путь относительно файла теста
+    main_py = str(Path(__file__).parent.parent / "main.py")
 
     try:
         result = _run_cli(['python', main_py, '--help'])
@@ -120,7 +123,8 @@ def test_cli_stats():
     print("ПРОВЕРКА CLI STATS")
     print("=" * 50)
 
-    main_py = "d:/Scripts_Python/repo_sum/main.py"
+    # Используем динамический путь относительно файла теста
+    main_py = str(Path(__file__).parent.parent / "main.py")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         repo_path = Path(temp_dir)
