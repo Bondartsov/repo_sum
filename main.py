@@ -760,7 +760,8 @@ def status(detailed):
         # Embedder
         embedder_health = health['components'].get('embedder', {})
         embedder_status = embedder_health.get('status', 'unknown')
-        embedder_status_color = "green" if embedder_status == 'healthy' else "yellow"
+        # Единый стандарт: "connected" = зелёный цвет для всех успешных подключений
+        embedder_status_color = "green" if embedder_status in ('connected', 'ok', 'healthy') else "yellow"
         embedder_details = f"Модель: {embedder_health.get('model', 'неизвестно')}, Провайдер: {embedder_health.get('provider', 'неизвестно')}"
         
         components_table.add_row(

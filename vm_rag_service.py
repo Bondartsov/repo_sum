@@ -231,8 +231,9 @@ async def root():
 async def health_check():
     """Проверка состояния сервиса"""
     try:
+        # Единый стандарт: "connected" для всех успешных подключений
         health_info = {
-            "status": "healthy",
+            "status": "connected",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "services": {}
         }
@@ -240,8 +241,9 @@ async def health_check():
         # Проверка эмбеддера
         if 'embedder' in services:
             embedder_stats = services['embedder'].get_stats()
+            # Единый стандарт: "connected" если готов
             health_info['services']['embedder'] = {
-                "status": "ready" if embedder_stats.get('is_warmed_up') else "warming_up",
+                "status": "connected" if embedder_stats.get('is_warmed_up') else "warming_up",
                 "model": embedder_stats.get('model_name'),
                 "provider": embedder_stats.get('provider')
             }

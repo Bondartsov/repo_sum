@@ -266,7 +266,7 @@ class RemoteVMEmbedder:
                     result = await response.json()
                     if "embeddings" in result and len(result["embeddings"]) > 0:
                         actual_dim = len(result["embeddings"][0])
-                        health_info["status"] = "ok"
+                        health_info["status"] = "connected"  # Единый стандарт: "connected"
                         health_info["components"]["embedder"]["actual_embedding_dim"] = actual_dim
                         if actual_dim != self.truncate_dim:
                             health_info["components"]["embedder"]["warning"] = (
@@ -312,7 +312,7 @@ class RemoteVMEmbedder:
         try:
             health_info = await self._async_health_check()
             
-            if health_info['status'] == 'ok':
+            if health_info['status'] in ('connected', 'ok', 'healthy'):
                 self._is_warmed_up = True
                 _log(logger.info, f"VM сервис готов: {health_info['components']['embedder'].get('actual_embedding_dim', 'N/A')}d векторы")
             else:

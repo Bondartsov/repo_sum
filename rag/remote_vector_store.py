@@ -153,7 +153,8 @@ class RemoteVMVectorStore:
         try:
             health_info = await self._async_health_check()
             
-            if health_info['status'] == 'connected':
+            # Проверяем успешный статус (поддерживаем разные варианты для обратной совместимости)
+            if health_info['status'] in ('connected', 'ok', 'healthy'):
                 self._connected = True
                 self._collection_exists = health_info.get('collection_status') == 'exists'
                 
@@ -456,7 +457,7 @@ class RemoteVMVectorStore:
             async with session.get(health_endpoint) as response:
                 if response.status == 200:
                     result = await response.json()
-                    health_info["status"] = "ok"
+                    health_info["status"] = "connected"  # Единый стандарт: "connected" для успешного подключения
                     health_info["components"]["vector_store"]["collection_status"] = result.get("collection_status", "unknown")
                     health_info["components"]["vector_store"]["qdrant_status"] = result.get("qdrant_status", "unknown")
                     health_info["components"]["vector_store"]["vector_count"] = result.get("vector_count", 0)
