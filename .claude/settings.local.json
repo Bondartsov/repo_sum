@@ -7,7 +7,8 @@
       "Bash(python -m pytest tests/test_debug_ascii.py::test_cli_help -v)",
       "Bash(python -m pytest tests/test_debug_ascii.py::test_cli_stats -v)",
       "Bash(timeout:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(claude --version)"
     ],
     "deny": [],
     "ask": []

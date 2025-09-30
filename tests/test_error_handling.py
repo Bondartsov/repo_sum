@@ -8,11 +8,28 @@ from utils import FileInfo
 @pytest.mark.integration
 def test_openai_manager_no_api_key(monkeypatch):
     """
-    Проверяет, что при отсутствии API-ключа OpenAIManager выбрасывает ошибку.
+    Проверяет, что при отсутствии API-ключа OpenAIManager выбрасывает ошибку в online-режиме.
     """
+    from unittest.mock import MagicMock, patch
+    
+    # Удаляем API ключ
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with pytest.raises(ValueError):
-        OpenAIManager()
+    
+    # Создаем mock config с force_online_for_tests=True для принудительного online-режима
+    mock_config = MagicMock()
+    mock_config.openai.api_key = None  # Явно устанавливаем None
+    mock_config.openai.model = "gpt-3.5-turbo"
+    mock_config.openai.temperature = 0.7
+    mock_config.openai.retry_attempts = 3
+    mock_config.openai.retry_delay = 1.0
+    mock_config.openai.force_online_for_tests = True  # КРИТИЧНО: принудительный online-режим
+    mock_config.analysis.sanitize_enabled = False
+    mock_config.prompts.code_analysis_prompt_file = "prompts/code_analysis_prompt.md"
+    
+    # Патчим get_config для возврата нашего mock конфига
+    with patch('openai_integration.get_config', return_value=mock_config):
+        with pytest.raises(ValueError, match="OPENAI_API_KEY не задан"):
+            OpenAIManager()
 
 def test_python_parser_syntax_error(tmp_path):
     """

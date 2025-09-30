@@ -56,6 +56,7 @@ class OpenAIConfig:
     temperature: float = field(default_factory=lambda: safe_float("OPENAI_TEMPERATURE", "0.1"))
     retry_attempts: int = field(default_factory=lambda: safe_int("OPENAI_RETRY_ATTEMPTS", "3"))
     retry_delay: float = field(default_factory=lambda: safe_float("OPENAI_RETRY_DELAY", "1.0"))
+    force_online_for_tests: bool = field(default_factory=lambda: safe_bool("FORCE_OPENAI_ONLINE_FOR_TESTS", "false"))
 
     @property
     def api_key(self) -> Optional[str]:

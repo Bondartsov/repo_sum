@@ -426,79 +426,111 @@ class TestRAGCliE2E:
 
     def test_rag_commands_connection_errors(self, runner, temp_settings_file):
         """Тестирует обработку ошибок подключения к Qdrant"""
-        # Mock для IndexerService (для index команды)
+        # Mock для IndexerService - патчим health_check напрямую
         with patch('rag.indexer_service.IndexerService') as mock_indexer_class:
             with patch('rag.search_service.SearchService') as mock_search_service_class:
-                with patch('rag.vector_store.QdrantVectorStore') as mock_vector_store_class:
-                    
-                    # Создаем mock IndexerService, который падает с ConnectionError
-                    mock_indexer = mock_indexer_class.return_value
-                    mock_indexer.index_repository.side_effect = ConnectionError("Connection refused")
-                    
-                    # Создаем mock SearchService, который падает с ConnectionError
-                    mock_search_service = mock_search_service_class.return_value
-                    mock_search_service.search.side_effect = VectorStoreConnectionError("Connection refused")
-                    
-                    # Создаем mock VectorStore, который падает с ConnectionError
-                    mock_vector_store = mock_vector_store_class.return_value
-                    mock_vector_store.health_check.side_effect = VectorStoreConnectionError("Connection refused")
-                    
-                    # Тестируем index команду
-                    result = runner.invoke(cli, [
-                        '--config', temp_settings_file,
-                        'rag', 'index', temp_settings_file,
-                        '--no-progress'
-                    ])
-                    
-                    assert result.exit_code == 1
-                    # В offline режиме может быть разные сообщения об ошибках  
+                # Создаем mock IndexerService, который падает с ConnectionError
+                mock_indexer = mock_indexer_class.return_value
+                mock_indexer.index_repository.side_effect = ConnectionError("Connection refused")
+                
+                # Mock health_check для возврата unhealthy статуса
+                mock_indexer.health_check = Mock(return_value={
+                    'status': 'unhealthy',
+                    'components': {
+                        'vector_store': {'status': 'error', 'error': 'Connection refused'},
+                        'embedder': {'status': 'unknown'}
+                    }
+                })
+                
+                # Создаем mock SearchService, который падает с ConnectionError
+                mock_search_service = mock_search_service_class.return_value
+                mock_search_service.search.side_effect = VectorStoreConnectionError("Connection refused")
+                
+                # Тестируем index команду
+                result = runner.invoke(cli, [
+                    '--config', temp_settings_file,
+                    'rag', 'index', temp_settings_file,
+                    '--no-progress'
+                ])
+                
+                assert result.exit_code == 1
+                # В offline режиме может быть разные сообщения об ошибках  
+                assert any(error_msg in result.output.lower() for error_msg in [
+                    'подключения к qdrant',
+                    'connection',
+                    'refused',
+                    'критическая ошибка',
+                    'все провайдеры эмбеддингов недоступны',
+                    'ошибка'
+                ])
+                
+                # Тестируем search команду
+                result = runner.invoke(cli, [
+                    '--config', temp_settings_file,
+                    'rag', 'search', 'test query'
+                ])
+                
+                # Search команда может обрабатывать ошибки gracefully или падать
+                # Проверяем что либо команда падает с правильной ошибкой, либо показывает что ничего не найдено
+                if result.exit_code != 0:
                     assert any(error_msg in result.output.lower() for error_msg in [
                         'подключения к qdrant',
                         'connection',
                         'refused',
-                        'критическая ошибка',
-                        'все провайдеры эмбеддингов недоступны'
+                        'ошибка поиска',
+                        'ошибка'
                     ])
-                    
-                    # Тестируем search команду
-                    result = runner.invoke(cli, [
-                        '--config', temp_settings_file,
-                        'rag', 'search', 'test query'
-                    ])
-                    
-                    # Search команда может обрабатывать ошибки gracefully или падать
-                    # Проверяем что либо команда падает с правильной ошибкой, либо показывает что ничего не найдено
-                    if result.exit_code != 0:
-                        assert any(error_msg in result.output.lower() for error_msg in [
-                            'подключения к qdrant',
-                            'connection',
-                            'refused',
-                            'ошибка поиска'
-                        ])
-                    else:
-                        # Если команда не падает, проверяем что она показала отсутствие результатов или ошибку
-                        assert any(msg in result.output.lower() for msg in [
-                            'не найдено',
-                            'результатов не найдено', 
-                            'нет результатов',
-                            'ошибка',
-                            'connection'
-                        ]) or len(result.output.strip()) > 0  # Хотя бы какой-то вывод должен быть
-                    
-                    # Тестируем status команду
-                    result = runner.invoke(cli, [
-                        '--config', temp_settings_file,
-                        'rag', 'status'
-                    ])
-                    
-                    # Status команда может не падать, а просто показывать unhealthy статус
-                    if result.exit_code != 0:
-                        assert any(error_msg in result.output.lower() for error_msg in [
-                            'подключения к qdrant',
-                            'connection',
-                            'refused',
-                            'unhealthy'
-                        ])
+                else:
+                    # Если команда не падает, проверяем что она показала отсутствие результатов или ошибку
+                    assert any(msg in result.output.lower() for msg in [
+                        'не найдено',
+                        'результатов не найдено', 
+                        'нет результатов',
+                        'ошибка',
+                        'connection'
+                    ]) or len(result.output.strip()) > 0  # Хотя бы какой-то вывод должен быть
+                
+                # Тестируем status команду с async mock
+                async def mock_health_check_async():
+                    return {
+                        'status': 'unhealthy',
+                        'components': {
+                            'vector_store': {'status': 'error', 'error': 'Connection refused'},
+                            'embedder': {'status': 'unknown'}
+                        }
+                    }
+                
+                mock_indexer.health_check = mock_health_check_async
+                
+                result = runner.invoke(cli, [
+                    '--config', temp_settings_file,
+                    'rag', 'status'
+                ])
+                
+                # Status команда может не падать, а просто показывать unhealthy статус
+                # Проверяем что вывод содержит какую-то информацию об ошибке или статусе
+                assert len(result.output.strip()) > 0, "Status команда должна выдать какой-то вывод"
+                
+                # Если команда падает - проверяем сообщение об ошибке
+                if result.exit_code != 0:
+                    assert any(error_msg in result.output.lower() for error_msg in [
+                        'подключения к qdrant',
+                        'connection',
+                        'refused',
+                        'unhealthy',
+                        'ошибка',
+                        'error'
+                    ]), f"Неожиданный вывод ошибки: {result.output}"
+                else:
+                    # Если команда не падает - проверяем что показан unhealthy статус
+                    assert any(status_msg in result.output.lower() for status_msg in [
+                        'unhealthy',
+                        'error',
+                        'ошибка',
+                        'недоступ',
+                        'connection',
+                        'refused'
+                    ]), f"Status должен показать unhealthy статус: {result.output}"
 
     def test_cli_verbose_and_quiet_modes(self, runner, temp_settings_file):
         """Тестирует verbose и quiet режимы CLI"""

@@ -44,6 +44,7 @@ def mock_config():
     config.openai.max_response_tokens = 1000
     config.openai.retry_attempts = 3
     config.openai.retry_delay = 1.0
+    config.openai.force_online_for_tests = True  # КРИТИЧНО: Принудительный онлайн режим для тестов
     config.analysis.sanitize_enabled = False
     config.prompts.code_analysis_prompt_file = "prompts/code_analysis_prompt.md"
     return config
@@ -168,6 +169,7 @@ class TestOpenAIRateLimit:
         config.openai.max_response_tokens = 1000
         config.openai.retry_attempts = 5  # Больше попыток
         config.openai.retry_delay = 2.0   # Больше задержка
+        config.openai.force_online_for_tests = True  # КРИТИЧНО: Принудительный онлайн режим
         config.analysis.sanitize_enabled = False
         config.prompts.code_analysis_prompt_file = "prompts/code_analysis_prompt.md"
         
@@ -346,6 +348,7 @@ class TestOpenAIConnectionErrors:
         config.openai.max_response_tokens = 1000
         config.openai.retry_attempts = 2
         config.openai.retry_delay = 0.1  # Минимальная задержка
+        config.openai.force_online_for_tests = True  # КРИТИЧНО: Принудительный онлайн режим
         config.analysis.sanitize_enabled = False
         config.prompts.code_analysis_prompt_file = "prompts/code_analysis_prompt.md"
         

@@ -35,6 +35,174 @@ logger = logging.getLogger(__name__)
 # Промпт вынесен в отдельный файл prompts/code_analysis_prompt.md
 
 
+class RetryPolicy:
+    """
+    Политика повторных попыток для сетевых запросов.
+    
+    Инкапсулирует логику retry с экспоненциальными задержками
+    и обработкой специфичных исключений OpenAI.
+    """
+    
+    def __init__(
+        self,
+        attempts: int,
+        delay: float,
+        retryable_exceptions: tuple = (
+            openai.RateLimitError,
+            openai.APIConnectionError,
+            openai.APITimeoutError
+        )
+    ):
+        """
+        Args:
+            attempts: Максимальное количество попыток
+            delay: Задержка между попытками в секундах
+            retryable_exceptions: Кортеж исключений, при которых делаем retry
+        """
+        self.attempts = max(1, attempts)
+        self.delay = max(0.0, delay)
+        self.retryable_exceptions = retryable_exceptions
+    
+    async def execute(self, func, *args, **kwargs):
+        """
+        Выполняет функцию с повторными попытками при сетевых ошибках.
+        
+        Args:
+            func: Асинхронная функция для выполнения
+            *args, **kwargs: Аргументы для передачи в функцию
+            
+        Returns:
+            Результат успешного выполнения функции
+            
+        Raises:
+            Exception: Последнее исключение после исчерпания всех попыток
+        """
+        last_exc = None
+        
+        for attempt in range(1, self.attempts + 1):
+            try:
+                return await func(*args, **kwargs)
+            except self.retryable_exceptions as exc:
+                last_exc = exc
+                logger.warning(
+                    f"Попытка {attempt}/{self.attempts} неудачна: {type(exc).__name__}: {str(exc)}"
+                )
+                if attempt < self.attempts:
+                    await asyncio.sleep(self.delay)
+        
+        # Все попытки исчерпаны - пробрасываем последнее исключение
+        raise last_exc
+
+
+class OpenAITransport:
+    """
+    Реальный транспорт для OpenAI API.
+    
+    Выполняет настоящие HTTP-запросы к OpenAI через официальный SDK.
+    """
+    
+    async def call_api(
+        self,
+        client: OpenAI,
+        model: str,
+        messages: list,
+        temperature: float
+    ) -> str:
+        """
+        Вызывает OpenAI API для генерации текста.
+        
+        Args:
+            client: Клиент OpenAI
+            model: Название модели (например, "gpt-4")
+            messages: Список сообщений для чата
+            temperature: Температура генерации
+            
+        Returns:
+            Сгенерированный текст от модели
+        """
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+        )
+        return response.choices[0].message.content
+
+
+class OfflineTransport:
+    """
+    Оффлайн транспорт - возвращает заглушки без обращения к API.
+    
+    Используется в тестах и при отсутствии сетевого подключения.
+    """
+    
+    def __init__(self):
+        """Инициализация оффлайн транспорта"""
+        self._last_request_context = None
+    
+    def set_context(self, request: GPTAnalysisRequest, code: str):
+        """
+        Сохраняет контекст запроса для формирования оффлайн-ответа.
+        
+        Args:
+            request: Запрос на анализ
+            code: Код для анализа
+        """
+        self._last_request_context = (request, code)
+    
+    async def call_api(self) -> str:
+        """
+        Возвращает оффлайн-заглушку без реального API вызова.
+        
+        Returns:
+            Текст оффлайн-анализа
+        """
+        request, code = self._last_request_context or (None, "")
+        
+        if request is None:
+            request = GPTAnalysisRequest(
+                file_path="unknown",
+                language="",
+                chunks=[],
+                context=""
+            )
+        
+        return self._build_offline_response(request, code)
+    
+    def _build_offline_response(
+        self,
+        request: GPTAnalysisRequest,
+        code: str
+    ) -> str:
+        """
+        Формирует текст ответа для офлайн-режима.
+        
+        Args:
+            request: Запрос на анализ
+            code: Код для анализа
+            
+        Returns:
+            Текст оффлайн-анализа
+        """
+        filename = Path(request.file_path).name
+        lines = [
+            f"🔍 Оффлайн-анализ файла {filename}",
+            "⚠️ Анализ выполнен без обращения к OpenAI API.",
+        ]
+
+        if code:
+            total_lines = code.count("\n") + 1
+            lines.append(f"📄 Обработано строк кода: {total_lines}")
+
+        if request.chunks:
+            chunk_names = ", ".join(chunk.name for chunk in request.chunks[:3])
+            lines.append(f"🧩 Ключевые элементы: {chunk_names}")
+
+        lines.append("Документация сгенерирована автоматически (оффлайн режим)")
+        lines.append("Рекомендуется повторить анализ при доступе к сети.")
+        
+        return "\n".join(lines)
+
+
 def load_prompt_from_file(prompt_file: str) -> str:
     """Загружает промпт из файла"""
     try:
@@ -119,37 +287,64 @@ class OpenAIManager:
         return asyncio.run(self.analyze_code(request))
 
     def __init__(self) -> None:
+        """
+        Инициализирует OpenAIManager с выбором транспорта и retry policy.
+        
+        Выбор транспорта основан на:
+        1. Флаге force_online_for_tests (приоритет для тестов)
+        2. Environment variables (OFFLINE_MODE, USE_MOCK_OPENAI)
+        3. Наличии pytest_socket в sys.modules
+        4. Флаге --disable-socket в sys.argv
+        """
         self.config = get_config()
-        self._offline_mode = _is_offline_mode()
+        
+        # Проверяем offline режим с учетом конфига (флаг force_online_for_tests)
+        self._offline_mode = _is_offline_mode(self.config)
 
-        api_key = self.config.openai.api_key
-        if self._offline_mode:
-            if not api_key:
-                logger.warning(
-                    "OpenAIManager запущен в офлайн-режиме без API ключа — используется заглушка"
-                )
-            self.client = Mock(name="OfflineOpenAIClient")
-            self.client.chat = Mock()
-            self.client.chat.completions = Mock()
-            self.client.chat.completions.create = Mock(side_effect=self._offline_mock_response)
-        else:
-            if not api_key:
-                raise ValueError("OPENAI_API_KEY не задан")
-            self.client = OpenAI(api_key=api_key)
+        # Инициализируем параметры модели
         self.model = self.config.openai.model
         self.temperature = self.config.openai.temperature
+        
+        # Инициализируем API ключ
+        api_key = self.config.openai.api_key
+        
+        # Выбор и инициализация транспорта
         if self._offline_mode:
-            self.encoder = None
+            # Оффлайн транспорт - заглушки без реального API
+            logger.info("[OpenAIManager] Используется OfflineTransport")
+            self.transport = OfflineTransport()
+            self.client = None  # Клиент не нужен для offline
+            self.encoder = None  # Токенизатор не нужен
         else:
+            # Онлайн транспорт - реальные API вызовы
+            logger.info("[OpenAIManager] Используется OpenAITransport")
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY не задан")
+            
+            self.transport = OpenAITransport()
+            self.client = OpenAI(api_key=api_key)
+            
+            # Инициализируем токенизатор
             try:
                 self.encoder = tiktoken.encoding_for_model(self.model)
             except Exception:
                 self.encoder = tiktoken.get_encoding("cl100k_base")
-
+        
+        # Инициализируем RetryPolicy для онлайн-запросов
+        self.retry_policy = RetryPolicy(
+            attempts=self.config.openai.retry_attempts,
+            delay=self.config.openai.retry_delay,
+            retryable_exceptions=(
+                openai.RateLimitError,
+                openai.APIConnectionError,
+                openai.APITimeoutError
+            )
+        )
+        
+        # Инициализируем кэш
         cache_dir = None
         if self._offline_mode:
             cache_dir = tempfile.mkdtemp(prefix="openai_offline_cache_")
-
         self.cache = GPTCache(cache_dir=cache_dir or "./cache")
 
     def count_tokens(self, text: str) -> int:
@@ -293,50 +488,76 @@ class OpenAIManager:
         return response
 
     async def _call_openai_api(self, prompt: str) -> str:
+        """
+        Вызывает OpenAI API через выбранный транспорт с retry policy.
+        
+        Args:
+            prompt: Промпт для отправки в OpenAI
+            
+        Returns:
+            Текст ответа от модели
+            
+        Raises:
+            Exception: При ошибках после исчерпания всех попыток
+        """
+        # Проверка на monkey-patching для тестов (совместимость)
         override = self.__dict__.get("_call_openai_api")
         original = type(self).__dict__.get("_call_openai_api")
         if override is not None and override is not original:
             return await override(prompt)
 
-        if self._offline_mode and (self.client is None or not isinstance(self.client, Mock)):
-            request, code = getattr(self, "_last_request_context", (None, ""))
-            if request is None:
-                request = GPTAnalysisRequest(file_path="unknown", language="", chunks=[], context="")
-            return self._build_offline_response(request, code)
-
-        # Ретраи на случай временных ошибок сети/квот
-        attempts = max(1, int(self.config.openai.retry_attempts))
-        delay = max(0.0, float(self.config.openai.retry_delay))
-        last_exc: Optional[Exception] = None
-
-        for attempt in range(1, attempts + 1):
-            try:
-                if self.client is None:
-                    raise RuntimeError("OpenAI клиент не инициализирован")
-
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "Ты эксперт по анализу кода. Предоставляй краткие и точные описания.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=self.temperature,
-                )
-                return response.choices[0].message.content
-            except Exception as exc:
-                last_exc = exc
-                logger.warning(
-                    "Ошибка вызова OpenAI (попытка %s/%s): %s", attempt, attempts, exc
-                )
-                if attempt < attempts:
-                    await asyncio.sleep(delay)
-
-        # Если все попытки исчерпаны — пробрасываем ошибку выше
-        assert last_exc is not None
-        raise last_exc
+        # Offline режим - используем OfflineTransport
+        if self._offline_mode:
+            if isinstance(self.transport, OfflineTransport):
+                # Устанавливаем контекст для оффлайн-ответа
+                request, code = getattr(self, "_last_request_context", (None, ""))
+                self.transport.set_context(request, code)
+                return await self.transport.call_api()
+            else:
+                # Fallback для совместимости (не должно происходить)
+                request, code = getattr(self, "_last_request_context", (None, ""))
+                if request is None:
+                    request = GPTAnalysisRequest(
+                        file_path="unknown",
+                        language="",
+                        chunks=[],
+                        context=""
+                    )
+                return self._build_offline_response(request, code)
+        
+        # Online режим - используем OpenAITransport через RetryPolicy
+        if self.client is None:
+            raise RuntimeError("OpenAI клиент не инициализирован для онлайн-режима")
+        
+        # Формируем сообщения для API
+        messages = [
+            {
+                "role": "system",
+                "content": "Ты эксперт по анализу кода. Предоставляй краткие и точные описания.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+        
+        # Создаем функцию для вызова с ретраями
+        async def api_call():
+            return await self.transport.call_api(
+                self.client,
+                self.model,
+                messages,
+                self.temperature
+            )
+        
+        # Выполняем с ретраями через RetryPolicy
+        try:
+            return await self.retry_policy.execute(api_call)
+        except Exception as exc:
+            # Логируем итоговую ошибку после всех попыток
+            error_type = type(exc).__name__
+            error_msg = str(exc)
+            logger.error(f"[OpenAI API] Все попытки исчерпаны. {error_type}: {error_msg}")
+            
+            # Пробрасываем исключение наверх для обработки в analyze_code
+            raise
 
     def _parse_gpt_response(self, text: str, chunks: List[CodeChunk]) -> GPTAnalysisResult:
         """
@@ -387,29 +608,75 @@ class OpenAIManager:
         }
 
     def clear_cache(self) -> int:
-        """Очистка кэша OpenAI"""
-        cache_files = list(self.cache.dir.glob("*.json"))
+        """
+        Очистка кэша OpenAI.
+        
+        Всегда очищает реальную директорию ./cache, независимо от того,
+        в каком режиме (online/offline) работает менеджер.
+        
+        Returns:
+            Количество удаленных файлов кэша
+        """
+        # Используем реальную cache директорию, а не self.cache.dir
+        # которая может быть временной в offline режиме
+        real_cache_dir = Path("./cache")
+        
+        # Если директория не существует, создаем её и возвращаем 0
+        if not real_cache_dir.exists():
+            real_cache_dir.mkdir(parents=True, exist_ok=True)
+            return 0
+        
+        # Удаляем все .json файлы из cache директории
+        cache_files = list(real_cache_dir.glob("*.json"))
         count = len(cache_files)
         for cache_file in cache_files:
-            cache_file.unlink()
+            try:
+                cache_file.unlink()
+            except Exception as e:
+                logger.warning(f"Не удалось удалить файл кэша {cache_file}: {e}")
+        
         return count
-def _is_offline_mode() -> bool:
-    """Определяет, активирован ли офлайн-режим для OpenAI."""
+def _is_offline_mode(config: Optional = None) -> bool:
+    """
+    Определяет, активирован ли офлайн-режим для OpenAI.
+    
+    Args:
+        config: Опциональный объект конфигурации. Если передан,
+                проверяется флаг force_online_for_tests.
+    
+    Returns:
+        True если активирован офлайн-режим, False иначе
+    """
+    # Приоритет 1: Явный override для тестов
+    # Если установлен флаг force_online_for_tests, игнорируем все остальные проверки
+    if config is not None:
+        try:
+            if hasattr(config, 'openai') and hasattr(config.openai, 'force_online_for_tests'):
+                if config.openai.force_online_for_tests:
+                    logger.info("[offline] Флаг force_online_for_tests активирован - принудительный онлайн режим")
+                    return False
+        except Exception as e:
+            logger.warning(f"[offline] Ошибка проверки force_online_for_tests: {e}")
 
+    # Приоритет 2: Environment variables
     env_true = {"1", "true", "yes", "on"}
 
     if str(os.getenv("OFFLINE_MODE", "")).lower() in env_true:
+        logger.info("[offline] Обнаружен OFFLINE_MODE - активируем офлайн режим")
         return True
 
     if str(os.getenv("USE_MOCK_OPENAI", "")).lower() in env_true:
+        logger.info("[offline] Обнаружен USE_MOCK_OPENAI - активируем офлайн режим")
         return True
 
+    # Приоритет 3: pytest_socket module (запрет сетевых соединений в тестах)
     if "pytest_socket" in sys.modules:
+        logger.info("[offline] Обнаружен pytest_socket - активируем офлайн режим")
         return True
 
+    # Приоритет 4: --disable-socket флаг
     if "--disable-socket" in sys.argv:
+        logger.info("[offline] Обнаружен --disable-socket - активируем офлайн режим")
         return True
 
     return False
-
-
