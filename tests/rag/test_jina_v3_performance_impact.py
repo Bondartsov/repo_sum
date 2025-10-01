@@ -1,4 +1,4 @@
-﻿"""
+"""
 PHASE 7: Jina v3 Performance Impact Analysis - Анализ влияния 1024d векторов на производительность.
 
 Измеряет:
