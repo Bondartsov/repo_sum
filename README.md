@@ -174,6 +174,90 @@ python main.py clear-cache
 
 ---
 
+## 🔄 Workflow Разработки с VM
+
+### Стандартный Цикл Работы
+
+```bash
+# 1. Локально вносите изменения в код
+# Редактируйте файлы, добавляйте функционал, исправляйте баги
+
+# 2. Коммитьте и пушьте изменения
+git add .
+git commit -m "Описание изменений"
+git push
+
+# 3. Синхронизация с VM (автоматически)
+python vm_start.py update
+
+# 4. Проверка статуса RAG системы
+python main.py rag status
+
+# 5. Запуск веб-интерфейса (опционально)
+python run_web.py
+```
+
+### Что Делает `vm_start.py`
+
+**Автоматические операции при запуске:**
+
+1. 🔗 **SSH подключение** к VM (10.61.11.54)
+2. 📁 **Синхронизация кода** через `git pull` из GitHub
+3. 🐍 **Обновление Python окружения** (`pip install -r requirements.txt`)
+4. ⚙️ **Обновление .env файла** (37 переменных окружения)
+5. 🧪 **Тест загрузки Jina v3** модели
+6. 🚀 **Автоматический запуск RAG сервиса** через `nohup`
+7. ✅ **Проверка health check** всех сервисов
+
+**Важно:** НЕ нужно вручную заходить на VM и запускать сервисы!
+
+### Команды для Работы с VM
+
+```bash
+# Полная настройка VM (первый запуск / после перезагрузки)
+python vm_start.py
+
+# Быстрое обновление кода на VM
+python vm_start.py update
+
+# Проверка статуса системы
+python vm_start.py status
+
+# Перезапуск сервисов
+python vm_start.py restart
+
+# Остановка сервисов
+python vm_start.py stop
+```
+
+### Типичные Сценарии
+
+**Начало работы над новой фичей:**
+```bash
+git checkout -b feature/new-feature
+# ... работа с кодом ...
+git add . && git commit -m "feat: новая фича"
+git push
+python vm_start.py update
+python main.py rag status  # проверка
+```
+
+**Быстрое исправление бага:**
+```bash
+# ... исправление в коде ...
+git add . && git commit -m "fix: исправление бага"
+git push && python vm_start.py update
+```
+
+**Тестирование изменений:**
+```bash
+python vm_start.py update  # обновить VM
+python main.py rag search "test query"  # проверить поиск
+python run_web.py  # запустить UI для тестирования
+```
+
+---
+
 ## 🏗️ Архитектура Системы
 
 ### 🎯 Революционная RAG-as-a-Service Модель
