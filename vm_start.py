@@ -107,8 +107,18 @@ class VMSetupManager:
             logger.error(f"SSH ошибка: {e}")
             return False
     
-    def execute_command(self, command: str, timeout: int = 300) -> Tuple[bool, str, str]:
-        """Выполнение команды на VM"""
+    def execute_command(self, command: str, timeout: int = 30, ignore_exit_codes: list = None) -> Tuple[bool, str, str]:
+        """
+        Выполнение команды на VM.
+        
+        Args:
+            command: Команда для выполнения
+            timeout: Таймаут в секундах
+            ignore_exit_codes: Список кодов возврата, которые не считаются ошибкой (для nohup, background процессов и т.д.)
+        
+        Returns:
+            Tuple[success, stdout, stderr]
+        """
         try:
             logger.debug(f"Выполнение: {command}")
             stdin, stdout, stderr = self.ssh_client.exec_command(command, timeout=timeout)
@@ -119,11 +129,14 @@ class VMSetupManager:
             stdout_text = stdout.read().decode('utf-8')
             stderr_text = stderr.read().decode('utf-8')
             
-            success = exit_status == 0
+            # Проверка успешности с учётом игнорируемых кодов
+            success = exit_status == 0 or (ignore_exit_codes and exit_status in ignore_exit_codes)
             
-            if not success:
+            # Логируем только реальные ошибки
+            if not success and exit_status != 0:
                 logger.warning(f"Команда завершилась с кодом {exit_status}")
-                logger.warning(f"STDERR: {stderr_text}")
+                if stderr_text.strip():
+                    logger.warning(f"STDERR: {stderr_text}")
             
             return success, stdout_text, stderr_text
             
@@ -605,9 +618,8 @@ except Exception as e:
             "echo $! > rag_service.pid"
         )
         
-        success, output, error = self.execute_command(start_command)
-        # Игнорируем статус возврата команды запуска и переходим к ожиданию health
-        success = True
+        # Игнорируем коды 7 (nohup/background) и 127 (command not found может быть временной проблемой)
+        success, output, error = self.execute_command(start_command, ignore_exit_codes=[7, 127])
         
         if not success:
             self.console.print(f"[red]❌ Ошибка запуска сервиса: {error}[/red]")
