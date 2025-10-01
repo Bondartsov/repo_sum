@@ -11,6 +11,7 @@ import warnings
 import logging
 import time
 import uuid
+import psutil
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
@@ -25,7 +26,6 @@ from file_scanner import FileScanner
 from code_chunker import CodeChunker
 from parsers.base_parser import ParserRegistry
 from utils import FileInfo, ParsedFile, CodeChunk
-# ✅ ИСПРАВЛЕНО: Используем remote версии через алиасы
 from . import CPUEmbedder, QdrantVectorStore
 from .exceptions import VectorStoreException, VectorStoreConnectionError
 
@@ -369,6 +369,66 @@ class IndexerService:
             logger.error(f"Ошибка обработки файла {file_info.path}: {e}")
             raise
     
+    def _check_memory_and_adjust_batch(self, current_batch_size: int) -> int:
+        """
+        Динамическая подстройка batch_size на основе текущего использования памяти.
+        
+        Защита от OOM (Out Of Memory) killer:
+        - При >85% памяти: уменьшаем batch в 4 раза (минимум 32)
+        - При >75% памяти: уменьшаем batch в 2 раза (минимум 64)
+        - При <50% памяти: увеличиваем batch в 2 раза (максимум 512)
+        
+        Args:
+            current_batch_size: Текущий размер батча
+            
+        Returns:
+            Оптимизированный размер батча
+        """
+        try:
+            memory = psutil.virtual_memory()
+            mem_percent = memory.percent
+            
+            # Критический уровень памяти (>85%) - агрессивное уменьшение
+            if mem_percent > 85:
+                new_batch_size = max(32, current_batch_size // 4)
+                if new_batch_size != current_batch_size:
+                    logger.warning(
+                        f"🚨 Критический уровень памяти: {mem_percent:.1f}% "
+                        f"(доступно: {memory.available / (1024**3):.1f}Gi). "
+                        f"Уменьшаем batch_size: {current_batch_size} → {new_batch_size}"
+                    )
+                return new_batch_size
+            
+            # Высокий уровень памяти (>75%) - умеренное уменьшение
+            elif mem_percent > 75:
+                new_batch_size = max(64, current_batch_size // 2)
+                if new_batch_size != current_batch_size:
+                    logger.warning(
+                        f"⚠️ Высокий уровень памяти: {mem_percent:.1f}% "
+                        f"(доступно: {memory.available / (1024**3):.1f}Gi). "
+                        f"Уменьшаем batch_size: {current_batch_size} → {new_batch_size}"
+                    )
+                return new_batch_size
+            
+            # Низкий уровень памяти (<50%) - можем увеличить batch обратно
+            elif mem_percent < 50 and current_batch_size < 512:
+                new_batch_size = min(512, current_batch_size * 2)
+                if new_batch_size != current_batch_size:
+                    logger.info(
+                        f"✅ Низкий уровень памяти: {mem_percent:.1f}% "
+                        f"(доступно: {memory.available / (1024**3):.1f}Gi). "
+                        f"Увеличиваем batch_size: {current_batch_size} → {new_batch_size}"
+                    )
+                return new_batch_size
+            
+            # Нормальный уровень памяти (50-75%) - не меняем batch
+            return current_batch_size
+            
+        except Exception as e:
+            logger.error(f"Ошибка проверки памяти: {e}")
+            # При ошибке возвращаем безопасный размер
+            return min(128, current_batch_size)
+    
     async def _index_chunks_batch(
         self, 
         chunks: List[Tuple[CodeChunk, Dict[str, Any]]], 
@@ -408,12 +468,24 @@ class IndexerService:
             task = None
         
         try:
-            # Обрабатываем батчами
-            for i in range(0, len(chunks), batch_size):
-                batch = chunks[i:i + batch_size]
+            # Обрабатываем батчами с динамической подстройкой batch_size
+            current_batch_size = batch_size
+            i = 0
+            batch_num = 0
+            
+            while i < len(chunks):
+                # Проверяем память и корректируем batch_size перед каждым batch
+                current_batch_size = self._check_memory_and_adjust_batch(current_batch_size)
+                
+                batch = chunks[i:i + current_batch_size]
+                batch_num += 1
                 
                 if progress:
-                    progress.update(task, description=f"Батч {i//batch_size + 1}")
+                    memory = psutil.virtual_memory()
+                    progress.update(
+                        task, 
+                        description=f"Батч {batch_num} (size={current_batch_size}, mem={memory.percent:.1f}%)"
+                    )
                 
                 # Генерируем эмбеддинги для батча с задачей retrieval.passage (Jina v3)
                 texts = [chunk.content for chunk, _ in batch]
@@ -467,6 +539,9 @@ class IndexerService:
                 
                 if progress:
                     progress.advance(task, len(batch))
+                
+                # Двигаемся к следующему batch
+                i += len(batch)
                 
                 # Краткая пауза между батчами для стабильности
                 await asyncio.sleep(0.1)
