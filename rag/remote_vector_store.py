@@ -13,6 +13,7 @@ from config import RemoteServiceConfig
 import numpy as np
 from datetime import datetime, timezone
 from .event_loop_manager import run_async_safe, get_shared_http_session
+from .vm_diagnostics import diagnose_vm_connection
 
 logger = logging.getLogger(__name__)
 
@@ -495,23 +496,42 @@ class RemoteVMVectorStore:
             health_info["status"] = "error"
             health_info["error"] = f"ClientConnectorError: {e}"
             
-            # Диагностическая информация для connection refused
-            health_info["diagnostic"] = {
-                "error_type": "connection_refused",
-                "vm_host": self.service_host,
-                "vm_port": self.service_port,
-                "recommendation": (
-                    f"VM сервис недоступен на {self.service_host}:{self.service_port}. "
-                    f"Проверьте: 1) VM запущена, 2) Firewall не блокирует порт {self.service_port}, "
-                    f"3) Сетевое подключение"
-                ),
-                "troubleshooting_commands": [
-                    f"curl http://{self.service_host}:{self.service_port}/health",
-                    f"ping {self.service_host}",
-                    f"python vm_start.py start"
-                ],
-                "response_time_ms": response_time_ms
-            }
+            # 2.3.2: Используем vm_diagnostics для комплексной диагностики
+            try:
+                diagnostics = await diagnose_vm_connection(self.service_host, self.service_port)
+                
+                health_info["diagnostic"] = {
+                    "error_type": "connection_refused",
+                    "vm_host": self.service_host,
+                    "vm_port": self.service_port,
+                    "response_time_ms": response_time_ms,
+                    # Добавляем детальные результаты диагностики
+                    "host_reachable": diagnostics['host_reachable'],
+                    "port_open": diagnostics['port_open'],
+                    "http_responding": diagnostics['http_responding'],
+                    "latency_ms": diagnostics.get('latency_ms'),
+                    "recommendations": diagnostics['recommendations']
+                }
+            except Exception as diag_error:
+                # Fallback на базовую диагностику если vm_diagnostics не сработала
+                _log(logger.warning, f"Ошибка запуска vm_diagnostics: {diag_error}")
+                health_info["diagnostic"] = {
+                    "error_type": "connection_refused",
+                    "vm_host": self.service_host,
+                    "vm_port": self.service_port,
+                    "recommendation": (
+                        f"VM сервис недоступен на {self.service_host}:{self.service_port}. "
+                        f"Проверьте: 1) VM запущена, 2) Firewall не блокирует порт {self.service_port}, "
+                        f"3) Сетевое подключение"
+                    ),
+                    "troubleshooting_commands": [
+                        f"curl http://{self.service_host}:{self.service_port}/health",
+                        f"ping {self.service_host}",
+                        f"python vm_start.py start"
+                    ],
+                    "response_time_ms": response_time_ms
+                }
+            
             self._connected = False
             
         except asyncio.TimeoutError as e:

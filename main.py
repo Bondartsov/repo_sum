@@ -772,7 +772,7 @@ def status(detailed):
         
         console.print(components_table)
         
-        # 1.3.2: Показываем diagnostic таблицу при ошибках
+        # 2.3.4: Показываем улучшенную diagnostic таблицу при ошибках
         if health.get('status') != 'healthy':
             console.print()
             
@@ -784,27 +784,50 @@ def status(detailed):
                 diag_table.add_column("Значение", style="yellow")
                 
                 diag_table.add_row("Тип ошибки", diagnostic.get('error_type', 'unknown'))
-                diag_table.add_row("Рекомендация", diagnostic.get('recommendation', 'N/A'))
+                
+                # 2.3.4: Добавляем новые поля из vm_diagnostics
+                if 'vm_host' in diagnostic and 'vm_port' in diagnostic:
+                    diag_table.add_row("VM адрес", f"{diagnostic['vm_host']}:{diagnostic['vm_port']}")
+                
+                if 'host_reachable' in diagnostic:
+                    host_status = "✅ Да" if diagnostic['host_reachable'] else "❌ Нет"
+                    diag_table.add_row("Хост доступен", host_status)
+                
+                if 'port_open' in diagnostic:
+                    port_status = "✅ Открыт" if diagnostic['port_open'] else "❌ Закрыт"
+                    diag_table.add_row("Порт доступен", port_status)
+                
+                if 'http_responding' in diagnostic:
+                    http_status = "✅ Отвечает" if diagnostic['http_responding'] else "❌ Не отвечает"
+                    diag_table.add_row("HTTP сервис", http_status)
                 
                 if 'response_time_ms' in diagnostic:
                     diag_table.add_row("Response time", f"{diagnostic['response_time_ms']:.0f}ms")
                 
-                if 'vm_host' in diagnostic and 'vm_port' in diagnostic:
-                    diag_table.add_row("VM адрес", f"{diagnostic['vm_host']}:{diagnostic['vm_port']}")
+                if 'latency_ms' in diagnostic and diagnostic['latency_ms'] is not None:
+                    diag_table.add_row("Latency", f"{diagnostic['latency_ms']:.0f}ms")
                 
                 if 'http_status' in diagnostic:
                     diag_table.add_row("HTTP статус", str(diagnostic['http_status']))
+                
+                # Показываем рекомендации (может быть строкой или списком)
+                recommendations = diagnostic.get('recommendations') or diagnostic.get('recommendation')
+                if recommendations:
+                    if isinstance(recommendations, list):
+                        diag_table.add_row("Рекомендации", "\n".join(f"• {r}" for r in recommendations))
+                    else:
+                        diag_table.add_row("Рекомендация", str(recommendations))
                 
                 console.print(diag_table)
                 
                 # Показываем troubleshooting команды если есть
                 if 'troubleshooting_commands' in diagnostic:
                     console.print()
-                    console.print("[bold]💡 Команды для диагностики:[/bold]")
+                    console.print("[bold]💡 Команды для диагностики Vector Store:[/bold]")
                     for cmd in diagnostic['troubleshooting_commands']:
                         console.print(f"  • [cyan]{cmd}[/cyan]")
             
-            # Диагностика для Embedder (если будет добавлена)
+            # 2.3.4: Диагностика для Embedder (теперь с полной поддержкой)
             if embedder_health.get('diagnostic'):
                 diagnostic = embedder_health['diagnostic']
                 console.print()
@@ -813,9 +836,51 @@ def status(detailed):
                 diag_table.add_column("Значение", style="yellow")
                 
                 diag_table.add_row("Тип ошибки", diagnostic.get('error_type', 'unknown'))
-                diag_table.add_row("Рекомендация", diagnostic.get('recommendation', 'N/A'))
+                
+                # Добавляем поля из vm_diagnostics для Embedder
+                if 'vm_host' in diagnostic and 'vm_port' in diagnostic:
+                    diag_table.add_row("VM адрес", f"{diagnostic['vm_host']}:{diagnostic['vm_port']}")
+                
+                if 'host_reachable' in diagnostic:
+                    host_status = "✅ Да" if diagnostic['host_reachable'] else "❌ Нет"
+                    diag_table.add_row("Хост доступен", host_status)
+                
+                if 'port_open' in diagnostic:
+                    port_status = "✅ Открыт" if diagnostic['port_open'] else "❌ Закрыт"
+                    diag_table.add_row("Порт доступен", port_status)
+                
+                if 'http_responding' in diagnostic:
+                    http_status = "✅ Отвечает" if diagnostic['http_responding'] else "❌ Не отвечает"
+                    diag_table.add_row("HTTP сервис", http_status)
+                
+                if 'response_time_ms' in diagnostic:
+                    diag_table.add_row("Response time", f"{diagnostic['response_time_ms']:.0f}ms")
+                
+                if 'latency_ms' in diagnostic and diagnostic['latency_ms'] is not None:
+                    diag_table.add_row("Latency", f"{diagnostic['latency_ms']:.0f}ms")
+                
+                if 'http_status' in diagnostic:
+                    diag_table.add_row("HTTP статус", str(diagnostic['http_status']))
+                
+                if 'timeout_seconds' in diagnostic:
+                    diag_table.add_row("Timeout", f"{diagnostic['timeout_seconds']}s")
+                
+                # Показываем рекомендации (может быть строкой или списком)
+                recommendations = diagnostic.get('recommendations') or diagnostic.get('recommendation')
+                if recommendations:
+                    if isinstance(recommendations, list):
+                        diag_table.add_row("Рекомендации", "\n".join(f"• {r}" for r in recommendations))
+                    else:
+                        diag_table.add_row("Рекомендация", str(recommendations))
                 
                 console.print(diag_table)
+                
+                # Показываем troubleshooting команды если есть
+                if 'troubleshooting_commands' in diagnostic:
+                    console.print()
+                    console.print("[bold]💡 Команды для диагностики Embedder:[/bold]")
+                    for cmd in diagnostic['troubleshooting_commands']:
+                        console.print(f"  • [cyan]{cmd}[/cyan]")
         
         # Конфигурация
         console.print()

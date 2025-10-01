@@ -12,8 +12,11 @@ from typing import List, Optional, Dict, Any
 from config import EmbeddingConfig, ParallelismConfig, RemoteServiceConfig
 import numpy as np
 import json
-from .exceptions import EmbeddingException
+from .exceptions import EmbeddingException, VMConnectionError, VMTimeoutError
 from .event_loop_manager import run_async_safe, get_shared_http_session
+from .retry_policy import RetryPolicy, RetryConfig
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerOpenException
+from .vm_diagnostics import diagnose_vm_connection
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +80,29 @@ class RemoteVMEmbedder:
         self.timeout_seconds = int(os.getenv("RAG_TIMEOUT_SECONDS", str(self.remote_config.timeout_seconds)))
         self.max_retries = int(os.getenv("RAG_MAX_RETRIES", str(self.remote_config.max_retries)))
         self.retry_delay = float(os.getenv("RAG_RETRY_DELAY", str(self.remote_config.retry_delay)))
+        
+        # 2.1.2: Создаём RetryPolicy для переиспользуемой retry логики
+        import aiohttp
+        import asyncio
+        self.retry_policy = RetryPolicy(RetryConfig(
+            max_attempts=self.max_retries,
+            base_delay=self.retry_delay,
+            max_delay=30.0,
+            exponential_base=2.0,
+            timeout_seconds=self.timeout_seconds,
+            retryable_exceptions=(
+                asyncio.TimeoutError,
+                aiohttp.ClientError,
+            )
+        ))
+        
+        # 2.2.2: Создаём Circuit Breaker для защиты от каскадных падений
+        self.circuit_breaker = CircuitBreaker(CircuitBreakerConfig(
+            failure_threshold=5,          # Открываем после 5 неудач подряд
+            success_threshold=2,          # Закрываем после 2 успехов в half_open
+            timeout_seconds=60.0,         # Ждём 60s перед half_open
+            half_open_max_calls=1         # Один пробный запрос в half_open
+        ))
         
         # Статистика
         self.stats = {
@@ -195,7 +221,7 @@ class RemoteVMEmbedder:
         deadline_ms: int
     ) -> List[List[float]]:
         """
-        Выполняет HTTP запрос с retry логикой используя shared HTTP session.
+        Выполняет HTTP запрос с retry логикой через RetryPolicy и Circuit Breaker.
         
         Args:
             payload: Данные для отправки
@@ -206,144 +232,95 @@ class RemoteVMEmbedder:
         """
         import asyncio
         import aiohttp
-        from .exceptions import VMConnectionError, VMTimeoutError
         
-        # 1.1.2: Tracking остатка времени
-        start_time = time.time()
-        total_timeout = deadline_ms / 1000.0
-        base_timeout = deadline_ms / 1000.0
+        # 2.2.2: Оборачиваем запрос через Circuit Breaker + RetryPolicy
+        async def _protected_request():
+            return await self.retry_policy.execute_with_retry(
+                self._make_single_request,
+                payload=payload
+            )
         
-        for attempt in range(self.max_retries):
-            try:
-                # Проверяем оставшееся время перед каждой попыткой
-                elapsed = time.time() - start_time
-                remaining = total_timeout - elapsed
-                
-                if remaining <= 0:
-                    raise VMTimeoutError(
-                        message="Исчерпано время для retry попыток",
-                        timeout_seconds=total_timeout,
-                        elapsed_seconds=elapsed,
-                        operation="embedding",
-                        retry_attempt=attempt + 1
-                    )
-                
-                # Адаптивный request timeout - используем оставшееся время
-                request_timeout_seconds = min(base_timeout, remaining)
-                
-                _log(logger.debug, 
-                    f"Попытка {attempt + 1}/{self.max_retries}: "
-                    f"request_timeout={request_timeout_seconds:.1f}s, remaining={remaining:.1f}s"
-                )
-                
-                # Используем shared HTTP session с connection pooling
-                session = await get_shared_http_session()
-                
-                # Создаем новый timeout для данного запроса
-                request_timeout = aiohttp.ClientTimeout(total=request_timeout_seconds)
-                
-                async with session.post(
-                    self.embeddings_endpoint,
-                    json=payload,
-                    headers={'Content-Type': 'application/json'},
-                    timeout=request_timeout
-                ) as response:
-                    
-                    if response.status == 200:
-                        result = await response.json()
-                        
-                        # Ожидаем формат: {"embeddings": [[...], [...], ...]}
-                        if "embeddings" in result:
-                            return result["embeddings"]
-                        else:
-                            raise ValueError(f"Неожиданный формат ответа: {result.keys()}")
-                    
-                    else:
-                        error_text = await response.text()
-                        raise RuntimeError(f"HTTP {response.status}: {error_text}")
+        try:
+            return await self.circuit_breaker.call(_protected_request)
+        
+        except CircuitBreakerOpenException as e:
+            # Circuit Breaker открыт - VM сервис недоступен
+            cb_state = self.circuit_breaker.get_state()
+            raise VMConnectionError(
+                message=(
+                    f"VM сервис недоступен (Circuit Breaker OPEN). "
+                    f"Неудачных попыток: {cb_state['failure_count']}. "
+                    f"Следующая попытка через {cb_state['time_until_retry']:.0f}s"
+                ),
+                vm_host=self.service_host,
+                vm_port=self.service_port,
+                error_details=str(e)
+            )
+        
+        except asyncio.TimeoutError as e:
+            # Конвертируем в VMTimeoutError для консистентной обработки
+            raise VMTimeoutError(
+                message="VM сервис не отвечает после всех retry попыток",
+                timeout_seconds=self.timeout_seconds,
+                elapsed_seconds=self.retry_policy.get_stats()['total_elapsed_time'],
+                operation="embedding",
+                retry_attempt=self.retry_policy.get_stats()['total_attempts']
+            )
+        
+        except aiohttp.ClientError as e:
+            # Конвертируем в VMConnectionError для консистентной обработки
+            raise VMConnectionError(
+                message="VM сервис недоступен после всех retry попыток",
+                vm_host=self.service_host,
+                vm_port=self.service_port,
+                error_details=str(e)
+            )
+    
+    async def _make_single_request(
+        self,
+        payload: Dict[str, Any]
+    ) -> List[List[float]]:
+        """
+        Выполняет один HTTP запрос к VM без retry логики.
+        
+        Args:
+            payload: Данные для отправки
             
-            # 1.2.2: Улучшенная обработка ошибок с использованием специфичных исключений
-            except aiohttp.ClientConnectorError as e:
-                _log(logger.warning, 
-                    f"Ошибка подключения к VM (попытка {attempt + 1}/{self.max_retries}): {e}"
-                )
-                self.stats['retry_count'] += 1
-                
-                if attempt < self.max_retries - 1:
-                    # Проверяем оставшееся время перед backoff
-                    elapsed = time.time() - start_time
-                    remaining = total_timeout - elapsed
-                    delay = min(self.retry_delay * (2 ** attempt), remaining / 2)
-                    
-                    if delay > 0:
-                        await asyncio.sleep(delay)
-                    else:
-                        raise VMConnectionError(
-                            message="VM сервис недоступен, время исчерпано",
-                            vm_host=self.service_host,
-                            vm_port=self.service_port,
-                            error_details=str(e)
-                        )
-                else:
-                    # Последняя попытка - выбрасываем специфичное исключение
-                    raise VMConnectionError(
-                        message="VM сервис недоступен после всех retry попыток",
-                        vm_host=self.service_host,
-                        vm_port=self.service_port,
-                        error_details=str(e)
-                    )
+        Returns:
+            Список эмбеддингов
+        """
+        import aiohttp
+        
+        # Получаем shared HTTP session
+        session = await get_shared_http_session()
+        
+        # Выполняем POST запрос
+        async with session.post(
+            self.embeddings_endpoint,
+            json=payload,
+            headers={'Content-Type': 'application/json'}
+        ) as response:
             
-            except asyncio.TimeoutError as e:
-                elapsed = time.time() - start_time
-                _log(logger.warning, 
-                    f"Timeout при запросе к VM (попытка {attempt + 1}/{self.max_retries}, "
-                    f"elapsed={elapsed:.1f}s)"
-                )
-                self.stats['retry_count'] += 1
+            if response.status == 200:
+                result = await response.json()
                 
-                if attempt < self.max_retries - 1:
-                    # Проверяем оставшееся время перед backoff
-                    remaining = total_timeout - elapsed
-                    delay = min(self.retry_delay * (2 ** attempt), remaining / 2)
-                    
-                    if delay > 0:
-                        await asyncio.sleep(delay)
-                    else:
-                        raise VMTimeoutError(
-                            message="VM сервис не отвечает, время исчерпано",
-                            timeout_seconds=total_timeout,
-                            elapsed_seconds=elapsed,
-                            operation="embedding",
-                            retry_attempt=attempt + 1
-                        )
+                # Ожидаем формат: {"embeddings": [[...], [...], ...]}
+                if "embeddings" in result:
+                    return result["embeddings"]
                 else:
-                    # Последняя попытка - выбрасываем специфичное исключение
-                    raise VMTimeoutError(
-                        message="VM сервис не отвечает после всех retry попыток",
-                        timeout_seconds=total_timeout,
-                        elapsed_seconds=elapsed,
-                        operation="embedding",
-                        retry_attempt=attempt + 1
-                    )
-                
-            except Exception as e:
-                _log(logger.warning, f"Ошибка HTTP запроса (попытка {attempt + 1}): {e}")
-                self.stats['retry_count'] += 1
-                
-                if attempt < self.max_retries - 1:
-                    elapsed = time.time() - start_time
-                    remaining = total_timeout - elapsed
-                    delay = min(self.retry_delay * (2 ** attempt), remaining / 2)
-                    
-                    if delay > 0:
-                        await asyncio.sleep(delay)
-                else:
-                    raise  # Последняя попытка - пробрасываем ошибку
+                    raise ValueError(f"Неожиданный формат ответа: {result.keys()}")
+            
+            else:
+                error_text = await response.text()
+                raise RuntimeError(f"HTTP {response.status}: {error_text}")
     
     async def _async_health_check(self) -> Dict[str, Any]:
         """
-        Асинхронная проверка состояния удалённого сервиса.
+        Асинхронная проверка состояния удалённого сервиса с диагностикой.
         """
+        import asyncio
+        import aiohttp
+        
         health_info = {
             "status": "unknown",
             "components": {
@@ -356,7 +333,10 @@ class RemoteVMEmbedder:
                 }
             },
             "error": None,
+            "diagnostic": None,  # 2.3.3: Добавляем диагностическую информацию
         }
+
+        start_time = time.time()
 
         try:
             test_payload = {
@@ -368,12 +348,15 @@ class RemoteVMEmbedder:
 
             session = await get_shared_http_session()
             async with session.post(self.embeddings_endpoint, json=test_payload) as response:
+                response_time_ms = (time.time() - start_time) * 1000
+                
                 if response.status == 200:
                     result = await response.json()
                     if "embeddings" in result and len(result["embeddings"]) > 0:
                         actual_dim = len(result["embeddings"][0])
                         health_info["status"] = "connected"  # Единый стандарт: "connected"
                         health_info["components"]["embedder"]["actual_embedding_dim"] = actual_dim
+                        health_info["components"]["embedder"]["response_time_ms"] = response_time_ms
                         if actual_dim != self.truncate_dim:
                             health_info["components"]["embedder"]["warning"] = (
                                 f"Размерность не соответствует ожидаемой: {actual_dim} vs {self.truncate_dim}"
@@ -381,15 +364,106 @@ class RemoteVMEmbedder:
                     else:
                         health_info["status"] = "error"
                         health_info["error"] = "Некорректный формат ответа"
+                        health_info["diagnostic"] = {
+                            "error_type": "invalid_response",
+                            "recommendation": "VM embedder вернул некорректный формат. Проверьте версию API.",
+                            "response_time_ms": response_time_ms
+                        }
                 else:
                     error_text = await response.text()
                     health_info["status"] = "error"
                     health_info["error"] = f"HTTP {response.status}: {error_text}"
+                    health_info["diagnostic"] = {
+                        "error_type": "http_error",
+                        "http_status": response.status,
+                        "recommendation": self._get_http_error_recommendation(response.status),
+                        "response_time_ms": response_time_ms
+                    }
+        
+        except aiohttp.ClientConnectorError as e:
+            response_time_ms = (time.time() - start_time) * 1000
+            health_info["status"] = "error"
+            health_info["error"] = f"ClientConnectorError: {e}"
+            
+            # 2.3.3: Используем vm_diagnostics для комплексной диагностики
+            try:
+                diagnostics = await diagnose_vm_connection(self.service_host, self.service_port)
+                
+                health_info["diagnostic"] = {
+                    "error_type": "connection_refused",
+                    "vm_host": self.service_host,
+                    "vm_port": self.service_port,
+                    "response_time_ms": response_time_ms,
+                    # Добавляем детальные результаты диагностики
+                    "host_reachable": diagnostics['host_reachable'],
+                    "port_open": diagnostics['port_open'],
+                    "http_responding": diagnostics['http_responding'],
+                    "latency_ms": diagnostics.get('latency_ms'),
+                    "recommendations": diagnostics['recommendations']
+                }
+            except Exception as diag_error:
+                # Fallback на базовую диагностику
+                _log(logger.warning, f"Ошибка запуска vm_diagnostics: {diag_error}")
+                health_info["diagnostic"] = {
+                    "error_type": "connection_refused",
+                    "vm_host": self.service_host,
+                    "vm_port": self.service_port,
+                    "recommendation": (
+                        f"VM embedder недоступен на {self.service_host}:{self.service_port}. "
+                        f"Проверьте: 1) VM запущена, 2) Firewall, 3) Сетевое подключение"
+                    ),
+                    "response_time_ms": response_time_ms
+                }
+        
+        except asyncio.TimeoutError as e:
+            response_time_ms = (time.time() - start_time) * 1000
+            health_info["status"] = "error"
+            health_info["error"] = f"TimeoutError: {e}"
+            health_info["diagnostic"] = {
+                "error_type": "timeout",
+                "timeout_seconds": self.timeout_seconds,
+                "elapsed_ms": response_time_ms,
+                "recommendation": "VM embedder не отвечает. Проверьте загрузку VM и latency.",
+                "response_time_ms": response_time_ms
+            }
+        
         except Exception as e:
+            response_time_ms = (time.time() - start_time) * 1000
             health_info["status"] = "error"
             health_info["error"] = str(e)
+            health_info["diagnostic"] = {
+                "error_type": "unknown",
+                "exception_type": type(e).__name__,
+                "recommendation": f"Неизвестная ошибка: {type(e).__name__}. Проверьте логи.",
+                "response_time_ms": response_time_ms
+            }
 
         return health_info
+    
+    def _get_http_error_recommendation(self, status_code: int) -> str:
+        """
+        Возвращает рекомендацию по устранению HTTP ошибки.
+        
+        Args:
+            status_code: HTTP статус код
+            
+        Returns:
+            Строка с рекомендацией
+        """
+        recommendations = {
+            500: "Internal Server Error. Проверьте логи VM embedder сервиса.",
+            503: "Service Unavailable. Embedder может быть перегружен.",
+            502: "Bad Gateway. Проблема с прокси или upstream сервисом.",
+            504: "Gateway Timeout. VM embedder не отвечает вовремя.",
+            404: "Not Found. Проверьте правильность embeddings endpoint URL.",
+            413: "Payload Too Large. Уменьшите размер батча текстов.",
+            429: "Too Many Requests. Rate limit превышен."
+        }
+        
+        return recommendations.get(
+            status_code,
+            f"HTTP {status_code}. Проверьте документацию VM API."
+        )
 
     def check_health(self) -> Dict[str, Any]:
         """
@@ -430,13 +504,23 @@ class RemoteVMEmbedder:
     def get_stats(self) -> Dict[str, Any]:
         """Возвращает статистику использования"""
         stats = self.stats.copy()
+        
+        # 2.1.3: Добавляем статистику retry policy
+        retry_stats = self.retry_policy.get_stats()
+        stats['retry_count'] = retry_stats['total_attempts'] - retry_stats['successful_attempts']
+        
+        # 2.2.3: Добавляем статистику circuit breaker
+        cb_state = self.circuit_breaker.get_state()
+        
         stats.update({
             'service_url': self.embeddings_endpoint,
             'provider': self.provider_name,
             'model_name': self.model_name,
             'is_warmed_up': self._is_warmed_up,
             'embedding_dim': self.embedding_dim,
-            'truncate_dim': self.truncate_dim
+            'truncate_dim': self.truncate_dim,
+            'retry_policy_stats': retry_stats,      # Полная статистика retry policy
+            'circuit_breaker_state': cb_state       # Полная статистика circuit breaker
         })
         
         return stats
