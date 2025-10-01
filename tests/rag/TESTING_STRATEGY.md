@@ -1,968 +1,363 @@
 # 🧪 СТРАТЕГИЯ ТЕСТИРОВАНИЯ RAG СИСТЕМЫ
 
-**Дата:** 30 сентября 2025  
-**Версия:** 1.6.1  
-**Статус:** Production-Ready Testing Framework с стабильной CI/CD системой ✅
+**Дата:** 02 октября 2025
+**Версия:** 1.7.0
+**Статус:** Production-Ready с устойчивой CI-матрицей и контрактной поверхностью для тестов
+
+> Обновлено на базе предыдущей версии стратегии и текущих договорённостей по рефакторингу тестового контракта. 
 
 ---
 
-## 🎯 ОБЗОР СТРАТЕГИИ ТЕСТИРОВАНИЯ
+## 🎯 ОБЗОР И КЛЮЧЕВЫЕ ПРИНЦИПЫ
 
-Комплексная стратегия тестирования RAG системы построена на принципах многоуровневого покрытия с акцентом на качество, производительность и надёжность. Стратегия охватывает все компоненты системы от базовых unit тестов до сложных end-to-end сценариев.
+Стратегия строится на принципах «контрактов поверх реализаций», строгой изоляции тестов и разделения окружений. Цель — снизить хрупкость, устранить доступ к приватным деталям и гарантировать воспроизводимость.
 
-### Принципы тестирования:
-- **Правильная категоризация тестов** - pytest маркеры @pytest.mark.functional, @pytest.mark.integration для корректного разделения
-- **Пирамида тестирования** - больше unit тестов, меньше E2E
-- **Изоляция компонентов** - независимое тестирование через mock'и
-- **Реалистичные данные** - тестирование на реальных образцах кода
-- **Производительность** - метрики качества и скорости как part of testing
-- **CI/CD готовность** - стабильная система без SocketBlockedError ✅
-- **Всё из ENV файла** - Никакого хардкода! Всё из env файла! 
+**Основные принципы:**
 
-
----
-
-## 🏗️ АРХИТЕКТУРА ТЕСТИРОВАНИЯ
-
-### ✅ **PYTEST КАТЕГОРИЗАЦИЯ ЗАВЕРШЕНА (Сентябрь 2025)**
-
-**Результаты категоризации:**
-- **149 passed, 3 skipped** - все тесты стабильно проходят ✅
-- **59 unit тестов** (без внешних зависимостей) - работают с `--disable-socket` 
-- **67 integration тестов** (OpenAI API, filesystem, Qdrant) - требуют сетевого доступа
-- **25 functional тестов** (subprocess, CLI команды) - тестируют CLI интерфейс
-- **98.0% покрытие категоризации** (149 из 152 тестов правильно маркированы)
-
-**Команды для запуска по категориям:**
-```bash
-# Unit тесты (изолированные, offline-ready)
-pytest -m "not integration and not functional and not e2e" --disable-socket -v
-# Результат: 59 passed, 93 deselected
-
-# Integration тесты (внешние зависимости)  
-pytest -m "integration" -v
-# Результат: 65 passed, 2 skipped
-
-# Functional тесты (subprocess/CLI)
-pytest -m "functional" -v  
-# Результат: 24 passed, 1 skipped, 127 deselected
-```
-
-### Структура тестов (5872+ строки):
-
-```
-tests/                           # 📁 Корневая директория тестов
-├── test_rag_imports.py          # 🔧 Базовые импорты и инициализация
-├── test_vector_store_basic.py   # 🗄️ Основная функциональность VectorStore
-├── test_cpu_query_engine.py     # 🔍 Полнофункциональные тесты QueryEngine
-├── test_simple_cpu_query_engine.py # 🎯 Упрощённые тесты QueryEngine
-├── fixtures/                    # 📊 Тестовые данные
-│   └── test_repo/              # 🐍 1743 строки реального Python кода
-│       ├── auth/               # Аутентификация и middleware
-│       ├── db/                 # Модели БД и подключения  
-│       └── utils/              # Утилиты и валидаторы
-└── rag/                        # 🧪 Комплексные RAG тесты
-    ├── __init__.py             # Модуль тестов RAG
-    ├── conftest.py             # 🛠️ Общие фикстуры (681 строка)
-    ├── test_rag_integration.py # 🔗 Интеграционные тесты (581 строка)
-    ├── test_rag_e2e_cli.py    # 🎭 E2E тесты CLI (483 строки)  
-    ├── test_rag_performance.py # ⚡ Тесты производительности (703 строки)
-    ├── run_rag_tests.py       # 🚀 Скрипт запуска (279 строк)
-    ├── README.md              # 📚 Документация тестов (401 строка)
-    └── test_report.md         # 📋 Отчёты о тестировании
-```
+* **Контракты через `Protocol`**: проверяем публичное поведение и наблюдаемость, а не приватные методы/поля.
+* **Пирамида тестирования**: максимум unit, минимум E2E.
+* **Изоляция режимов**: `real` и `mock` реализации переключаются маркерами/CLI-флагами; без глобальных патчей.
+* **Наблюдаемость**: метрики и состояния доступны через публичный API (`get_stats()`), не через внутренние атрибуты.
+* **Детерминизм async**: строгий режим `pytest-asyncio`, стабильные дедлайны, единая политика event loop на Windows.
+* **Чистое окружение**: офлайн-профиль включается целевыми фикстурами, а не по умолчанию.
+* **Документированные предусловия**: интеграционные/VM-тесты выполняются только при выполненных pre-checks.
 
 ---
 
-## 🔧 УРОВЕНЬ 1: UNIT ТЕСТЫ (59 тестов ✅)
+## 🏷️ КАТЕГОРИЗАЦИЯ И МАРКЕРЫ PYTEST
 
-### Назначение:
-Быстрые изолированные тесты отдельных компонентов с максимальным покрытием кода и минимальными зависимостями. **Работают с флагом `--disable-socket`** без SocketBlockedError.
+В `pytest.ini` регистрируются маркеры:
 
-### ✅ **Критерий**: Тесты **БЕЗ pytest маркеров** - автоматически считаются unit тестами.
-
-### 1.1 Базовые импорты ([`test_rag_imports.py`](tests/test_rag_imports.py))
-
-**Стратегия тестирования:**
-```python
-def test_rag_config_classes():
-    """Тестирование конфигурационных классов RAG"""
-    # Валидация всех config dataclass'ов
-    # Проверка default значений
-    # Проверка type hints и validation
-
-def test_rag_module_imports():
-    """Проверка корректности импортов RAG модуля"""
-    # Импорт всех публичных интерфейсов
-    # Проверка версии и метаданных
-    # Доступность всех классов в __all__
-
-def test_cpu_embedder_basic_initialization():
-    """Базовая инициализация CPUEmbedder"""
-    # Создание с минимальной конфигурацией
-    # Проверка lazy initialization
-    # Тестирование fallback провайдеров
-```
-
-**Покрытие:**
-- ✅ Конфигурационные классы (EmbeddingConfig, VectorStoreConfig, QueryEngineConfig)
-- ✅ Импорты RAG модуля и проверка версии
-- ✅ Базовая инициализация CPUEmbedder
-- ✅ Проверка заглушек для неинициализированных компонентов
-- ✅ Совместимость конфигурации
-
-### 1.2 Векторное хранилище ([`test_vector_store_basic.py`](tests/test_vector_store_basic.py))
-
-**Стратегия тестирования:**
-```python
-def test_qdrant_vector_store_initialization():
-    """Инициализация QdrantVectorStore"""
-    # Mock Qdrant client
-    # Проверка CPU-профиля конфигурации
-    # Тестирование различных типов квантования
-
-def test_collection_configuration():
-    """Генерация конфигурации коллекции"""
-    # HNSW параметры для CPU
-    # Различные типы квантования (SQ, PQ, BQ)
-    # Валидация векторных параметров
-
-def test_vector_operations():
-    """Операции с векторами и точками"""  
-    # Валидация входных данных
-    # Генерация point structures
-    # Batch operations
-```
-
-**Покрытие:**
-- ✅ Импорты qdrant-client и векторного хранилища
-- ✅ Создание VectorStoreConfig с различными параметрами
-- ✅ Инициализация QdrantVectorStore
-- ✅ Генерация конфигурации коллекции (SQ, PQ, BQ квантование)
-- ✅ Валидация точек и векторов
-
-### 1.3 Поисковый движок ([`test_cpu_query_engine.py`](tests/test_cpu_query_engine.py))
-
-**Стратегия тестирования:**
-```python
-def test_cpu_query_engine_initialization():
-    """Инициализация CPUQueryEngine с реальными компонентами"""
-    # Интеграция CPUEmbedder + QdrantVectorStore
-    # Инициализация кэша и метрик
-    # Проверка конфигурации
-
-def test_cache_functionality():
-    """Функциональность LRU кэша с TTL"""
-    # Кэширование результатов поиска
-    # TTL expiration
-    # LRU eviction политика
-    # Cache hit/miss статистика
-
-def test_health_and_statistics():
-    """Health check и сбор статистики"""
-    # Health status всех компонентов
-    # Метрики производительности
-    # Диагностическая информация
-```
-
-**Покрытие:**
-- ✅ Импорты всех RAG компонентов
-- ✅ Инициализация CPUQueryEngine с реальными компонентами
-- ✅ Тестирование базовой функциональности (статистика, кэш, health check)
-- ✅ Проверка совместимости конфигурации
-
-### 1.4 Упрощённые тесты ([`test_simple_cpu_query_engine.py`](tests/test_simple_cpu_query_engine.py))
-
-**Стратегия тестирования:**
-```python
-def test_simple_query_engine_with_mocks():
-    """CPUQueryEngine с mock компонентами"""
-    # Mock CPUEmbedder и QdrantVectorStore
-    # Тестирование базовых операций
-    # Проверка error handling
-
-def test_async_operations():
-    """Асинхронные операции query engine"""
-    # Async search operations
-    # Concurrent requests handling
-    # Timeout и cancellation
-```
-
-**Покрытие:**
-- ✅ Проверка импортов компонентов
-- ✅ Загрузка конфигурации
-- ✅ Создание CPUEmbedder
-- ✅ Работа с MockVectorStore
-- ✅ Асинхронные операции
-
----
-
-## 🔗 УРОВЕНЬ 2: ИНТЕГРАЦИОННЫЕ ТЕСТЫ (67 тестов ✅)
-
-### Назначение:
-Тестирование взаимодействия между компонентами RAG системы с реалистичными данными и сценариями. **Требуют доступа к внешним сервисам** (OpenAI API, Qdrant, filesystem).
-
-### ✅ **Критерий**: Тесты помечены `@pytest.mark.integration` - работают с внешними зависимостями.
-
-### **ИСПРАВЛЕННЫЕ ПРОБЛЕМЫ (Сентябрь 2025):**
-- ✅ Hardcoded localhost адреса заменены на `os.getenv("QDRANT_HOST", "localhost")`
-- ✅ Добавлен missing `import os` в test_rag_performance.py
-- ✅ Исправлен `test_vector_store_initialization` для environment variables  
-- ✅ **30.09.2025**: Дополнительное исправление `test_rag_commands_connection_errors`:
-  - Улучшен mock для async метода `IndexerService.health_check()`
-  - Добавлена async функция `mock_health_check_async` для корректного мокирования
-  - Расширен список проверяемых ключевых слов для более гибкой валидации вывода
-  - Добавлена поддержка graceful degradation в тесте status команды
-
-### 2.1 RAG интеграция ([`test_rag_integration.py`](tests/rag/test_rag_integration.py))
-
-**Стратегия тестирования:**
-
-#### Полный RAG пайплайн:
-```python
-async def test_full_rag_pipeline():
-    """Полный интеграционный тест RAG системы"""
-    # 1. Сканирование тестового репозитория
-    # 2. Чанкинг файлов кода  
-    # 3. Генерация эмбеддингов через CPUEmbedder
-    # 4. Индексация в QdrantVectorStore
-    # 5. Семантический поиск через CPUQueryEngine
-    # 6. Проверка качества результатов
-```
-
-#### Тестирование компонентов:
-```python
-def test_embedder_initialization():
-    """Инициализация CPUEmbedder с различными провайдерами"""
-    # FastEmbed как основной провайдер
-    # Sentence Transformers как fallback
-    # Обработка ошибок загрузки моделей
-    
-def test_vector_store_operations():
-    """Операции векторного хранилища"""
-    # Создание коллекции с CPU-профилем
-    # Batch индексация документов
-    # Поиск с различными параметрами
-
-def test_search_service_integration():
-    """Интеграция SearchService"""
-    # Семантический поиск с фильтрами
-    # Форматирование результатов
-    # Кэширование запросов
-```
-
-**Покрытие:**
-- ✅ Валидация конфигурации RAG из settings.json
-- ✅ Инициализация CPUEmbedder с FastEmbed/SentenceTransformers  
-- ✅ Инициализация QdrantVectorStore с mock клиентом
-- ✅ Операции с коллекциями и документами
-- ✅ Интеграция SearchService с mock данными
-- ✅ Интеграция CPUQueryEngine с RRF и MMR
-- ✅ Полный пайплайн: сканирование → парсинг → чанкинг → индексация
-- ✅ Обработка ошибок и fallback механизмы
-- ✅ Метрики производительности компонентов
-- ✅ Конкурентные операции (множественные поисковые запросы)
-
----
-
-## 🎭 УРОВЕНЬ 3: FUNCTIONAL ТЕСТЫ (25 тестов ✅)
-
-### Назначение:
-Тестирование полных пользовательских сценариев через CLI интерфейс в реальных условиях с использованием **subprocess операций**.
-
-### ✅ **Критерий**: Тесты помечены `@pytest.mark.functional` - используют subprocess.run() для CLI команд.
-
-### 3.1 CLI тесты ([`test_rag_e2e_cli.py`](tests/rag/test_rag_e2e_cli.py))
-
-**Стратегия тестирования:**
-
-#### Команды CLI:
-```python
-def test_rag_index_command():
-    """Тестирование команды rag index"""
-    # python main.py rag index ./test_repo
-    # Проверка индексации файлов
-    # Валидация прогресс-бара и статистики
-    # Обработка различных параметров
-
-def test_rag_search_command():
-    """Тестирование команды rag search"""  
-    # python main.py rag search "query"
-    # Проверка результатов поиска
-    # Тестирование фильтров (язык, файлы)
-    # Форматирование вывода
-
-def test_rag_status_command():
-    """Тестирование команды rag status"""
-    # python main.py rag status
-    # Статистика векторной БД
-    # Метрики производительности
-    # Health check информация
-```
-
-#### Сценарии использования:
-```python
-def test_full_workflow_simulation():
-    """Симуляция полного workflow пользователя"""
-    # 1. Индексация репозитория
-    # 2. Множественные поисковые запросы
-    # 3. Проверка статуса системы
-    # 4. Переиндексация после изменений
-```
-
-**Покрытие:**
-- ✅ Справочная информация (`--help`) для всех команд
-- ✅ Валидация конфигурационных файлов
-- ✅ Команда `rag index` с различными параметрами
-- ✅ Команда `rag search` с фильтрами и опциями
-- ✅ Команда `rag status` с детальной статистикой
-- ✅ Обработка ошибок (некорректные пути, параметры)
-- ✅ Прерывание команд (KeyboardInterrupt)
-- ✅ Ошибки подключения к внешним сервисам
-- ✅ Verbose и quiet режимы CLI
-- ✅ Полный workflow через subprocess
-
----
-
-## 🌐 УРОВЕНЬ 4: WEB UI ТЕСТЫ (9 тестов ✅)
-
-### Назначение:
-Тестирование интеграции RAG системы с веб-интерфейсом (Streamlit) через **backend-ориентированный подход** без использования UI framework.
-
-### ✅ **Критерий**: Тесты помечены `@pytest.mark.integration` - тестируют backend логику напрямую, избегая проблем с Streamlit AppTest lifecycle.
-
-### **РЕШЁННЫЕ ПРОБЛЕМЫ (Сентябрь 2025):**
-- ✅ Устранена ошибка "ValueError: I/O operation on closed file" при использовании Streamlit AppTest
-- ✅ Переход на backend-ориентированное тестирование вместо UI testing framework
-- ✅ Все 9 тестов стабильно проходят за 2.5 секунды
-- ✅ Установлен `response_delay = 0.0` для MockVMRAGService для быстрого выполнения
-
-### 4.1 Web UI тесты ([`test_web_ui_vm_rag.py`](tests/test_web_ui_vm_rag.py))
-
-**Стратегия тестирования:**
-
-#### Backend-ориентированный подход:
-```python
-def test_rag_search_tab_basic_functionality():
-    """Тестирование функциональности поиска через backend"""
-    # НЕ используется AppTest - прямое тестирование логики
-    mock_vm_rag_service = MockVMRAGService(response_delay=0.0)
-    
-    # Прямой вызов backend метода
-    async def mock_search(query: str, top_k: int = 10):
-        await mock_vm_rag_service.mock_search(query, top_k)
-        return [Mock(...)]  # Имитация результатов
-    
-    results = asyncio.run(mock_search("test query"))
-    assert len(results) > 0
-```
-
-#### Ключевые улучшения:
-- **Избегание Streamlit AppTest** - не создаём UI экземпляры, только backend
-- **asyncio.run() для async операций** - корректная обработка асинхронности
-- **Mock объекты** - полная изоляция от внешних зависимостей
-- **Быстрое выполнение** - response_delay = 0.0 убирает искусственные задержки
-
-### 4.2 Покрываемая функциональность:
-
-#### Базовый поиск и индексация:
-```python
-def test_rag_search_tab_basic_functionality():
-    """Базовая функциональность RAG поиска"""
-    
-def test_real_time_search_with_jina_v3():
-    """Real-time поиск с Jina v3 embeddings"""
-    
-def test_vm_rag_indexing_ui():
-    """Индексация репозиториев через UI"""
-```
-
-#### Connectivity и error handling:
-```python
-def test_vm_backend_connectivity_ui():
-    """Проверка подключения к VM backend"""
-    
-def test_error_handling_vm_failures_ui():
-    """Обработка ошибок VM сервиса"""
-    
-def test_fallback_mechanisms_ui():
-    """Fallback механизмы при недоступности VM"""
-```
-
-#### Performance и edge cases:
-```python
-def test_performance_ui_interactions():
-    """Производительность UI взаимодействий"""
-    
-def test_vm_rag_search_edge_cases():
-    """Edge cases в поиске (пустые запросы и т.д.)"""
-    
-def test_qa_interface_with_vm_rag():
-    """Q&A интерфейс с VM RAG"""
-```
-
-### 4.3 Best Practices для Web UI тестов:
-
-#### ✅ ПРАВИЛЬНО - Backend тестирование:
-```python
-def test_backend_logic():
-    """Тестирование backend без UI framework"""
-    # 1. Создать mock сервис
-    mock_service = MockVMRAGService(response_delay=0.0)
-    
-    # 2. Прямой вызов backend метода
-    async def test_operation():
-        return await mock_service.search(query="test", top_k=10)
-    
-    # 3. Запустить через asyncio
-    results = asyncio.run(test_operation())
-    
-    # 4. Валидировать результаты
-    assert len(results) > 0
-```
-
-#### ❌ НЕПРАВИЛЬНО - Использование AppTest (вызывает ошибки):
-```python
-def test_with_apptest():
-    """НЕ ИСПОЛЬЗОВАТЬ - падает с I/O errors"""
-    # ❌ AppTest создаёт временные файлы которые закрываются
-    at = AppTest.from_file("web_ui.py")
-    at.run()
-    # ValueError: I/O operation on closed file
-```
-
-#### ❌ НЕПРАВИЛЬНО - Context manager (не поддерживается):
-```python
-def test_with_context_manager():
-    """НЕ ИСПОЛЬЗОВАТЬ - AppTest не поддерживает protocol"""
-    # ❌ AttributeError: AppTest object does not support context manager
-    with AppTest.from_file("web_ui.py") as at:
-        at.run()
-```
-
-### 4.4 MockVMRAGService конфигурация:
-
-```python
-class MockVMRAGService:
-    """Mock сервис для тестирования без реальных зависимостей"""
-    
-    def __init__(self, response_delay: float = 0.0):
-        """
-        Args:
-            response_delay: Задержка для имитации сетевых операций
-                           Установите 0.0 для быстрых тестов
-        """
-        self.response_delay = response_delay
-        self.search_count = 0
-        self.index_count = 0
-        
-    async def mock_search(self, query: str, top_k: int = 10):
-        """Имитация поиска с метриками"""
-        await asyncio.sleep(self.response_delay)
-        self.search_count += 1
-        return self._generate_mock_results(query, top_k)
-```
-
-### 4.5 UITestMetrics для мониторинга:
-
-```python
-class UITestMetrics:
-    """Метрики производительности UI тестов"""
-    
-    def __init__(self):
-        self.response_times: List[float] = []
-        self.success_count = 0
-        self.error_count = 0
-        
-    def record_operation(self, duration: float, success: bool):
-        """Записать результат операции"""
-        self.response_times.append(duration)
-        if success:
-            self.success_count += 1
-        else:
-            self.error_count += 1
-            
-    @property
-    def success_rate(self) -> float:
-        """Процент успешных операций"""
-        total = self.success_count + self.error_count
-        return self.success_count / total if total > 0 else 0.0
-```
-
-### 4.6 Результаты выполнения:
-
-**Текущие метрики (30.09.2025):**
-- ✅ **9 passed in 2.50s** - все тесты стабильно проходят
-- ✅ **0 failures** - нет падающих тестов
-- ✅ **Backend approach** - избегаем проблем с UI lifecycle
-- ✅ **Fast execution** - быстрое выполнение без задержек
-
-**Команда запуска:**
-```bash
-# Все Web UI тесты
-pytest tests/test_web_ui_vm_rag.py -v
-
-# Конкретный тест
-pytest tests/test_web_ui_vm_rag.py::TestWebUIVMRAG::test_rag_search_tab_basic_functionality -v
-
-# С покрытием кода
-pytest tests/test_web_ui_vm_rag.py --cov=vm_rag_service --cov-report=term-missing
-```
-
----
-
-## ⚡ УРОВЕНЬ 5: ТЕСТЫ ПРОИЗВОДИТЕЛЬНОСТИ
-
-### Назначение:
-Измерение производительности, ресурсопотребления и стресс-тестирование RAG системы под нагрузкой.
-
-### 4.1 Performance тесты ([`test_rag_performance.py`](tests/rag/test_rag_performance.py))
-
-**Стратегия тестирования:**
-
-#### Производительность компонентов:
-```python
-def test_embedder_performance():
-    """Производительность CPUEmbedder"""
-    # Различные размеры батчей (8, 32, 128, 512)
-    # Измерение throughput (документов/сек)
-    # Мониторинг использования CPU и памяти
-    # Тестирование адаптивных батчей
-
-def test_vector_store_indexing_performance():
-    """Скорость индексации QdrantVectorStore"""
-    # Батчевая загрузка 100-5000 документов
-    # Измерение латентности индексации
-    # Тестирование различных типов квантования
-    # Мониторинг использования памяти
-
-def test_search_performance():
-    """Производительность поиска"""
-    # Латентность p50/p95/p99 для поиска
-    # Throughput (запросов/сек)
-    # Эффективность кэширования (hit rate)
-    # RRF и MMR алгоритмы под нагрузкой
-```
-
-#### Стресс-тестирование:
-```python
-@pytest.mark.stress
-def test_concurrent_users():
-    """Стресс-тест с 20 конкурентными пользователями"""
-    # Симуляция 20 одновременных поисковых сессий
-    # Измерение деградации производительности
-    # Проверка стабильности под нагрузкой
-    # Memory leaks detection
-
-def test_large_repository_indexing():
-    """Индексация большого репозитория"""
-    # Синтетический репозиторий >10000 файлов
-    # Измерение скорости индексации
-    # Мониторинг использования ресурсов
-    # Тестирование адаптивных механизмов
-```
-
-**Метрики и KPI:**
-- ⚡ **Производительность CPUEmbedder** (различные размеры батчей)
-- ⚡ **Скорость индексации QdrantVectorStore** (100-5000 документов)
-- ⚡ **Латентность поиска SearchService и CPUQueryEngine**
-- ⚡ **Эффективность RRF и MMR алгоритмов**
-- ⚡ **Кэширование запросов и hit rate**
-- ⚡ **Стресс-тест с 20 конкурентными пользователями**
-- ⚡ **Мониторинг памяти и CPU**
-- ⚡ **Адаптивное изменение размеров батчей**
-- ⚡ **Полный пайплайн: сканирование → индексация → поиск**
-
----
-
-## 📊 ТЕСТОВЫЕ ДАННЫЕ И ФИКСТУРЫ
-
-### Реалистичный тестовый репозиторий ([`tests/fixtures/test_repo/`](tests/fixtures/test_repo/))
-
-**Структура данных:**
-```
-test_repo/ (1743 строки реального Python кода)
-├── auth/
-│   ├── middleware.py    # JWT токены, декораторы аутентификации (125 строк)
-│   └── user.py         # Управление пользователями, хеширование паролей (302 строки)
-├── db/  
-│   ├── models.py       # SQLAlchemy модели (User, Article, Comment) (306 строк)
-│   └── connection.py   # Подключение к БД, пул соединений (306 строк)
-└── utils/
-    ├── helpers.py      # Утилиты: строки, даты, файлы (311 строк)
-    └── validators.py   # Валидаторы: email, пароли, формы (393 строки)
-```
-
-**Характеристики тестовых данных:**
-- 📊 **Объём**: 1743 строки реального Python кода
-- 🏷️ **Типы контента**: функции, классы, декораторы, SQL модели, утилиты
-- 🎯 **Семантическое разнообразие**: аутентификация, БД, валидация, утилиты
-- 🔍 **Сложность**: различные уровни вложенности и абстракции
-- 📝 **Документация**: docstrings, комментарии, type hints
-
-### Общие фикстуры ([`tests/rag/conftest.py`](tests/rag/conftest.py))
-
-**Инфраструктура тестирования:**
-```python
-@pytest.fixture
-def test_rag_config():
-    """Базовая конфигурация RAG для тестов"""
-    # Оптимизированные параметры для быстрого тестирования
-    # Минимальные размеры батчей и кэша
-    
-@pytest.fixture
-def mock_qdrant_client():
-    """Стандартный mock Qdrant клиента"""
-    # Имитация всех операций Qdrant
-    # Realistic responses для тестирования
-    
-@pytest.fixture
-def initialized_rag_components():
-    """Полностью настроенные RAG компоненты"""
-    # CPUEmbedder + QdrantVectorStore + CPUQueryEngine
-    # Готовые к использованию в интеграционных тестах
-```
-
-**Доступные фикстуры:**
-- ✅ `test_rag_config` - базовая конфигурация RAG для тестов
-- ✅ `minimal_rag_config` - минимальная конфигурация для быстрых тестов
-- ✅ `sample_code_texts` - набор тестовых текстов кода
-- ✅ `mock_qdrant_client` - стандартный mock Qdrant клиента
-- ✅ `mock_fastembed_embedder` - mock FastEmbed эмбеддера
-- ✅ `temp_test_repo` - временный тестовый репозиторий
-- ✅ `initialized_rag_components` - полностью настроенные RAG компоненты
-
----
-
-## 🎯 КРИТЕРИИ КАЧЕСТВА И МЕТРИКИ
-
-### Функциональные критерии:
-
-#### ✅ Критерии успеха (достигнуты):
-- **Все базовые тесты проходят** - импорты, инициализация, базовые операции
-- **CLI команды работают корректно** - rag index, search, status
-- **Обработка ошибок функционирует** - graceful degradation, fallback'ы
-- **Метаданные и конфигурация валидны** - типизация, validation
-
-#### 📊 Производительные критерии:
-- **Латентность поиска**: <200ms p95 (✅ достигнуто)
-- **Скорость индексации**: >10 файлов/сек (✅ достигнуто) 
-- **Использование памяти**: <500MB для 1000 документов (✅ достигнуто)
-- **Пропускная способность**: >20 запросов/сек (✅ достигнуто)
-- **Конкурентность**: до 20 пользователей (✅ достигнуто)
-
-#### 🎯 Качественные критерии:
-- **Cache hit rate**: >80% для горячих запросов
-- **Адаптивность**: автоматическая настройка батчей по RAM  
-- **Надёжность**: корректная обработка всех типов ошибок
-- **Совместимость**: работа с различными провайдерами эмбеддингов
-
-### Метрики тестового покрытия:
-
-#### 📈 Достигнутые показатели:
-- **Общий объём тестов**: 5872+ строк кода
-- **Функциональное покрытие**: 100% основных компонентов RAG
-- **Интеграционное покрытие**: полные пайплайны индексация → поиск
-- **E2E покрытие**: все CLI команды и пользовательские сценарии
-- **Performance покрытие**: стресс-тесты до 20 пользователей
-
----
-
-## 🚀 АВТОМАТИЗАЦИЯ И CI/CD
-
-### Запуск тестов через скрипт ([`tests/rag/run_rag_tests.py`](tests/rag/run_rag_tests.py))
-
-**Категории тестов:**
-```bash
-# Быстрая проверка основной функциональности (smoke tests)
-python tests/rag/run_rag_tests.py smoke
-
-# Unit тесты отдельных компонентов  
-python tests/rag/run_rag_tests.py unit
-
-# Интеграционные тесты взаимодействия компонентов
-python tests/rag/run_rag_tests.py integration
-
-# E2E тесты CLI команд
-python tests/rag/run_rag_tests.py e2e
-
-# Тесты производительности
-python tests/rag/run_rag_tests.py performance
-
-# Стресс-тесты с высокой нагрузкой
-python tests/rag/run_rag_tests.py stress
-
-# Все тесты полностью
-python tests/rag/run_rag_tests.py all
-```
-
-### Маркировка тестов (pytest markers):
-```python
-# pytest.ini конфигурация (обновлена сентябрь 2025)
+```ini
+[pytest]
 markers =
-    functional: Functional tests using subprocess and CLI
-    integration: Integration tests requiring filesystem, OpenAI API, or Qdrant
-    e2e: End-to-end tests requiring real external services  
-    slow: Tests that take more than 5 seconds
-    stress: Stress tests and load testing
-    benchmark: Performance benchmarks
-    mock: Tests using mock objects
-    real: Tests requiring real external services
+    unit: Тесты без внешних зависимостей (по умолчанию — без маркера)
+    integration: Интеграционные тесты (файлы/БД/API)
+    functional: CLI/subprocess сценарии
+    e2e: Сквозные сценарии с реальными сервисами
+    vm: Тесты, требующие доступности VM сервиса
+    real_embedder: Тесты, где нужен реальный RemoteVMEmbedder
+    mock_embedder: Тесты, которые должны использовать мок-реализацию
+    slow: >5s
+    stress: Нагрузочные
+    benchmark: Бенчмарки
+    offline: Тесты, требующие офлайн-профиля
+asyncio_mode = strict
 ```
 
-### **Текущая система категоризации:**
-- **Без маркеров** → Unit тесты (59 тестов) - изолированные, работают с `--disable-socket`
-- **@pytest.mark.integration** → Integration тесты (67 тестов) - OpenAI API, filesystem, Qdrant
-- **@pytest.mark.functional** → Functional тесты (25 тестов) - subprocess, CLI команды
-- **@pytest.mark.e2e** → E2E тесты - полные пользовательские сценарии
+**Классификация:**
 
-### CI/CD интеграция:
+* **Unit** — тесты **без** явных маркеров (или с `@pytest.mark.unit`), изолированные, работают с `--disable-socket`.
+* **Integration** — `@pytest.mark.integration`, используют внешние зависимости.
+* **Functional** — `@pytest.mark.functional`, CLI/subprocess.
+* **VM** — `@pytest.mark.vm`, требуют живой сервис на удалённой VM.
+* **Real/Mock** — тонкая настройка используемой реализации эмбеддера.
 
-#### ✅ **Стабильный CI пайплайн (Сентябрь 2025):**
+---
+
+## ⚙️ ПОЛИТИКА `conftest.py` И ИЗОЛЯЦИЯ МОКОВ
+
+**Запрещено:**
+
+* Глобальная подмена классов в `pytest_configure` (никаких тотальных `patch('rag.remote_embedder.RemoteVMEmbedder', ...)`).
+
+**Разрешено/обязательно:**
+
+* Scoped-фикстуры (`session`/`module`/`function`) для условного мокинга.
+* CLI-флаг `--use-mock-embedder` и маркеры `@pytest.mark.real_embedder` / `@pytest.mark.mock_embedder` — маршрутизация реализаций на этапе создания инстансов.
+* Отсутствие `autouse=True` для офлайн-фикстур; офлайн-вариант включается **явно** (`@pytest.mark.offline` или явным использованием фикстуры).
+* Пре-чек для `@pytest.mark.vm`: быстрый `socket.create_connection((host,port), timeout=0.5)`; при недоступности — `pytest.skip(...)`.
+
+**Windows/async нюансы:**
+
+```python
+# conftest.py — единоразово, до тестов
+import sys, asyncio
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+```
+
+---
+
+## 📐 КОНТРАКТЫ (TYPES) И НАБЛЮДАЕМОСТЬ
+
+### `EmbedderProtocol`
+
+Формализует публичную поверхность embedder-компонентов (CPU/Remote/Mock). Проверка соответствия — **в тестах**, а не в прод-коде (избегаем `assert isinstance(self, Protocol)` в `__init__`).
+
+**Публичный API (обязательное):**
+
+* `embed_texts(texts: List[str], task: Optional[str], deadline_ms: int) -> ArrayLike`
+* `get_stats() -> Dict[str, Any]`
+* `reset_stats() -> None`
+* `warmup() -> None` (может быть noop в моке)
+* `check_health() -> Dict[str, Any]`
+
+**Структура `get_stats()` (стабильно версионированная):**
+
+```json
+{
+  "schema_version": 1,
+  "requests": {"total": int, "errors": int, "texts": int},
+  "retry": {"total_retries": int, "attempts": int},
+  "latency": {"avg_ms": float},
+  "cb": {"state": "closed|open|half_open", "failure_count": int},
+  "total_requests": int,
+  "total_texts": int,
+  "error_count": int,
+  "retry_count": int,           // дублирует retry.total_retries
+  "is_warmed_up": bool,
+  "provider": str,
+  "model_name": str
+}
+```
+
+> Все тесты читают **только публичную статистику** и контрактные исключения; никаких обращений к приватным полям/методам.
+
+---
+
+## 🔧 УРОВЕНЬ 1: UNIT-ТЕСТЫ (OFFLINE-READY)
+
+**Запуск:**
+
+```bash
+pytest -m "not integration and not functional and not e2e and not vm" --disable-socket -v
+```
+
+**Цели:**
+
+* Проверка конфигураций, импортов, базовой инициализации.
+* Локальная логика без внешних сервисов.
+* Проверка контрактов реализаций (remote/mock) через `EmbedderProtocol`.
+
+**Best Practices:**
+
+* Не патчить приватные методы (`_make_single_request` и т.п.). Если нужен «spy» низкоуровневого вызова — инжектируйте тонкий транспортный интерфейс (`TransportClientProtocol`) и подменяйте **его**.
+* Для асинхронных сценариев используйте `pytest.mark.asyncio` и детерминированные таймауты.
+* Валидируйте метрики через `get_stats()`; не читайте внутренние счётчики объектов retry/CB напрямую.
+
+**Типовое покрытие:**
+
+* Конфигурации (EmbeddingConfig/VectorStoreConfig/QueryEngineConfig).
+* Базовые импорты и `__all__`.
+* Инициализация CPU-реализаций.
+* Валидация векторного хранилища и генерации параметров коллекций.
+* Кэш/health/метрики на уровне движка.
+
+---
+
+## 🔗 УРОВЕНЬ 2: ИНТЕГРАЦИОННЫЕ ТЕСТЫ
+
+**Запуск:**
+
+```bash
+pytest -m "integration" -v
+```
+
+**Цели:**
+
+* Взаимодействие компонентов (сканирование → чанкинг → эмбеддинги → индексация → поиск).
+* Реалистичные данные и сценарии.
+* Грациозные фоллбэки и обработка ошибок.
+
+**Практики:**
+
+* Конфиги и адреса — **только** из ENV (никакого хардкода).
+* Проверки на качество результатов, метрики p50/p95/p99 где уместно.
+* Асинхронные вызовы — через строгий режим, без смешения sync/async.
+
+---
+
+## 🎭 УРОВЕНЬ 3: FUNCTIONAL (CLI/SUBPROCESS)
+
+**Запуск:**
+
+```bash
+pytest -m "functional" -v
+```
+
+**Цели:**
+
+* Проверка CLI-команд и пользовательских сценариев.
+* Гибкая валидация выводов (локализация, разные формулировки ошибок).
+
+**Практики:**
+
+* `subprocess.run(..., text=True, encoding="utf-8")` — корректная обработка вывода.
+* Для async-зависимостей в CLI — корректное мокирование async-функций.
+* Исключаем хрупкие предположения по тексту ошибок (проверяем набор допустимых сообщений).
+
+---
+
+## 🌐 УРОВЕНЬ 4: WEB UI (BACKEND-НАСТРОЙ)
+
+**Запуск (backend-only):**
+
+```bash
+pytest tests/test_web_ui_vm_rag.py -v
+```
+
+**Цели:**
+
+* Тестируем логику backend без AppTest/фронтовых фреймворков.
+* Мокаем VM-сервис, сценарии поиска/индексации, ошибки и фоллбэки.
+
+**Практики:**
+
+* Без `AppTest`/контекст-менеджеров, только прямые вызовы backend-функций.
+* Метрики UI-операций (время/успехи/ошибки) — простым классом-коллектором.
+
+---
+
+## ⚡ УРОВЕНЬ 5: ПРОИЗВОДИТЕЛЬНОСТЬ И СТРЕСС
+
+**Запуск:**
+
+```bash
+pytest -m "benchmark or stress" -v
+```
+
+**Цели:**
+
+* Throughput, латентность, профилирование памяти/CPU.
+* Деградация под конкурентной нагрузкой.
+
+**Практики:**
+
+* Размеры батчей: 8/32/128/512 — сравнение p50/p95/p99.
+* Нагрузочные сценарии (≥20 параллельных пользователей) — детект деградации.
+* Отдельные окружения в CI (не смешивать с unit).
+
+---
+
+## 🧰 ФИКСТУРЫ, ДАННЫЕ И OFFLINE-ПРОФИЛЬ
+
+**Данные:**
+
+* Реалистичные образцы кода в `tests/fixtures/test_repo/`.
+
+**Фикстуры:**
+
+* `embedder_factory` — фабрика real/mock по маркерам/CLI/env.
+* `offline_env` — **не-autouse** фикстура для офлайн-режима.
+* Транспортные клиенты — инжектируемые интерфейсы для подмены в тестах (вместо патча приватных методов).
+
+**Изоляция:**
+
+* `reset_stats()` — обязателен перед/после сценариев, чтобы не протекало состояние.
+* Параллельный запуск — `pytest -n auto --dist worksteal`.
+
+---
+
+## 🖧 VM-ТЕСТЫ (ИНФРАСТРУКТУРНЫЕ)
+
+**Запуск:**
+
+```bash
+pytest -m "vm" -v
+```
+
+**Предусловия:**
+
+* Доступность `VM_HOST`/`VM_PORT` (например, `:8000`) проверяется пре-чеком; иначе `pytest.skip`.
+* UFW/iptables состояние фиксируется в логах, но отсутствие LISTEN — **операционная** проблема, не тестовая.
+
+**Критерии:**
+
+* `External Connectivity Test` — PASS только при доступности сервиса.
+* Отчёт формирует рекомендации (запустить сервис/проверить правила).
+
+---
+
+## 🧪 КОНТРАКТНЫЕ ТЕСТЫ ДЛЯ РЕАЛИЗАЦИЙ
+
+**Цель:** удостовериться, что и `RemoteVMEmbedder`, и `MockRemoteEmbedder` реализуют `EmbedderProtocol` и выдают согласованные метрики/исключения.
+
+**Проверки:**
+
+* `isinstance(obj, EmbedderProtocol)` с `@runtime_checkable`.
+* Наличие публичных методов.
+* Cогласованность `get_stats()` (включая `schema_version`).
+* Доменные исключения (`VMTimeoutError`, `VMConnectionError`) при имитации ошибок — одинаковая семантика.
+
+---
+
+## 🧯 АНТИПАТТЕРНЫ (ЗАПРЕЩЕНО)
+
+* Доступ к приватным методам/полям (`obj._private`, `_make_request_with_retry`, `obj.circuit_breaker.failure_count`, и т.п.).
+* Глобальные патчи реализаций в `pytest_configure`.
+* Жёсткие проверки конкретных текстов ошибок (с учётом локализации и контекста).
+* Смешение sync/async без `pytest-asyncio` и строгих дедлайнов.
+
+> Рекомендация: добавить линтер-правило (ruff/flake8) для запрета `._private` в `tests/**`.
+
+---
+
+## 🚀 CI/CD: МАТРИЦА И ПРОФИЛИ ПРОГОНА
+
+**Матрица GitHub Actions (пример):**
+
 ```yaml
-# .github/workflows/tests.yml
-- name: Run unit tests (offline)  
-  run: pytest -m "not integration and not functional and not e2e" --disable-socket -v
-  # Результат: 59 passed, 93 deselected ✅
+- name: Unit (real)
+  run: pytest -m "not integration and not functional and not e2e and not vm" --disable-socket -v
 
-- name: Run integration tests
-  run: pytest -m "integration" -v  
-  # Результат: 65 passed, 2 skipped ✅
+- name: Unit (mock)
+  run: pytest -m "not integration and not functional and not e2e and not vm" --disable-socket -v --use-mock-embedder
 
-- name: Run functional tests
+- name: Integration
+  run: pytest -m "integration" -v
+
+- name: Functional (CLI)
   run: pytest -m "functional" -v
-  # Результат: 24 passed, 1 skipped ✅
+
+- name: VM
+  run: pytest -m "vm" -v
 ```
 
-#### **Решённые проблемы CI:**
-- ✅ **SocketBlockedError устранён** - unit тесты корректно работают с `--disable-socket`
-- ✅ **RAG тесты категоризированы** - integration тесты получили правильные маркеры
-- ✅ **Environment variables** - исправлены hardcoded localhost адреса
-- ✅ **Mock улучшения** - исправлены падающие тесты с улучшенным мокингом
+**Критерии стабильности:**
 
-#### Full test suite:
-```yaml
-- name: Run all categorized tests
-  run: |
-    pytest -m "not integration and not functional and not e2e" --disable-socket
-    pytest -m "integration"  
-    pytest -m "functional"
-    # Результат: 149 passed, 3 skipped ✅
-```
+* Один и тот же поведенческий тест даёт одинаковый вердикт в `unit-real` и `unit-mock` (если сценарий не требует реального транспорта).
+* Изменение реализаций не требует переписывать тесты, если контракт не менялся.
+* Изменение `conftest.py` не влияет на смысл проверок (только на выбор реализаций).
 
 ---
 
-## 🔧 СРЕДОВЫЕ ТРЕБОВАНИЯ
+## 📊 ОТЧЁТНОСТЬ И МОНИТОРИНГ
 
-### Минимальные требования (для mock тестов):
-- ✅ Python 3.8+
-- ✅ pytest >= 8.3.4
-- ✅ numpy >= 1.24.0
-- ✅ unittest.mock (встроенный)
-- ✅ Зависимости из requirements.txt
-
-### Полные требования (для real тестов):
-- ⚙️ Запущенный Qdrant на localhost:6333
-- ⚙️ FastEmbed или Sentence Transformers модели
-- ⚙️ 4+ GB RAM для больших тестов
-- ⚙️ Доступ к интернету для загрузки моделей
-
-### Docker окружение для тестирования:
-```yaml
-# docker-compose.test.yml
-version: '3.8'
-services:
-  qdrant:
-    image: qdrant/qdrant
-    ports:
-      - "6333:6333"
-    environment:
-      - QDRANT__SERVICE__HTTP_PORT=6333
-  
-  tests:
-    build: .
-    depends_on:
-      - qdrant
-    command: python tests/rag/run_rag_tests.py all
-    environment:
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-```
+* HTML-репорты (`--html=...`), coverage (`--cov=...`), профилировщики (`--profile-svg`).
+* Метрики: success rate, coverage, perf-тренды, flaky detection.
+* Аналитика падений: корневые причины (код/тест/среда), ретроспективы.
 
 ---
 
-## 🎨 BEST PRACTICES И РЕКОМЕНДАЦИИ
+## 📝 CHANGELOG 1.7.0 (02.10.2025)
 
-### Принципы написания тестов:
+* Введён контракт `EmbedderProtocol` и версионированная схема `get_stats(schema_version=1)`.
+* Убраны глобальные патчи из `conftest.py`; добавлены scoped-фикстуры и CLI `--use-mock-embedder`.
+* Добавлены маркеры `real_embedder`, `mock_embedder`, `vm`, `offline`; `asyncio_mode = strict`.
+* Запрещён доступ к приватным методам/полям в тестах; рекомендовано линтер-правило.
+* Добавлен пре-чек доступности VM для `@pytest.mark.vm`; падения по подключению трактуются как невыполненные предусловия.
+* Обновлена CI-матрица: `unit-real`, `unit-mock`, `integration`, `functional`, `vm`.
 
-#### 1. Изоляция и независимость:
-```python
-# ✅ Хорошо: изолированный тест с mock'ами
-def test_search_with_mock_embedder():
-    with patch('rag.embedder.CPUEmbedder.embed_texts') as mock_embed:
-        mock_embed.return_value = np.zeros((1, 1024))
-        # тест логики без зависимости от реальной модели
+---
 
-# ❌ Плохо: тест зависит от внешнего сервиса
-def test_search_requires_real_qdrant():
-    # тест падает если Qdrant недоступен
-```
+## КОМАНДЫ ЗАПУСКА (ШПАРГАЛКА)
 
-#### 2. Реалистичные данные:
-```python
-# ✅ Хорошо: использование реальных образцов кода
-def test_code_search_realism():
-    code_samples = load_test_repo_files()  # реальные Python файлы
-    results = search_service.search("authentication middleware")
-    # тестирование на реалистичных данных
-
-# ❌ Плохо: тестирование на синтетических данных  
-def test_search_synthetic():
-    synthetic_text = "hello world test"  # не представляет реальный код
-```
-
-#### 3. Покрытие edge cases:
-```python
-def test_embedder_handles_empty_input():
-    """Обработка пустых входных данных"""
-    
-def test_embedder_handles_large_batch():
-    """Обработка больших батчей"""
-    
-def test_embedder_handles_oom():
-    """Graceful degradation при OOM"""
-```
-
-#### 4. Правильное мокирование async методов:
-```python
-# ✅ Хорошо: корректный mock для async метода
-def test_async_method_mocking():
-    async def mock_async_health_check():
-        return {'status': 'unhealthy', 'error': 'Connection refused'}
-    
-    mock_service.health_check = mock_async_health_check
-    result = runner.invoke(cli, ['rag', 'status'])
-    # Тест корректно обрабатывает async mock
-
-# ❌ Плохо: sync mock для async метода
-def test_wrong_async_mocking():
-    mock_service.health_check = Mock(return_value={'status': 'unhealthy'})
-    # Может не работать корректно с async методами
-```
-
-#### 5. Гибкая валидация вывода:
-```python
-# ✅ Хорошо: проверка нескольких вариантов сообщений
-assert any(msg in output.lower() for msg in [
-    'ошибка', 'error', 'connection', 'refused', 'unhealthy'
-]), f"Unexpected output: {output}"
-
-# ❌ Плохо: жесткая проверка одного конкретного сообщения
-assert 'Connection refused' in output  # Может не работать с локализацией
-```
-
-### Оптимизация времени выполнения:
-
-#### 1. Параллелизация тестов:
 ```bash
-# Запуск тестов в параллели
-pytest tests/rag/ -n auto --dist worksteal
-```
+# Unit (real)
+pytest -m "not integration and not functional and not e2e and not vm" --disable-socket -v
 
-#### 2. Кэширование артефактов:
-```python
-@pytest.fixture(scope="session")  
-def loaded_embedder():
-    """Загрузка модели один раз для всех тестов"""
-    return CPUEmbedder(config)
-```
+# Unit (mock)
+pytest -m "not integration and not functional and not e2e and not vm" --disable-socket -v --use-mock-embedder
 
-#### 3. Условные тесты:
-```python
-@pytest.mark.skipif(not qdrant_available(), reason="Qdrant not available")
-def test_real_qdrant_operations():
-    """Тест выполняется только при доступности Qdrant"""
+# Integration
+pytest -m "integration" -v
+
+# Functional (CLI)
+pytest -m "functional" -v
+
+# VM
+pytest -m "vm" -v
 ```
 
 ---
-
-## 📋 ОТЧЁТНОСТЬ И МОНИТОРИНГ
-
-### Автоматическая отчётность:
-
-#### Test reports:
-```bash
-# Генерация HTML отчёта
-pytest tests/rag/ --html=reports/rag_tests.html --self-contained-html
-
-# Coverage отчёт
-pytest tests/rag/ --cov=rag --cov-report=html:reports/coverage
-
-# Performance профилирование
-pytest tests/rag/test_rag_performance.py --profile-svg
-```
-
-#### Метрики качества:
-- **Test success rate**: процент прошедших тестов
-- **Coverage percentage**: покрытие кода тестами  
-- **Performance benchmarks**: тренды производительности
-- **Flaky test detection**: обнаружение нестабильных тестов
-
-### Интеграция с мониторингом:
-- **Test execution time trends** - тренды времени выполнения
-- **Failure pattern analysis** - анализ паттернов ошибок
-- **Performance regression detection** - обнаружение деградации
-- **Resource usage monitoring** - мониторинг использования ресурсов
-
----
-
-## 🛣️ ROADMAP РАЗВИТИЯ ТЕСТИРОВАНИЯ
-
-### Краткосрочные цели (M2-M3):
-- ✅ **Оптимизация существующих стресс-тестов** - уменьшение времени выполнения
-- 🔄 **Тесты для гибридного поиска** - BM25/SPLADE функциональность
-- 🔄 **Интеграционные тесты OpenAI** - тестирование RAG в анализе кода
-- 🔄 **Web UI тесты** - автоматизация тестирования Streamlit интерфейса
-
-### Долгосрочные цели (M4+):
-- 📊 **A/B testing framework** - сравнение различных алгоритмов поиска
-- 🎯 **Quality metrics automation** - автоматический сбор метрик качества
-- 🚀 **Load testing at scale** - тестирование с тысячами пользователей  
-- 📈 **ML pipeline validation** - валидация качества эмбеддингов и поиска
-
----
-
-## 🎯 ЗАКЛЮЧЕНИЕ
-
-### ✅ Достигнутые цели стратегии:
-1. **Многоуровневое покрытие** - от unit до E2E тестов (5872+ строк)
-2. **Реалистичные данные** - тестирование на реальном Python коде (1743 строки)
-3. **Производительное тестирование** - метрики соответствуют требованиям
-4. **Автоматизация** - готовность к CI/CD интеграции
-5. **Масштабируемость** - стратегия готова к расширению для M2-M4
-6. **✅ НОВОЕ: Pytest категоризация** - все тесты правильно маркированы (149 passed, 3 skipped)
-
-### 🚀 Готовность к развитию:
-- **Тестовая инфраструктура** легко расширяется новыми тестами
-- **Mock framework** готов к интеграции новых компонентов
-- **Performance benchmarks** готовы к добавлению новых метрик
-- **✅ НОВОЕ: Стабильная CI/CD система** - unit тесты работают с `--disable-socket` без ошибок
-
-### 💎 Качество стратегии:
-- **Best practices** Python тестирования применены последовательно
-- **Изоляция тестов** обеспечивает стабильность выполнения
-- **Реалистичность данных** гарантирует практическую ценность
-- **Comprehensive coverage** покрывает все аспекты RAG системы
-- **✅ НОВОЕ: Правильная категоризация** - 98.0% тестов корректно маркированы
-
-**Стратегия тестирования RAG системы с стабильной CI/CD системой признана production-ready** и готова к использованию в production среде.
-
-**Дата:** 30 сентября 2025  
-**Команда:** RAG Testing Team  
-**Версия стратегии:** 1.6.1 ✅
-
-### 📝 Changelog версии 1.6.1 (30.09.2025):
-- ✅ Дополнительное исправление `test_rag_commands_connection_errors` с улучшенным async мокированием
-- ✅ Добавлены best practices по мокированию async методов в CLI тестах
-- ✅ Добавлены рекомендации по гибкой валидации вывода команд
-- ✅ Обновлена дата последней ревизии документа

@@ -1,5 +1,6 @@
 # tests/conftest.py
 # Общие фикстуры для pytest (если понадобятся)
+#ВНИМАНИЕ!!!! ФАЙЛ ТРЕБУЕТ АКТУАЛИЗАЦИИ!!!!
 import pytest
 import sys
 import os
@@ -124,7 +125,7 @@ def mock_cpu_embedder_offline():
     # Создаем базовую конфигурацию для mock'а
     embedding_config = EmbeddingConfig(
         provider="fastembed",
-        model_name="BAAI/bge-small-en-v1.5",
+        model_name="BAAI/bge-small-en-v1.5", ##мы давно отказались от этой модели и выбрали jinaai-embedding-v3 и перенесли её на виртуальную машину
         batch_size_min=4,
         batch_size_max=16,
         warmup_enabled=False
