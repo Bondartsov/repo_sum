@@ -264,7 +264,7 @@ class RemoteVMEmbedder:
                 timeout_seconds=self.timeout_seconds,
                 elapsed_seconds=self.retry_policy.get_stats()['total_elapsed_time'],
                 operation="embedding",
-                retry_attempt=self.retry_policy.get_stats()['total_attempts']
+                retry_attempt=self.retry_policy.get_stats()['total_executions']
             )
         
         except aiohttp.ClientError as e:
@@ -507,7 +507,7 @@ class RemoteVMEmbedder:
         
         # 2.1.3: Добавляем статистику retry policy
         retry_stats = self.retry_policy.get_stats()
-        stats['retry_count'] = retry_stats['total_attempts'] - retry_stats['successful_attempts']
+        stats['retry_count'] = retry_stats['total_executions'] - retry_stats['successful_executions']
         
         # 2.2.3: Добавляем статистику circuit breaker
         cb_state = self.circuit_breaker.get_state()

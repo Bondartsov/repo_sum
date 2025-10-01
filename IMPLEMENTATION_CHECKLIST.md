@@ -117,6 +117,13 @@
   - Все RAG модули работают корректно
   - Система готова к production использованию
 
+- [x] **1.4.7** Проверка после Фазы 2: `python main.py rag status` ✅
+  - **Проблема:** Health check failed: 'total_attempts' (KeyError)
+  - **Root cause:** remote_embedder.py использовал старый API статистики
+  - **Исправление:** total_attempts → total_executions (2 строки)
+  - **Результат:** Общий статус HEALTHY, Embedder status: healthy ✅
+  - **Валидация:** 84 passed in 232.30s - все тесты проходят ✅
+
 ---
 
 ## 🏗️ ФАЗА 2: Structural Fixes (8-12 часов) ✅ ЗАВЕРШЕНО
