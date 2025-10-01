@@ -136,8 +136,10 @@ class RemoteVMEmbedder:
         
         # 1.1.1: Гармонизация timeout - рассчитываем total_timeout
         # Формула: base × retries + sum(delay × 2^i для exponential backoff)
-        # Пример: 60s × 3 + (2s + 4s + 8s) = 180s + 14s = 194s
-        backoff_total = sum(self.retry_delay * (2 ** i) for i in range(self.max_retries))
+        # ИСПРАВЛЕНИЕ #4: Backoff интервалов на один меньше, чем попыток (последний retry не ждёт)
+        # Пример: для 3 попыток будет 2 backoff интервала: (2s + 4s) = 6s
+        num_backoff_intervals = max(0, self.max_retries - 1)
+        backoff_total = sum(self.retry_delay * (2 ** i) for i in range(num_backoff_intervals))
         total_timeout = (base_timeout * self.max_retries) + backoff_total
         
         _log(logger.debug, 
@@ -233,15 +235,18 @@ class RemoteVMEmbedder:
         import asyncio
         import aiohttp
         
-        # 2.2.2: Оборачиваем запрос через Circuit Breaker + RetryPolicy
-        async def _protected_request():
-            return await self.retry_policy.execute_with_retry(
-                self._make_single_request,
-                payload=payload
-            )
+        # ИСПРАВЛЕНИЕ #1: Считаем elapsed локально для точного измерения времени
+        request_start_time = time.time()
+        
+        # ИСПРАВЛЕНИЕ #2: Инвертируем композицию - RetryPolicy вызывает CircuitBreaker для каждой попытки
+        # Теперь CB будет видеть каждую отдельную попытку, а не весь цикл retry целиком
+        async def _single_attempt():
+            """Одна попытка запроса через Circuit Breaker"""
+            return await self.circuit_breaker.call(self._make_single_request, payload=payload)
         
         try:
-            return await self.circuit_breaker.call(_protected_request)
+            # RetryPolicy управляет попытками, каждая из которых проходит через CB
+            return await self.retry_policy.execute_with_retry(_single_attempt)
         
         except CircuitBreakerOpenException as e:
             # Circuit Breaker открыт - VM сервис недоступен
@@ -258,13 +263,17 @@ class RemoteVMEmbedder:
             )
         
         except asyncio.TimeoutError as e:
+            # ИСПРАВЛЕНИЕ #1: Используем локально измеренное время вместо несуществующего ключа
+            elapsed_seconds = time.time() - request_start_time
+            retry_stats = self.retry_policy.get_stats()
+            
             # Конвертируем в VMTimeoutError для консистентной обработки
             raise VMTimeoutError(
                 message="VM сервис не отвечает после всех retry попыток",
                 timeout_seconds=self.timeout_seconds,
-                elapsed_seconds=self.retry_policy.get_stats()['total_elapsed_time'],
+                elapsed_seconds=elapsed_seconds,
                 operation="embedding",
-                retry_attempt=self.retry_policy.get_stats()['total_executions']
+                retry_attempt=retry_stats.get('total_executions', 0)
             )
         
         except aiohttp.ClientError as e:
@@ -507,7 +516,9 @@ class RemoteVMEmbedder:
         
         # 2.1.3: Добавляем статистику retry policy
         retry_stats = self.retry_policy.get_stats()
-        stats['retry_count'] = retry_stats['total_executions'] - retry_stats['successful_executions']
+        # ИСПРАВЛЕНИЕ #3: Используем total_retries вместо подсчёта проваленных циклов
+        # total_retries содержит фактическое количество дополнительных попыток
+        stats['retry_count'] = retry_stats['total_retries']
         
         # 2.2.3: Добавляем статистику circuit breaker
         cb_state = self.circuit_breaker.get_state()
