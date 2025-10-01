@@ -445,13 +445,155 @@ async def get_stats():
         logger.error(f"Ошибка получения статистики: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
 
-if __name__ == "__main__":
-    # Запуск сервиса
+def check_service_status():
+    """Проверка статуса сервиса через HTTP"""
+    import requests
+    try:
+        response = requests.get("http://localhost:8000/health", timeout=5)
+        if response.status_code == 200:
+            health_data = response.json()
+            print("\n✅ Сервис работает")
+            print(f"📊 Статус: {health_data.get('status', 'unknown')}")
+            print(f"🕐 Время: {health_data.get('timestamp', 'N/A')}")
+            
+            # Показываем статус компонентов
+            services_status = health_data.get('services', {})
+            if services_status:
+                print("\n📦 Компоненты:")
+                for service_name, service_info in services_status.items():
+                    status = service_info.get('status', 'unknown')
+                    emoji = "✅" if status == "connected" else "⚠️"
+                    print(f"  {emoji} {service_name}: {status}")
+            
+            # Статистика коллекции
+            if 'vector_count' in health_data:
+                print(f"\n📚 Векторов в коллекции: {health_data['vector_count']}")
+            
+            return True
+        else:
+            print(f"⚠️ Сервис вернул код {response.status_code}")
+            return False
+    except requests.exceptions.ConnectionError:
+        print("❌ Сервис не запущен (не удалось подключиться к localhost:8000)")
+        return False
+    except Exception as e:
+        print(f"❌ Ошибка проверки статуса: {e}")
+        return False
+
+def stop_service():
+    """Остановка сервиса"""
+    import signal
+    import subprocess
+    
+    try:
+        # Ищем процесс uvicorn на порту 8000
+        result = subprocess.run(
+            ["lsof", "-ti:8000"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split('\n')
+            print(f"🔍 Найдено процессов: {len(pids)}")
+            
+            for pid in pids:
+                try:
+                    pid_int = int(pid)
+                    os.kill(pid_int, signal.SIGTERM)
+                    print(f"✅ Процесс {pid} остановлен")
+                except ProcessLookupError:
+                    print(f"⚠️ Процесс {pid} уже остановлен")
+                except Exception as e:
+                    print(f"❌ Ошибка остановки процесса {pid}: {e}")
+            
+            print("✅ Сервис остановлен")
+            return True
+        else:
+            print("ℹ️ Сервис не запущен (порт 8000 свободен)")
+            return False
+            
+    except FileNotFoundError:
+        print("⚠️ Команда lsof не найдена, используем альтернативный метод...")
+        # Альтернативный метод через ps + grep
+        try:
+            result = subprocess.run(
+                ["ps", "aux"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            
+            for line in result.stdout.split('\n'):
+                if 'vm_rag_service.py' in line and 'python' in line:
+                    parts = line.split()
+                    if len(parts) > 1:
+                        pid = int(parts[1])
+                        os.kill(pid, signal.SIGTERM)
+                        print(f"✅ Процесс {pid} остановлен")
+                        return True
+            
+            print("ℹ️ Сервис не запущен")
+            return False
+        except Exception as e:
+            print(f"❌ Ошибка остановки: {e}")
+            return False
+    except Exception as e:
+        print(f"❌ Ошибка остановки сервиса: {e}")
+        return False
+
+def start_service():
+    """Запуск сервиса"""
     logger.info("🚀 Запуск RAG-as-a-Service на VM...")
-    uvicorn.run(
-        app,
-        host="0.0.0.0",  # Слушаем на всех интерфейсах
-        port=8000,
-        log_level="info",
-        access_log=True
+    try:
+        uvicorn.run(
+            app,
+            host="0.0.0.0",  # Слушаем на всех интерфейсах
+            port=8000,
+            log_level="info",
+            access_log=True
+        )
+    except Exception as e:
+        logger.error(f"❌ Ошибка запуска сервиса: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description="RAG-as-a-Service управление на VM",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Примеры использования:
+  python vm_rag_service.py          # Запустить сервис
+  python vm_rag_service.py start    # Запустить сервис
+  python vm_rag_service.py status   # Проверить статус
+  python vm_rag_service.py stop     # Остановить сервис
+        """
     )
+    
+    parser.add_argument(
+        'command',
+        nargs='?',
+        default='start',
+        choices=['start', 'stop', 'status'],
+        help='Команда для выполнения (по умолчанию: start)'
+    )
+    
+    args = parser.parse_args()
+    
+    if args.command == 'status':
+        success = check_service_status()
+        sys.exit(0 if success else 1)
+    
+    elif args.command == 'stop':
+        success = stop_service()
+        sys.exit(0 if success else 1)
+    
+    elif args.command == 'start':
+        start_service()
+    
+    else:
+        parser.print_help()
+        sys.exit(1)
