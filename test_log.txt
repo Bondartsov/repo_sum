@@ -1,0 +1,83 @@
+INFO     rag.event_loop_manager:event_loop_manager.py:46 EventLoopManager: background loop started
+INFO     rag.remote_vector_store:remote_vector_store.py:31 RemoteVMVectorStore : =http://10.61.11.54:8000/search, =http://10.61.11.54:8000/index
+INFO     rag.vm_diagnostics:vm_diagnostics.py:66 Начало диагностики подключения к VM: 10.61.11.54:8000
+WARNING  rag.vm_diagnostics:vm_diagnostics.py:135 Порт 8000 закрыт на 10.61.11.54 (код: 10061)
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=5, timeout=60.0s
+INFO     rag.remote_embedder:remote_embedder.py:34 RemoteVMEmbedder : http://10.61.11.54:8000/embeddings
+INFO     rag.remote_vector_store:remote_vector_store.py:31 RemoteVMVectorStore : =http://10.61.11.54:8000/search, =http://10.61.11.54:8000/index
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+WARNING  rag.circuit_breaker:circuit_breaker.py:299 Circuit breaker: переход CLOSED -> OPEN (failures: 3)
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:229 Circuit breaker: переход OPEN -> HALF_OPEN (прошло 10s)
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:258 Circuit breaker: переход HALF_OPEN -> CLOSED (успешных попыток: 2)
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+WARNING  rag.circuit_breaker:circuit_breaker.py:287 Circuit breaker: переход HALF_OPEN -> OPEN (failure при восстановлении)
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=5, timeout=60.0s
+WARNING  rag.circuit_breaker:circuit_breaker.py:299 Circuit breaker: переход CLOSED -> OPEN (failures: 5)
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=5, timeout=60.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=5, timeout=60.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:258 Circuit breaker: переход HALF_OPEN -> CLOSED (успешных попыток: 3)
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=60.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=3, timeout=5.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=2, timeout=0.2s
+WARNING  rag.circuit_breaker:circuit_breaker.py:299 Circuit breaker: переход CLOSED -> OPEN (failures: 2)
+INFO     rag.circuit_breaker:circuit_breaker.py:229 Circuit breaker: переход OPEN -> HALF_OPEN (прошло 0s)
+INFO     rag.circuit_breaker:circuit_breaker.py:258 Circuit breaker: переход HALF_OPEN -> CLOSED (успешных попыток: 1)
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=5, timeout=60.0s
+INFO     rag.circuit_breaker:circuit_breaker.py:148 Circuit Breaker инициализирован: failure_threshold=1, timeout=0.5s
+WARNING  rag.circuit_breaker:circuit_breaker.py:299 Circuit breaker: переход CLOSED -> OPEN (failures: 1)
+INFO     rag.circuit_breaker:circuit_breaker.py:229 Circuit breaker: переход OPEN -> HALF_OPEN (прошло 1s)
+INFO     rag.circuit_breaker:circuit_breaker.py:258 Circuit breaker: переход HALF_OPEN -> CLOSED (успешных попыток: 1)
+INFO     CodeChunker:code_chunker.py:78 CodeChunker работает в офлайн-режиме: используется эвристический подсчёт токенов
+INFO     tests.mocks.mock_cpu_embedder:mock_cpu_embedder.py:105 Инициализирован MockCPUEmbedder (provider: mock_remote-vm, dim: 768)
+INFO     rag.indexer_service:indexer_service.py:117 IndexerService инициализирован
+INFO     CodeChunker:code_chunker.py:78 CodeChunker работает в офлайн-режиме: используется эвристический подсчёт токенов
+INFO     tests.mocks.mock_cpu_embedder:mock_cpu_embedder.py:105 Инициализирован MockCPUEmbedder (provider: mock_remote-vm, dim: 768)
+INFO     rag.indexer_service:indexer_service.py:117 IndexerService инициализирован
+INFO     CodeChunker:code_chunker.py:78 CodeChunker работает в офлайн-режиме: используется эвристический подсчёт токенов
+INFO     tests.mocks.mock_cpu_embedder:mock_cpu_embedder.py:105 Инициализирован MockCPUEmbedder (provider: mock_remote-vm, dim: 768)
+INFO     rag.indexer_service:indexer_service.py:117 IndexerService инициализирован
+INFO     CodeChunker:code_chunker.py:78 CodeChunker работает в офлайн-режиме: используется эвристический подсчёт токенов
+INFO     tests.mocks.mock_cpu_embedder:mock_cpu_embedder.py:105 Инициализирован MockCPUEmbedder (provider: mock_remote-vm, dim: 768)
+INFO     rag.indexer_service:indexer_service.py:117 IndexerService инициализирован
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.embedder:embedder.py:128 Offline mode detected — skip real model initialization; using offline fallback embeddings
+INFO     rag.query_engine:query_engine.py:211 CPUQueryEngine инициализирован: RRF=True, MMR=True
+INFO     rag.query_engine:query_engine.py:211 CPUQueryEngine инициализирован: RRF=True, MMR=True
+INFO     rag.query_engine:query_engine.py:211 CPUQueryEngine инициализирован: RRF=True, MMR=True
+INFO     rag.query_engine:query_engine.py:211 CPUQueryEngine инициализирован: RRF=True, MMR=True
+WARNING  rag.query_engine:query_engine.py:534 Не удалось получить эмбеддинги для MMR: fail
+INFO     rag.query_engine:query_engine.py:211 CPUQueryEngine инициализирован: RRF=True, MMR=True
+WARNING  rag.query_engine:query_engine.py:534 Не удалось получить эмбеддинги для MMR: fail
+INFO     rag.query_engine:query_engine.py:211 CPUQueryEngine инициализирован: RRF=True, MMR=True
+INFO     rag.query_engine:query_engine.py:211 CPUQueryEngine инициализирован: RRF=True, MMR=True

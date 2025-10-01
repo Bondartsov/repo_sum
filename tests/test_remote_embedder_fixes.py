@@ -54,7 +54,7 @@ async def test_timeout_no_keyerror(embedder):
     
     # Пытаемся выполнить запрос с коротким таймаутом
     with pytest.raises(VMTimeoutError) as exc_info:
-        await embedder._make_request_with_retry({"test": "data"}, 100)
+        await embedder._make_request_with_retry({"test": "data"})
     
     # Проверяем что ошибка содержит elapsed_seconds (измеренное локально)
     error = exc_info.value
@@ -80,7 +80,7 @@ async def test_circuit_breaker_composition(embedder):
     
     # Выполняем запрос который будет фейлить
     try:
-        await embedder._make_request_with_retry({"test": "data"}, 5000)
+        await embedder._make_request_with_retry({"test": "data"})
     except RuntimeError:
         pass
     
@@ -167,7 +167,7 @@ async def test_circuit_breaker_open_no_retry(embedder):
     
     # Пытаемся выполнить запрос через _make_request_with_retry
     with pytest.raises(VMConnectionError) as exc_info:
-        await embedder._make_request_with_retry({"test": "data"}, 1000)
+        await embedder._make_request_with_retry({"test": "data"})
     
     # Проверяем что ошибка связана с открытым CB
     assert "Circuit Breaker OPEN" in str(exc_info.value)

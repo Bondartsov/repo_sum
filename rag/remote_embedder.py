@@ -165,11 +165,17 @@ class RemoteVMEmbedder:
         task: Optional[str] = None,
         deadline_ms: int = 30000
     ) -> np.ndarray:
-        """Выполняет фактический HTTP запрос к VM и обновляет статистику."""
+        """Выполняет фактический HTTP запрос к VM и обновляет статистику.
+        
+        Note:
+            Использует time.monotonic() для точного измерения производительности,
+            не подверженного изменениям системных часов.
+        """
         if not texts:
             return np.array([])
 
-        start_time = time.time()
+        # УЛУЧШЕНИЕ: Используем monotonic для корректного замера производительности
+        start_time = time.monotonic()
 
         try:
             payload = {
@@ -179,7 +185,8 @@ class RemoteVMEmbedder:
                 "normalize": True
             }
 
-            embeddings = await self._make_request_with_retry(payload, deadline_ms)
+            # УЛУЧШЕНИЕ #3: Убираем неиспользуемый параметр deadline_ms
+            embeddings = await self._make_request_with_retry(payload)
 
             embeddings_array = np.array(embeddings, dtype=np.float32)
             # Гарантируем корректную форму [N, D] и соответствие количеству текстов
@@ -199,7 +206,7 @@ class RemoteVMEmbedder:
                     f"Несовпадение размеров: embeddings={embeddings_array.shape[0]} vs texts={len(texts)}"
                 )
 
-            elapsed_time = time.time() - start_time
+            elapsed_time = time.monotonic() - start_time
             self.stats['total_requests'] += 1
             self.stats['total_texts'] += len(texts)
             self.stats['total_time'] += elapsed_time
@@ -219,24 +226,26 @@ class RemoteVMEmbedder:
 
     async def _make_request_with_retry(
         self, 
-        payload: Dict[str, Any], 
-        deadline_ms: int
+        payload: Dict[str, Any]
     ) -> List[List[float]]:
         """
         Выполняет HTTP запрос с retry логикой через RetryPolicy и Circuit Breaker.
         
         Args:
             payload: Данные для отправки
-            deadline_ms: Дедлайн в миллисекундах
             
         Returns:
             Список эмбеддингов
+            
+        Note:
+            Использует time.monotonic() для точного измерения времени, не подверженного
+            изменениям системных часов (NTP синхронизация, ручная корректировка).
         """
         import asyncio
         import aiohttp
         
-        # ИСПРАВЛЕНИЕ #1: Считаем elapsed локально для точного измерения времени
-        request_start_time = time.time()
+        # ИСПРАВЛЕНИЕ #1 + УЛУЧШЕНИЕ: Используем monotonic для корректных таймаутов
+        request_start_time = time.monotonic()
         
         # ИСПРАВЛЕНИЕ #2: Инвертируем композицию - RetryPolicy вызывает CircuitBreaker для каждой попытки
         # Теперь CB будет видеть каждую отдельную попытку, а не весь цикл retry целиком
@@ -263,17 +272,19 @@ class RemoteVMEmbedder:
             )
         
         except asyncio.TimeoutError as e:
-            # ИСПРАВЛЕНИЕ #1: Используем локально измеренное время вместо несуществующего ключа
-            elapsed_seconds = time.time() - request_start_time
-            retry_stats = self.retry_policy.get_stats()
+            # ИСПРАВЛЕНИЕ #1 + УЛУЧШЕНИЕ: Используем monotonic + локальный счетчик попыток
+            elapsed_seconds = time.monotonic() - request_start_time
+            
+            # УЛУЧШЕНИЕ #2: Логируем локальный лимит попыток вместо глобального счетчика
+            max_attempts = self.retry_policy.config.max_attempts
             
             # Конвертируем в VMTimeoutError для консистентной обработки
             raise VMTimeoutError(
-                message="VM сервис не отвечает после всех retry попыток",
+                message=f"VM сервис не отвечает после {max_attempts} попыток",
                 timeout_seconds=self.timeout_seconds,
                 elapsed_seconds=elapsed_seconds,
                 operation="embedding",
-                retry_attempt=retry_stats.get('total_executions', 0)
+                retry_attempt=max_attempts  # Локальный контекст: достигли лимита
             )
         
         except aiohttp.ClientError as e:
@@ -326,6 +337,10 @@ class RemoteVMEmbedder:
     async def _async_health_check(self) -> Dict[str, Any]:
         """
         Асинхронная проверка состояния удалённого сервиса с диагностикой.
+        
+        Note:
+            Использует time.monotonic() для точного измерения latency,
+            не подверженного изменениям системных часов.
         """
         import asyncio
         import aiohttp
@@ -345,7 +360,8 @@ class RemoteVMEmbedder:
             "diagnostic": None,  # 2.3.3: Добавляем диагностическую информацию
         }
 
-        start_time = time.time()
+        # УЛУЧШЕНИЕ: Используем monotonic для корректного замера latency
+        start_time = time.monotonic()
 
         try:
             test_payload = {
@@ -357,7 +373,7 @@ class RemoteVMEmbedder:
 
             session = await get_shared_http_session()
             async with session.post(self.embeddings_endpoint, json=test_payload) as response:
-                response_time_ms = (time.time() - start_time) * 1000
+                response_time_ms = (time.monotonic() - start_time) * 1000
                 
                 if response.status == 200:
                     result = await response.json()
@@ -390,7 +406,7 @@ class RemoteVMEmbedder:
                     }
         
         except aiohttp.ClientConnectorError as e:
-            response_time_ms = (time.time() - start_time) * 1000
+            response_time_ms = (time.monotonic() - start_time) * 1000
             health_info["status"] = "error"
             health_info["error"] = f"ClientConnectorError: {e}"
             
@@ -425,7 +441,7 @@ class RemoteVMEmbedder:
                 }
         
         except asyncio.TimeoutError as e:
-            response_time_ms = (time.time() - start_time) * 1000
+            response_time_ms = (time.monotonic() - start_time) * 1000
             health_info["status"] = "error"
             health_info["error"] = f"TimeoutError: {e}"
             health_info["diagnostic"] = {
@@ -437,7 +453,7 @@ class RemoteVMEmbedder:
             }
         
         except Exception as e:
-            response_time_ms = (time.time() - start_time) * 1000
+            response_time_ms = (time.monotonic() - start_time) * 1000
             health_info["status"] = "error"
             health_info["error"] = str(e)
             health_info["diagnostic"] = {
