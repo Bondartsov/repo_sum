@@ -425,6 +425,243 @@ mock_client.chat.completions.create.side_effect = RateLimitError(...)
 **Оценка:** 3-4 часа, сложность: средняя
 **Приоритет:** P0 (критический блокер интеграционных тестов)
 
+### **8. Критическая проблема таймаутов при RAG индексации**
+**Статус:** 🔴 В РАБОТЕ (начато 1 октября 2025)
+**Влияние:** Блокирует индексацию репозиториев, система неработоспособна для production
+**Файлы:** `rag/remote_embedder.py`, `rag/exceptions.py`
+
+**Симптомы:**
+```
+2025-10-01 11:01:58,639 - rag.remote_embedder - ERROR - TimeoutError
+EmbeddingException: Удалённый сервис эмбеддингов недоступен (провайдер: remote-vm)
+```
+
+**Root Cause Analysis:**
+1. **Конфликт outer/inner timeouts:**
+   - `run_async_safe(timeout=30s)` в `remote_embedder.py:109`
+   - Внутри: 3 retry попытки × 30s каждая = 90s
+   - Exponential backoff: 2s + 4s + 8s = 14s
+   - **Итого внутренняя логика:** 90s + 14s = 104s
+   - **Outer timeout:** 30s срабатывает РАНЬШЕ → TimeoutError!
+
+2. **Config не используется:**
+   - `config.remote_service.timeout_seconds = 60` игнорируется
+   - Hardcoded `deadline_ms=30000` в коде
+
+3. **Отсутствие tracking оставшегося времени:**
+   - Нет проверки `remaining = total_timeout - elapsed`
+   - Нет адаптивного `request_timeout = min(base, remaining)`
+   - Retry логика не учитывает истекшее время
+
+**Критические проблемы:**
+- ❌ Outer timeout (30s) меньше суммы inner timeout (104s)
+- ❌ Нет tracking оставшегося времени между попытками
+- ❌ Hardcoded значения вместо использования конфигурации
+- ❌ Нет специфичных исключений для разных типов ошибок
+
+**План исправления (Фаза 1 - КРИТИЧНО):**
+
+**1.1 Гармонизация timeout (remote_embedder.py:94-117):**
+```python
+# БЫЛО:
+return run_async_safe(
+    self._async_embed_texts(...),
+    timeout=30  # ❌ Слишком короткий!
+)
+
+# СТАЛО:
+# Формула: base × retries + sum(delay × 2^i)
+total_timeout = (30 * 3) + (2 + 4 + 8) = 104s
+return run_async_safe(
+    self._async_embed_texts(...),
+    timeout=total_timeout  # ✅ Достаточно времени
+)
+```
+
+**1.2 Tracking остатка времени (remote_embedder.py:167-223):**
+```python
+import time
+start_time = time.time()
+total_timeout = deadline_ms / 1000.0
+
+for attempt in range(self.max_retries):
+    elapsed = time.time() - start_time
+    remaining = total_timeout - elapsed
+    
+    if remaining <= 0:
+        raise asyncio.TimeoutError(...)
+    
+    request_timeout = min(base_timeout, remaining)
+    # используем request_timeout вместо фиксированного значения
+```
+
+**1.3 Использовать config (remote_embedder.py:85-91):**
+```python
+# БЫЛО:
+deadline_ms = 30000  # ❌ Hardcoded
+
+# СТАЛО:
+deadline_ms = self.timeout_seconds * 1000  # ✅ Из config (60s)
+```
+
+**1.4 Специфичные исключения (exceptions.py):**
+```python
+class VMConnectionError(EmbeddingException):
+    """VM недоступна (connection refused)"""
+    def __init__(self, message: str, vm_host: str, vm_port: int):
+        self.vm_host = vm_host
+        self.vm_port = vm_port
+        super().__init__(message)
+
+class VMTimeoutError(EmbeddingException):
+    """Превышено время ожидания VM"""
+    def __init__(self, message: str, timeout_seconds: float, elapsed_seconds: float):
+        self.timeout_seconds = timeout_seconds
+        self.elapsed_seconds = elapsed_seconds
+        super().__init__(message)
+```
+
+**Результат после исправления:**
+- ✅ Outer timeout (104s) больше inner timeout (90s + 14s)
+- ✅ Retry логика учитывает оставшееся время
+- ✅ Используется конфигурация вместо hardcode
+- ✅ Детальная диагностика через специфичные исключения
+
+**Тестирование:**
+```bash
+# Запустить индексацию
+python main.py rag index /path/to/repo --batch-size 8
+
+# Ожидаемый результат: успешная индексация без TimeoutError
+```
+
+**Оценка:** 4-6 часов, сложность: высокая
+**Приоритет:** P0 (критический блокер production)
+
+### **9. Qdrant Vector Store показывает статус "error"**
+**Статус:** 🔴 ДИАГНОСТИКА (начато 1 октября 2025)
+**Влияние:** Невозможно определить реальное состояние Qdrant, нет диагностики проблем
+**Файлы:** `rag/remote_vector_store.py`, `main.py`, `tests/rag/test_vm_qdrant_connectivity.py`
+
+**Симптомы:**
+```bash
+$ python main.py rag status --detailed
+Компонент: Qdrant Vector Store
+Статус: [red]error[/red]
+Детали: (пусто)
+```
+
+**Возможные причины (требуется диагностика):**
+
+**Причина A: VM сервис недоступен**
+- Connection refused: `http://10.61.11.54:8000/health`
+- VM выключена или не запущена
+- Firewall блокирует порт 8000
+
+**Причина B: VM работает, но Qdrant внутри недоступна**
+- VM отвечает: `{"status": "degraded", "components": {"qdrant": {"status": "error"}}}`
+- Qdrant процесс упал или не запустился
+- Порт 6333 внутри VM недоступен
+
+**Причина C: HTTP timeout при health check**
+- Запрос занимает >30s
+- Медленный отклик VM из-за нагрузки
+- Сетевые задержки
+
+**Причина D: Некорректный формат JSON ответа**
+- VM возвращает invalid JSON
+- Отсутствуют обязательные поля
+- Неожиданная структура ответа
+
+**Проблемы в текущей реализации:**
+- ❌ Нет детальной диагностики причины ошибки
+- ❌ Не показывается `error_type`, `recommendation`, `response_time_ms`
+- ❌ CLI не выводит diagnostic таблицу при ошибках
+- ❌ Нет comprehensive тестов для всех сценариев
+
+**Диагностические тесты (test_vm_qdrant_connectivity.py):**
+```python
+# 10 comprehensive тестов для диагностики:
+- test_health_check_vm_unavailable (connection refused)
+- test_health_check_vm_timeout (asyncio.TimeoutError)
+- test_health_check_vm_http_error (HTTP 500)
+- test_health_check_vm_malformed_response (invalid JSON)
+- test_health_check_qdrant_not_ready (VM ok, Qdrant down)
+- test_health_check_success (все работает)
+- test_health_check_with_network_issues (DNS/firewall)
+- test_sync_health_check (sync wrapper)
+- test_health_check_timeout_too_short (короткий timeout)
+- test_diagnostic_recommendations_vm_unavailable (рекомендации)
+```
+
+**План исправления (Фаза 1 - КРИТИЧНО):**
+
+**1.1 Добавить диагностику в remote_vector_store.py:154-195:**
+```python
+async def _async_health_check(self):
+    start_time = time.time()
+    try:
+        response = await session.get(url, timeout=timeout)
+        response_time_ms = (time.time() - start_time) * 1000
+        
+        return {
+            "status": "healthy",
+            "response_time_ms": response_time_ms,
+            "http_status": response.status
+        }
+    except aiohttp.ClientConnectorError as e:
+        return {
+            "status": "error",
+            "error_type": "connection_refused",
+            "recommendation": "Проверьте: 1) VM запущена, 2) Firewall порт 8000",
+            "vm_host": self.vm_host,
+            "vm_port": self.vm_port
+        }
+    except asyncio.TimeoutError:
+        return {
+            "status": "error",
+            "error_type": "timeout",
+            "recommendation": "VM отвечает медленно (>30s). Проверьте нагрузку.",
+            "timeout_seconds": timeout
+        }
+```
+
+**1.2 Улучшить отображение в main.py:858-959:**
+```python
+if status != "healthy":
+    # Показать diagnostic таблицу
+    diagnostic_table = Table(title="Диагностика проблемы")
+    diagnostic_table.add_column("Параметр")
+    diagnostic_table.add_column("Значение")
+    
+    diagnostic_table.add_row("Тип ошибки", error_type)
+    diagnostic_table.add_row("Рекомендация", recommendation)
+    diagnostic_table.add_row("Response time", f"{response_time_ms}ms")
+    
+    console.print(diagnostic_table)
+```
+
+**Первые шаги диагностики:**
+```bash
+# 1. Запустить тесты
+pytest tests/rag/test_vm_qdrant_connectivity.py -v
+
+# 2. Проверить VM доступность
+curl http://10.61.11.54:8000/health
+
+# 3. Запустить rag status
+python main.py rag status --detailed
+```
+
+**Результат после исправления:**
+- ✅ Детальная диагностика причины ошибки (A/B/C/D)
+- ✅ CLI показывает diagnostic таблицу с рекомендациями
+- ✅ Response time и HTTP status в выводе
+- ✅ Comprehensive тесты для всех сценариев
+
+**Оценка:** 2-3 часа, сложность: средняя
+**Приоритет:** P0 (критический для диагностики production проблем)
+
 ---
 
 ## 📚 Документационные несоответствия

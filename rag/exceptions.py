@@ -342,3 +342,139 @@ class VectorStoreConfigurationError(VectorStoreException):
             message=extended_message,
             operation="configuration"
         )
+
+
+class VMConnectionError(EmbeddingException):
+    """
+    Исключение для ошибок подключения к удалённому VM сервису эмбеддингов.
+    
+    Это исключение возникает когда:
+    - VM сервис недоступен (connection refused)
+    - Firewall блокирует соединение
+    - DNS не может разрешить адрес VM
+    - Сетевые проблемы между клиентом и VM
+    """
+    
+    def __init__(self, message: str, vm_host: str, vm_port: int, error_details: str = None):
+        """
+        Инициализация исключения подключения к VM.
+        
+        Args:
+            message: Основное сообщение об ошибке
+            vm_host: Хост VM сервиса
+            vm_port: Порт VM сервиса
+            error_details: Детали ошибки подключения
+        """
+        self.vm_host = vm_host
+        self.vm_port = vm_port
+        self.error_details = error_details
+        
+        extended_message = f"{message} (VM: {vm_host}:{vm_port})"
+        
+        super().__init__(
+            message=extended_message,
+            provider="remote-vm",
+            details=error_details
+        )
+    
+    def get_diagnostic_info(self) -> dict:
+        """
+        Возвращает диагностическую информацию для troubleshooting.
+        
+        Returns:
+            Словарь с информацией для диагностики проблемы
+        """
+        return {
+            "error_type": "vm_connection_error",
+            "vm_host": self.vm_host,
+            "vm_port": self.vm_port,
+            "recommendation": (
+                f"Проверьте: 1) VM сервис запущен на {self.vm_host}:{self.vm_port}, "
+                f"2) Firewall не блокирует порт {self.vm_port}, "
+                f"3) Сетевое подключение к {self.vm_host}"
+            ),
+            "troubleshooting_commands": [
+                f"curl http://{self.vm_host}:{self.vm_port}/health",
+                f"ping {self.vm_host}",
+                f"telnet {self.vm_host} {self.vm_port}"
+            ]
+        }
+
+
+class VMTimeoutError(EmbeddingException):
+    """
+    Исключение для ошибок таймаута при обращении к удалённому VM сервису.
+    
+    Это исключение возникает когда:
+    - VM сервис не отвечает в установленное время
+    - Сетевая задержка превышает допустимую
+    - VM сервис перегружен и медленно обрабатывает запросы
+    - Конфликт между outer и inner timeout
+    """
+    
+    def __init__(
+        self, 
+        message: str, 
+        timeout_seconds: float, 
+        elapsed_seconds: float = None,
+        operation: str = "embedding",
+        retry_attempt: int = None
+    ):
+        """
+        Инициализация исключения таймаута VM.
+        
+        Args:
+            message: Основное сообщение об ошибке
+            timeout_seconds: Установленный таймаут в секундах
+            elapsed_seconds: Фактически затраченное время в секундах
+            operation: Операция, которая превысила таймаут
+            retry_attempt: Номер попытки retry (если применимо)
+        """
+        self.timeout_seconds = timeout_seconds
+        self.elapsed_seconds = elapsed_seconds
+        self.operation = operation
+        self.retry_attempt = retry_attempt
+        
+        extended_message = f"{message} (таймаут: {timeout_seconds}s"
+        if elapsed_seconds is not None:
+            extended_message += f", затрачено: {elapsed_seconds:.2f}s"
+        if retry_attempt is not None:
+            extended_message += f", попытка: {retry_attempt}"
+        extended_message += ")"
+        
+        super().__init__(
+            message=extended_message,
+            provider="remote-vm",
+            details=f"Операция '{operation}' превысила таймаут"
+        )
+    
+    def get_diagnostic_info(self) -> dict:
+        """
+        Возвращает диагностическую информацию для troubleshooting.
+        
+        Returns:
+            Словарь с информацией для диагностики проблемы
+        """
+        recommendation = (
+            f"VM сервис не отвечает в срок ({self.timeout_seconds}s). "
+        )
+        
+        if self.elapsed_seconds and self.elapsed_seconds > self.timeout_seconds * 2:
+            recommendation += "Рассмотрите увеличение таймаута в конфигурации. "
+        
+        recommendation += "Проверьте: 1) Загрузку VM, 2) Сетевую задержку, 3) Размер батча"
+        
+        return {
+            "error_type": "vm_timeout_error",
+            "timeout_seconds": self.timeout_seconds,
+            "elapsed_seconds": self.elapsed_seconds,
+            "operation": self.operation,
+            "retry_attempt": self.retry_attempt,
+            "recommendation": recommendation,
+            "suggested_actions": [
+                f"Увеличить timeout_seconds в config (текущий: {self.timeout_seconds}s)",
+                "Уменьшить batch_size для снижения нагрузки",
+                "Проверить загрузку VM: top / htop на VM сервере",
+                "Измерить сетевую задержку: ping -c 10 <vm_host>"
+            ]
+        }

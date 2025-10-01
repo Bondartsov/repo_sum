@@ -772,6 +772,51 @@ def status(detailed):
         
         console.print(components_table)
         
+        # 1.3.2: Показываем diagnostic таблицу при ошибках
+        if health.get('status') != 'healthy':
+            console.print()
+            
+            # Диагностика для Vector Store
+            if vs_health.get('diagnostic'):
+                diagnostic = vs_health['diagnostic']
+                diag_table = Table(title="🔍 Диагностика: Qdrant Vector Store")
+                diag_table.add_column("Параметр", style="cyan", no_wrap=True)
+                diag_table.add_column("Значение", style="yellow")
+                
+                diag_table.add_row("Тип ошибки", diagnostic.get('error_type', 'unknown'))
+                diag_table.add_row("Рекомендация", diagnostic.get('recommendation', 'N/A'))
+                
+                if 'response_time_ms' in diagnostic:
+                    diag_table.add_row("Response time", f"{diagnostic['response_time_ms']:.0f}ms")
+                
+                if 'vm_host' in diagnostic and 'vm_port' in diagnostic:
+                    diag_table.add_row("VM адрес", f"{diagnostic['vm_host']}:{diagnostic['vm_port']}")
+                
+                if 'http_status' in diagnostic:
+                    diag_table.add_row("HTTP статус", str(diagnostic['http_status']))
+                
+                console.print(diag_table)
+                
+                # Показываем troubleshooting команды если есть
+                if 'troubleshooting_commands' in diagnostic:
+                    console.print()
+                    console.print("[bold]💡 Команды для диагностики:[/bold]")
+                    for cmd in diagnostic['troubleshooting_commands']:
+                        console.print(f"  • [cyan]{cmd}[/cyan]")
+            
+            # Диагностика для Embedder (если будет добавлена)
+            if embedder_health.get('diagnostic'):
+                diagnostic = embedder_health['diagnostic']
+                console.print()
+                diag_table = Table(title="🔍 Диагностика: Embedder")
+                diag_table.add_column("Параметр", style="cyan", no_wrap=True)
+                diag_table.add_column("Значение", style="yellow")
+                
+                diag_table.add_row("Тип ошибки", diagnostic.get('error_type', 'unknown'))
+                diag_table.add_row("Рекомендация", diagnostic.get('recommendation', 'N/A'))
+                
+                console.print(diag_table)
+        
         # Конфигурация
         console.print()
         config_table = Table(title="Конфигурация")

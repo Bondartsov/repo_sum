@@ -96,19 +96,34 @@ class RemoteVMEmbedder:
         self,
         texts: List[str],
         task: Optional[str] = None,
-        deadline_ms: int = 30000
+        deadline_ms: int = None
     ) -> np.ndarray:
         """Синхронная обёртка над запросом embeddings к VM с правильным event loop management."""
         if not texts:
             return np.array([])
 
-        deadline_seconds = deadline_ms / 1000.0 if deadline_ms else 60.0
+        # 1.1.3: Используем config вместо hardcode
+        if deadline_ms is None:
+            deadline_ms = self.timeout_seconds * 1000  # Из config (по умолчанию 60s)
+        
+        base_timeout = deadline_ms / 1000.0
+        
+        # 1.1.1: Гармонизация timeout - рассчитываем total_timeout
+        # Формула: base × retries + sum(delay × 2^i для exponential backoff)
+        # Пример: 60s × 3 + (2s + 4s + 8s) = 180s + 14s = 194s
+        backoff_total = sum(self.retry_delay * (2 ** i) for i in range(self.max_retries))
+        total_timeout = (base_timeout * self.max_retries) + backoff_total
+        
+        _log(logger.debug, 
+            f"Timeout конфигурация: base={base_timeout}s, retries={self.max_retries}, "
+            f"backoff_total={backoff_total}s, total={total_timeout}s"
+        )
 
         try:
             # Используем EventLoopManager для правильной работы с async кодом
             return run_async_safe(
                 self._async_embed_texts(texts, task=task, deadline_ms=deadline_ms),
-                timeout=deadline_seconds
+                timeout=total_timeout  # Гармонизированный timeout
             )
         except Exception as exc:
             self.stats['error_count'] += 1
@@ -190,15 +205,42 @@ class RemoteVMEmbedder:
             Список эмбеддингов
         """
         import asyncio
+        import aiohttp
+        from .exceptions import VMConnectionError, VMTimeoutError
+        
+        # 1.1.2: Tracking остатка времени
+        start_time = time.time()
+        total_timeout = deadline_ms / 1000.0
+        base_timeout = deadline_ms / 1000.0
         
         for attempt in range(self.max_retries):
             try:
+                # Проверяем оставшееся время перед каждой попыткой
+                elapsed = time.time() - start_time
+                remaining = total_timeout - elapsed
+                
+                if remaining <= 0:
+                    raise VMTimeoutError(
+                        message="Исчерпано время для retry попыток",
+                        timeout_seconds=total_timeout,
+                        elapsed_seconds=elapsed,
+                        operation="embedding",
+                        retry_attempt=attempt + 1
+                    )
+                
+                # Адаптивный request timeout - используем оставшееся время
+                request_timeout_seconds = min(base_timeout, remaining)
+                
+                _log(logger.debug, 
+                    f"Попытка {attempt + 1}/{self.max_retries}: "
+                    f"request_timeout={request_timeout_seconds:.1f}s, remaining={remaining:.1f}s"
+                )
+                
                 # Используем shared HTTP session с connection pooling
                 session = await get_shared_http_session()
                 
                 # Создаем новый timeout для данного запроса
-                import aiohttp
-                request_timeout = aiohttp.ClientTimeout(total=deadline_ms/1000.0)
+                request_timeout = aiohttp.ClientTimeout(total=request_timeout_seconds)
                 
                 async with session.post(
                     self.embeddings_endpoint,
@@ -220,17 +262,81 @@ class RemoteVMEmbedder:
                         error_text = await response.text()
                         raise RuntimeError(f"HTTP {response.status}: {error_text}")
             
-            except asyncio.TimeoutError:
-                _log(logger.warning, f"Timeout при запросе к VM (попытка {attempt + 1})")
+            # 1.2.2: Улучшенная обработка ошибок с использованием специфичных исключений
+            except aiohttp.ClientConnectorError as e:
+                _log(logger.warning, 
+                    f"Ошибка подключения к VM (попытка {attempt + 1}/{self.max_retries}): {e}"
+                )
                 self.stats['retry_count'] += 1
+                
+                if attempt < self.max_retries - 1:
+                    # Проверяем оставшееся время перед backoff
+                    elapsed = time.time() - start_time
+                    remaining = total_timeout - elapsed
+                    delay = min(self.retry_delay * (2 ** attempt), remaining / 2)
+                    
+                    if delay > 0:
+                        await asyncio.sleep(delay)
+                    else:
+                        raise VMConnectionError(
+                            message="VM сервис недоступен, время исчерпано",
+                            vm_host=self.service_host,
+                            vm_port=self.service_port,
+                            error_details=str(e)
+                        )
+                else:
+                    # Последняя попытка - выбрасываем специфичное исключение
+                    raise VMConnectionError(
+                        message="VM сервис недоступен после всех retry попыток",
+                        vm_host=self.service_host,
+                        vm_port=self.service_port,
+                        error_details=str(e)
+                    )
+            
+            except asyncio.TimeoutError as e:
+                elapsed = time.time() - start_time
+                _log(logger.warning, 
+                    f"Timeout при запросе к VM (попытка {attempt + 1}/{self.max_retries}, "
+                    f"elapsed={elapsed:.1f}s)"
+                )
+                self.stats['retry_count'] += 1
+                
+                if attempt < self.max_retries - 1:
+                    # Проверяем оставшееся время перед backoff
+                    remaining = total_timeout - elapsed
+                    delay = min(self.retry_delay * (2 ** attempt), remaining / 2)
+                    
+                    if delay > 0:
+                        await asyncio.sleep(delay)
+                    else:
+                        raise VMTimeoutError(
+                            message="VM сервис не отвечает, время исчерпано",
+                            timeout_seconds=total_timeout,
+                            elapsed_seconds=elapsed,
+                            operation="embedding",
+                            retry_attempt=attempt + 1
+                        )
+                else:
+                    # Последняя попытка - выбрасываем специфичное исключение
+                    raise VMTimeoutError(
+                        message="VM сервис не отвечает после всех retry попыток",
+                        timeout_seconds=total_timeout,
+                        elapsed_seconds=elapsed,
+                        operation="embedding",
+                        retry_attempt=attempt + 1
+                    )
                 
             except Exception as e:
                 _log(logger.warning, f"Ошибка HTTP запроса (попытка {attempt + 1}): {e}")
                 self.stats['retry_count'] += 1
                 
                 if attempt < self.max_retries - 1:
-                    delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
-                    await asyncio.sleep(delay)
+                    elapsed = time.time() - start_time
+                    remaining = total_timeout - elapsed
+                    delay = min(self.retry_delay * (2 ** attempt), remaining / 2)
+                    
+                    if delay > 0:
+                        await asyncio.sleep(delay)
                 else:
                     raise  # Последняя попытка - пробрасываем ошибку
     

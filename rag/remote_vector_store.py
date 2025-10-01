@@ -435,8 +435,11 @@ class RemoteVMVectorStore:
     
     async def _async_health_check(self) -> Dict[str, Any]:
         """
-        Асинхронная проверка состояния удалённого векторного хранилища.
+        Асинхронная проверка состояния удалённого векторного хранилища с диагностикой.
         """
+        import asyncio
+        import aiohttp
+        
         health_info = {
             "status": "unknown",
             "components": {
@@ -449,31 +452,151 @@ class RemoteVMVectorStore:
                 }
             },
             "error": None,
+            "diagnostic": None,  # 1.3.1: Добавляем диагностическую информацию
         }
 
+        start_time = time.time()
+        
         try:
             health_endpoint = f"http://{self.service_host}:{self.service_port}{self.remote_config.health_endpoint}"
             session = await get_shared_http_session()
+            
             async with session.get(health_endpoint) as response:
+                response_time_ms = (time.time() - start_time) * 1000
+                
                 if response.status == 200:
                     result = await response.json()
                     health_info["status"] = "connected"  # Единый стандарт: "connected" для успешного подключения
                     health_info["components"]["vector_store"]["collection_status"] = result.get("collection_status", "unknown")
                     health_info["components"]["vector_store"]["qdrant_status"] = result.get("qdrant_status", "unknown")
                     health_info["components"]["vector_store"]["vector_count"] = result.get("vector_count", 0)
+                    health_info["components"]["vector_store"]["response_time_ms"] = response_time_ms
+                    health_info["components"]["vector_store"]["http_status"] = response.status
                     self._connected = True
                     self._collection_exists = health_info["components"]["vector_store"]["collection_status"] == "exists"
                 else:
                     error_text = await response.text()
                     health_info["status"] = "error"
                     health_info["error"] = f"HTTP {response.status}: {error_text}"
+                    health_info["components"]["vector_store"]["http_status"] = response.status
+                    health_info["components"]["vector_store"]["response_time_ms"] = response_time_ms
+                    
+                    # Диагностическая информация для HTTP ошибок
+                    health_info["diagnostic"] = {
+                        "error_type": "http_error",
+                        "http_status": response.status,
+                        "recommendation": self._get_http_error_recommendation(response.status),
+                        "response_time_ms": response_time_ms
+                    }
                     self._connected = False
+                    
+        except aiohttp.ClientConnectorError as e:
+            response_time_ms = (time.time() - start_time) * 1000
+            health_info["status"] = "error"
+            health_info["error"] = f"ClientConnectorError: {e}"
+            
+            # Диагностическая информация для connection refused
+            health_info["diagnostic"] = {
+                "error_type": "connection_refused",
+                "vm_host": self.service_host,
+                "vm_port": self.service_port,
+                "recommendation": (
+                    f"VM сервис недоступен на {self.service_host}:{self.service_port}. "
+                    f"Проверьте: 1) VM запущена, 2) Firewall не блокирует порт {self.service_port}, "
+                    f"3) Сетевое подключение"
+                ),
+                "troubleshooting_commands": [
+                    f"curl http://{self.service_host}:{self.service_port}/health",
+                    f"ping {self.service_host}",
+                    f"python vm_start.py start"
+                ],
+                "response_time_ms": response_time_ms
+            }
+            self._connected = False
+            
+        except asyncio.TimeoutError as e:
+            response_time_ms = (time.time() - start_time) * 1000
+            health_info["status"] = "error"
+            health_info["error"] = f"TimeoutError: Request timeout after {response_time_ms:.0f}ms"
+            
+            # Диагностическая информация для timeout
+            health_info["diagnostic"] = {
+                "error_type": "timeout",
+                "timeout_ms": 30000,  # Default timeout
+                "elapsed_ms": response_time_ms,
+                "recommendation": (
+                    f"VM сервис не отвечает в срок (timeout: {response_time_ms:.0f}ms). "
+                    f"Проверьте: 1) Загрузку VM сервера, 2) Сетевую задержку, 3) VM процессы"
+                ),
+                "troubleshooting_commands": [
+                    f"curl -w '@curl-format.txt' http://{self.service_host}:{self.service_port}/health",
+                    f"ssh user@{self.service_host} 'top -b -n 1'",
+                    "Увеличьте timeout в конфигурации"
+                ],
+                "response_time_ms": response_time_ms
+            }
+            self._connected = False
+            
+        except ValueError as e:
+            response_time_ms = (time.time() - start_time) * 1000
+            health_info["status"] = "error"
+            health_info["error"] = f"ValueError: {e}"
+            
+            # Диагностическая информация для invalid JSON
+            health_info["diagnostic"] = {
+                "error_type": "invalid_response",
+                "recommendation": (
+                    "VM сервис вернул некорректный JSON. "
+                    "Проверьте: 1) Версию VM сервиса, 2) Логи VM, 3) Формат API"
+                ),
+                "troubleshooting_commands": [
+                    f"curl -v http://{self.service_host}:{self.service_port}/health",
+                    "Проверьте логи VM: journalctl -u rag-vm-service -n 50"
+                ],
+                "response_time_ms": response_time_ms
+            }
+            self._connected = False
+            
         except Exception as e:
+            response_time_ms = (time.time() - start_time) * 1000
             health_info["status"] = "error"
             health_info["error"] = f"{type(e).__name__}: {e}"
+            
+            # Общая диагностическая информация
+            health_info["diagnostic"] = {
+                "error_type": "unknown",
+                "exception_type": type(e).__name__,
+                "recommendation": f"Неизвестная ошибка: {type(e).__name__}. Проверьте логи системы.",
+                "response_time_ms": response_time_ms
+            }
             self._connected = False
 
         return health_info
+    
+    def _get_http_error_recommendation(self, status_code: int) -> str:
+        """
+        Возвращает рекомендацию по устранению HTTP ошибки.
+        
+        Args:
+            status_code: HTTP статус код
+            
+        Returns:
+            Строка с рекомендацией
+        """
+        recommendations = {
+            500: "Internal Server Error на VM. Проверьте логи VM сервиса и Qdrant.",
+            503: "Service Unavailable. Qdrant может быть недоступна или перегружена.",
+            502: "Bad Gateway. Проблема с прокси или upstream сервисом.",
+            504: "Gateway Timeout. VM сервис не отвечает вовремя.",
+            404: "Not Found. Проверьте правильность health endpoint URL.",
+            401: "Unauthorized. Проверьте настройки аутентификации.",
+            403: "Forbidden. Недостаточно прав для доступа к ресурсу."
+        }
+        
+        return recommendations.get(
+            status_code,
+            f"HTTP {status_code}. Проверьте документацию VM API и логи сервиса."
+        )
     
     async def _async_get_collection_info(self) -> Dict[str, Any]:
         """
