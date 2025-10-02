@@ -23,6 +23,7 @@
 - **Parser System** - парсинг кода для 5 языков (Python, JavaScript, TypeScript, C#, C++); расширение фиксируется отдельно при появлении новых требований
 - **UI System** - CLI + Web интерфейсы (Streamlit + REST API) ✅
 - **Testing System** - комплексное тестирование (5872+ тестов) ✅
+- **EmbedderProtocol** - единый контракт для Remote/Mock реализаций ✅
 
 ### 🏗️ Текущие технические приоритеты:
 - **Async/Sync исправления** - завершены ✅

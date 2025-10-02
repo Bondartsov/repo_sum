@@ -13,6 +13,24 @@ def pytest_addoption(parser):
         default=False,
         help="Явно попытаться запускать тесты, создающие symlink (Windows требует права администратора/Developer Mode)"
     )
+    parser.addoption(
+        "--use-mock-embedder",
+        action="store_true",
+        default=False,
+        help="Принудительно использовать MockRemoteEmbedder"
+    )
+    parser.addoption(
+        "--vm-host",
+        action="store",
+        default=os.getenv("RAG_SERVICE_HOST", "localhost"),
+        help="Хост удалённой VM для real-тестов"
+    )
+    parser.addoption(
+        "--vm-port",
+        action="store",
+        default=os.getenv("RAG_SERVICE_PORT", "8000"),
+        help="Порт удалённой VM для real-тестов"
+    )
 
 @pytest.fixture(autouse=True)
 def force_offline_env(monkeypatch):
@@ -20,7 +38,7 @@ def force_offline_env(monkeypatch):
     monkeypatch.setenv("PYTHONIOENCODING", "utf-8")
     monkeypatch.setenv("PYTHONUTF8", "1")
     monkeypatch.setenv("OFFLINE_MODE", "1")
-    monkeypatch.setenv("USE_MOCK_EMBEDDER", "1")
+    monkeypatch.setenv("USE_MOCK_EMBEDDER", os.getenv("USE_MOCK_EMBEDDER", "0"))
     monkeypatch.setenv("USE_MOCK_VECTOR_STORE", "1")
     monkeypatch.setenv("EMBEDDING_PROVIDER", os.getenv("EMBEDDING_PROVIDER", "mock"))
     monkeypatch.setenv("VECTOR_STORE_PROVIDER", os.getenv("VECTOR_STORE_PROVIDER", "mock"))
@@ -55,9 +73,13 @@ def pytest_configure(config):
     # Проверяем, нужно ли использовать mock эмбеддеры
     from tests.mocks.mock_cpu_embedder import should_use_mock_embedder
     
-    force_mock = os.getenv("USE_MOCK_EMBEDDER", "1").lower() in ("1", "true", "yes")
+    cli_force_mock = config.getoption("--use-mock-embedder")
+    if cli_force_mock:
+        os.environ["USE_MOCK_EMBEDDER"] = "1"
 
-    if force_mock or should_use_mock_embedder():
+    force_mock = os.getenv("USE_MOCK_EMBEDDER", "0").lower() in ("1", "true", "yes")
+
+    if cli_force_mock or force_mock or should_use_mock_embedder():
         print("\n[offline] Обнаружен offline режим - активируем mock эмбеддеры")
         
         # Патчим CPUEmbedder на уровне модуля

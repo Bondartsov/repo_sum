@@ -249,6 +249,16 @@ embeddings = self.embedder.embed_texts(texts)  # Синхронный вызов
 **Оценка:** 3 дня, сложность: высокая
 **Приоритет:** P2 (улучшает operations)
 
+### **4. Контракт EmbedderProtocol**
+**Статус:** ✅ ЗАВЕРШЕНО (03 октября 2025)
+**Влияние:** Унифицирует взаимодействие Remote/Mock реализаций и стабилизирует тесты
+**Файлы:** `rag/embedder_protocol.py`, `rag/transport_client.py`, `tests/test_embedder_contract.py`
+
+**Результат:**
+- Версионированная схема `get_stats()` (schema_version=1)
+- Транспортный слой вынесен в `TransportClientProtocol`
+- Mock реализации синхронизированы с production контрактом
+
 ---
 
 ## 🧪 Тестовые пробелы
