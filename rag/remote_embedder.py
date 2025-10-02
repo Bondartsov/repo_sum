@@ -113,9 +113,9 @@ class RemoteVMEmbedder(EmbedderProtocol):
 
         # 2.2.2: Создаём Circuit Breaker для защиты от каскадных падений
         self.circuit_breaker = CircuitBreaker(CircuitBreakerConfig(
-            failure_threshold=5,          # Открываем после 5 неудач подряд
+            failure_threshold=10,         # HOTFIX: 10 неудач (было 5) - для swap thrashing
             success_threshold=2,          # Закрываем после 2 успехов в half_open
-            timeout_seconds=60.0,         # Ждём 60s перед half_open
+            timeout_seconds=300.0,        # HOTFIX: 5 минут (было 60s) - даём время на восстановление
             half_open_max_calls=1         # Один пробный запрос в half_open
         ))
 

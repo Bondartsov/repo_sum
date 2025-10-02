@@ -234,9 +234,9 @@ class RemoteServiceConfig:
     search_endpoint: str = '/search'
     index_endpoint: str = '/index'
     health_endpoint: str = '/health'
-    timeout_seconds: int = 60
-    max_retries: int = 3
-    retry_delay: float = 2.0
+    timeout_seconds: int = 600  # HOTFIX: 10 минут (было 60s) - для swap thrashing при 99% RAM
+    max_retries: int = 5  # HOTFIX: больше попыток (было 3)
+    retry_delay: float = 10.0  # HOTFIX: больше задержка между попытками (было 2.0s)
 
 
 @dataclass

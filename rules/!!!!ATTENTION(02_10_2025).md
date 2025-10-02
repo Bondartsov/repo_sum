@@ -1,6 +1,6 @@
 # 🚨 !!!!ATTENTION: КРИТИЧЕСКАЯ ПРОБЛЕМА ПАМЯТИ VM (02.10.2025)
 
-**Дата:** 02 октября 2025, 18:45 MSK
+**Дата:** 02 октября 2025, 18:45 MSK (обновлено 19:00)
 **Статус:** 🔴 КРИТИЧНО - ТРЕБУЕТ НЕМЕДЛЕННОГО ВНИМАНИЯ
 **Приоритет:** P0 - БЛОКИРУЮЩАЯ ПРОБЛЕМА
 **Ответственный:** DevOps + Performance Team
@@ -9,6 +9,19 @@
 
 ## 🔥 КРИТИЧЕСКАЯ СИТУАЦИЯ
 
+### ⚡ ОБНОВЛЕНИЕ (19:00): Root Cause Найден!
+
+**Проблема НЕ в памяти напрямую, а в TIMEOUT из-за SWAP THRASHING!**
+
+**Ключевое открытие:**
+- ✅ VM сервис **ЖИВОЙ** - health checks проходят (`GET /health` → 200 OK)
+- ❌ Embeddings запросы **TIMEOUT** - не успевают обработаться за 60 секунд
+- 🎯 **Root cause:** При 99% RAM модель Jina v3 частично в swap → disk I/O → latency 500ms → 120+ секунд
+
+**Детальный диагноз:** См. [`TIMEOUT_PROBLEM_DIAGNOSIS.md`](./TIMEOUT_PROBLEM_DIAGNOSIS.md)
+
+---
+
 ### Симптомы
 
 **VM достигла критического уровня использования памяти:**
@@ -16,15 +29,15 @@
 ```
 Memory Usage: 62.68 GB / 62.79 GB (99.8%)
 Available: ~100 MB
-Status: 🔴 EXTREME DANGER - OOM Killer активен
+Status: 🔴 EXTREME DANGER - Swap thrashing активен
 ```
 
 **Последствия:**
 - ❌ Индексация repo_sum (135 файлов) НЕВОЗМОЖНА
-- ❌ Риск падения VM сервиса от OOM killer
-- ❌ Circuit breaker постоянно OPEN
-- ❌ TimeoutError на всех операциях
-- ⚠️ **СИСТЕМА НА ГРАНИ КРАХА**
+- ❌ Circuit breaker открыт после 5 timeout подряд
+- ❌ Embeddings запросы занимают 120+ секунд (норма: 500ms)
+- ❌ Swap thrashing: 100+ page faults per request
+- ⚠️ **Health checks OK, но реальная работа БЛОКИРОВАНА**
 
 ---
 
@@ -99,9 +112,37 @@ TOTAL: ~8-12 GB
 
 ## 🎯 СТРАТЕГИИ РЕШЕНИЯ
 
-### ⭐ Стратегия 1: AGGRESSIVE BATCH REDUCTION (HOTFIX - 10 минут)
+### ⚠️ ВЫБОР РЕШЕНИЯ: Два подхода
 
-**Приоритет:** 🔴 P0 - НЕМЕДЛЕННО
+#### **Подход A: HOTFIX - Увеличить Timeout (5 минут)**
+
+**Цель:** Дать VM достаточно времени завершить swap-in/out
+
+**Изменения:**
+```python
+# config.py
+timeout_seconds: int = 180  # Было: 60 → Стало: 180 (3 минуты)
+
+# circuit_breaker.py
+timeout_seconds=120.0  # Было: 60.0 → Стало: 120 (2 минуты)
+```
+
+**Плюсы:** ✅ Быстро (5 мин), ✅ Индексация завершится
+**Минусы:** ❌ Медленно (8+ мин на 135 файлов), ❌ Плохой UX
+
+---
+
+#### **Подход B: ПРАВИЛЬНЫЙ - Aggressive Batch + GC (30 минут)**
+
+**Цель:** Предотвратить 99% RAM → swap не начнётся
+
+См. **Стратегию 1** ниже ↓
+
+---
+
+### ⭐ Стратегия 1: AGGRESSIVE BATCH REDUCTION + GC
+
+**Приоритет:** 🔴 P0 - ВЫСОКИЙ
 
 **Проблема текущей логики:**
 
@@ -109,13 +150,13 @@ TOTAL: ~8-12 GB
 # rag/indexer_service.py - ТЕКУЩИЙ КОД
 def _check_memory_and_adjust_batch(self, current_batch_size: int) -> int:
     if mem_percent > 85:
-        return max(32, current_batch_size // 4)  # ⚠️ Минимум 32 - СЛИШКОМ МНОГО
+        return max(32, current_batch_size // 4)  # ⚠️ Минимум 32 - СЛИШКОМ МНОГО ПРИ 99% RAM
 ```
 
 **При 99% RAM и batch=32:**
-- Одновременно в памяти: 32 текста * ~100KB = ~3MB (input)
-- Inference память: ~8-10GB (Jina v3 activations)
-- **ИТОГО: ~10GB spike при каждом батче** → OOM killer
+- Input data: 32 texts * ~100KB = ~3MB
+- Jina v3 inference: ~8-10GB (activations + swap-in)
+- **ИТОГО: ~10GB spike + swap thrashing** → 120+ секунд latency → timeout
 
 ---
 

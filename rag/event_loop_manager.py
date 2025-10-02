@@ -93,7 +93,7 @@ class HTTPSessionManager:
                     use_dns_cache=True,
                 )
                 timeout = aiohttp.ClientTimeout(
-                    total=60, connect=10, sock_read=30, sock_connect=5
+                    total=600, connect=30, sock_read=300, sock_connect=15  # HOTFIX: увеличены все таймауты в 10x
                 )
                 self._session = aiohttp.ClientSession(
                     connector=self._connector,

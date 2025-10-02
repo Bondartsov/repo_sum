@@ -44,11 +44,11 @@ class RetryConfig:
         timeout_seconds: Общий таймаут для всех попыток (секунды)
         retryable_exceptions: Tuple исключений, при которых делать retry
     """
-    max_attempts: int = 3
-    base_delay: float = 2.0
-    max_delay: float = 30.0
+    max_attempts: int = 5  # HOTFIX: больше попыток (было 3)
+    base_delay: float = 10.0  # HOTFIX: больше задержка (было 2.0s)
+    max_delay: float = 120.0  # HOTFIX: до 2 минут между попытками (было 30s)
     exponential_base: float = 2.0
-    timeout_seconds: float = 60.0
+    timeout_seconds: float = 600.0  # HOTFIX: 10 минут общий таймаут (было 60s)
     retryable_exceptions: Tuple[type, ...] = (
         asyncio.TimeoutError,
         aiohttp.ClientError,

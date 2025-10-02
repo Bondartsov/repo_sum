@@ -1,9 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(Copy-Item:*)",
-      "Bash(findstr:*)",
-      "Bash(git commit:*)"
+      "Bash(Select-String -Pattern \"embedder|remote\")",
+      "Bash(Select-Object -First 20)",
+      "Bash(Select-String -Pattern \"FAILED|ERROR\" -Context 1,3)",
+      "Bash(Select-String -Pattern \"passed|failed|skipped\")",
+      "Bash(Select-Object -Last 5)"
     ],
     "deny": [],
     "ask": []

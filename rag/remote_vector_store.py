@@ -83,14 +83,14 @@ class RemoteVMVectorStore:
         """Синхронная инициализация коллекции на VM с правильным event loop management."""
         return run_async_safe(
             self._async_initialize_collection(recreate=recreate),
-            timeout=60
+            timeout=300  # HOTFIX: 5 минут (было 60s)
         )
 
     def index_documents(self, points: List[Dict]) -> int:
         """Синхронная индексация документов с правильным event loop management."""
         return run_async_safe(
             self._async_index_documents(points),
-            timeout=300  # Индексация может занять больше времени
+            timeout=1800  # HOTFIX: 30 минут (было 300s) - индексация может быть очень долгой при swap
         )
 
     def search(
@@ -104,7 +104,7 @@ class RemoteVMVectorStore:
         """Синхронный поиск в удалённом хранилище с правильным event loop management."""
         return run_async_safe(
             self._async_search(query_vector, top_k, filters, use_hybrid, sparse_vector),
-            timeout=60
+            timeout=300  # HOTFIX: 5 минут (было 60s)
         )
 
     def search_by_text(
@@ -117,14 +117,14 @@ class RemoteVMVectorStore:
         """Синхронный поиск по тексту с правильным event loop management."""
         return run_async_safe(
             self._async_search_by_text(query_text, top_k, filters, use_hybrid),
-            timeout=60
+            timeout=300  # HOTFIX: 5 минут (было 60s)
         )
 
     def health_check(self) -> Dict[str, Any]:
         """Синхронный health-check удалённого сервиса (унифицированный формат)."""
         return run_async_safe(
             self._async_health_check(),
-            timeout=30
+            timeout=60  # HOTFIX: 1 минута (было 30s)
         )
 
     check_health = health_check
@@ -133,14 +133,14 @@ class RemoteVMVectorStore:
         """Синхронное получение сведений о коллекции с правильным event loop management."""
         return run_async_safe(
             self._async_get_collection_info(),
-            timeout=30
+            timeout=60  # HOTFIX: 1 минута (было 30s)
         )
 
     def close_sync(self) -> None:
         """Синхронно закрывает соединение с правильным event loop management."""
         return run_async_safe(
             self._async_close(),
-            timeout=10
+            timeout=30  # HOTFIX: 30 секунд (было 10s)
         )
 
     
