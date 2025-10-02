@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import pytest
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -77,6 +78,7 @@ def test_query_engine_creation(mock_cpu_embedder_offline):
     cache_cleared = query_engine.clear_cache()
     assert isinstance(cache_cleared, int)
 
+@pytest.mark.asyncio
 async def test_query_engine_async_methods(mock_cpu_embedder_offline):
     """Тестирует асинхронные методы CPUQueryEngine"""
     from rag.query_engine import CPUQueryEngine

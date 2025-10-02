@@ -675,6 +675,7 @@ class ComprehensiveBenchmarker:
 
 
 @pytest.mark.integration
+@pytest.mark.vm  # Требует доступную VM (10.61.11.54:8000) с запущенными FastAPI, Qdrant, Jina v3 сервисами
 class TestJinaV3VsBGEBenchmarking:
     """Comprehensive benchmarking suite для Jina v3 vs BGE"""
 

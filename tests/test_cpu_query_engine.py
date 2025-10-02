@@ -118,6 +118,7 @@ def test_basic_initialization(mock_cpu_embedder_offline):
     assert query_engine.cache is not None
     assert query_engine.stats is not None
 
+@pytest.mark.asyncio
 async def test_basic_functionality(query_engine):
     """Тестирует базовую функциональность CPUQueryEngine"""
     # Тестируем методы статистики

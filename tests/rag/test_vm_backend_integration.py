@@ -180,6 +180,7 @@ class MockVMBackend:
 
 
 @pytest.mark.integration
+@pytest.mark.vm  # Требует доступную VM (10.61.11.54:8000) с запущенными FastAPI, Qdrant, Jina v3 сервисами
 class TestVMBackendIntegration:
     """
     Comprehensive integration тесты для VM backend.

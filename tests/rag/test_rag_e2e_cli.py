@@ -30,6 +30,7 @@ from rag.exceptions import VectorStoreConnectionError
 
 
 @pytest.mark.integration
+@pytest.mark.vm  # Требует доступную VM (10.61.11.54:8000) с запущенными FastAPI, Qdrant, Jina v3 сервисами
 class TestRAGCliE2E:
     """End-to-End тесты CLI команд RAG системы"""
     

@@ -35,9 +35,10 @@ from rag.exceptions import (
 
 
 @pytest.mark.integration
+@pytest.mark.vm  # Требует доступную VM (10.61.11.54:8000) с запущенными FastAPI, Qdrant, Jina v3 сервисами
 class TestRAGIntegration:
     """Интеграционные тесты RAG системы"""
-    
+
     @pytest.fixture
     def test_config(self):
         """Тестовая конфигурация RAG системы"""

@@ -6,6 +6,7 @@ Unit тесты для Circuit Breaker Pattern.
 """
 
 import pytest
+import pytest_asyncio
 import asyncio
 import time
 from unittest.mock import AsyncMock, Mock
@@ -40,7 +41,7 @@ def circuit_breaker(default_config):
     return CircuitBreaker(default_config)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def success_func():
     """Mock функция, которая всегда успешна"""
     async def _func():
@@ -48,7 +49,7 @@ async def success_func():
     return _func
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def failure_func():
     """Mock функция, которая всегда падает"""
     async def _func():
