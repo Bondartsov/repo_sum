@@ -89,19 +89,31 @@ services = {}
 def check_memory_usage() -> Dict[str, Any]:
     """
     Проверка использования памяти на VM.
-    
+
+    Адаптивные пороги для 60GB RAM:
+    - Critical: >92% (осталось <5GB) - реальная опасность OOM
+    - Warning: >85% (осталось <9GB) - начинаем мониторить
+
     Returns:
         Словарь с информацией о памяти
     """
     try:
         memory = psutil.virtual_memory()
+        available_gb = round(memory.available / (1024**3), 2)
+
+        # Адаптивная логика: критично когда осталось <5GB
+        # Для 60GB: 92%, для 32GB: 84%
+        total_gb = round(memory.total / (1024**3), 2)
+        critical_threshold = 100 - (5.0 / total_gb * 100)  # Динамический порог
+        warning_threshold = 100 - (9.0 / total_gb * 100)
+
         return {
-            "total_gb": round(memory.total / (1024**3), 2),
-            "available_gb": round(memory.available / (1024**3), 2),
+            "total_gb": total_gb,
+            "available_gb": available_gb,
             "used_gb": round(memory.used / (1024**3), 2),
             "percent_used": memory.percent,
-            "is_critical": memory.percent > 85,
-            "is_warning": memory.percent > 75
+            "is_critical": memory.percent > critical_threshold,  # ~92% для 60GB
+            "is_warning": memory.percent > warning_threshold     # ~85% для 60GB
         }
     except Exception as e:
         logger.warning(f"Не удалось получить информацию о памяти: {e}")
