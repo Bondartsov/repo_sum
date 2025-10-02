@@ -176,6 +176,124 @@ close_sync: timeout=30                  # 30 секунд (было 10s)
 
 ---
 
+## 🚀 ПРИМЕНЕНИЕ HOTFIX (Пошаговая Инструкция)
+
+### ✅ Шаг 1: Перезапуск VM сервиса
+
+**Автоматическая синхронизация через vm_start.py:**
+
+```powershell
+# Из корня проекта
+cd D:\Scripts_Python\repo_sum
+
+# Рестарт VM сервиса (автоматически синхронизирует .env)
+python vm_start.py restart
+```
+
+**Что произойдёт:**
+1. `vm_start.py` подключится к VM через SSH
+2. Прочитает локальный `.env.example` (template) + `.env` (значения)
+3. Создаст `.env` на VM с новыми timeout=600
+4. Перезапустит `vm_rag_service.py` на VM
+5. Новый процесс подхватит новые timeout из `.env`
+
+**Проверка на VM:**
+```bash
+ssh user@10.61.11.54
+cd ~/repo_sum_rag/repo_sum
+
+# Проверить .env
+grep RAG_TIMEOUT .env
+# Должно быть: RAG_TIMEOUT_SECONDS=600
+
+# Проверить логи
+tail -20 rag_service.log
+# Должно быть: "Circuit Breaker инициализирован: failure_threshold=10, timeout=300.0s"
+```
+
+---
+
+### ✅ Шаг 2: Перезапуск локального приложения
+
+```powershell
+# Если web_ui запущен - остановить (Ctrl+C)
+
+# Запустить заново
+python run_web.py
+```
+
+**Важно:** Python процесс должен быть **ПОЛНОСТЬЮ перезапущен**, чтобы:
+- Перечитать `.env` файл
+- Переинициализировать `config.py`
+- Создать новые объекты `RemoteVMEmbedder` с новыми timeout
+
+---
+
+### ✅ Шаг 3: Проверка применения
+
+**Локальная диагностика:**
+```powershell
+python scripts/check_timeouts.py
+```
+
+**Ожидаемый вывод:**
+```
+Environment Variables:
+  RAG_TIMEOUT_SECONDS: 600  ✅
+
+config.py (Runtime):
+  timeout_seconds: 600  ✅
+
+RemoteVMEmbedder:
+  timeout_seconds: 600  ✅
+  retry_policy.config.timeout_seconds: 600.0  ✅
+```
+
+**VM диагностика:**
+```bash
+ssh user@10.61.11.54
+cd ~/repo_sum_rag/repo_sum
+bash scripts/check_timeouts_vm.sh | grep -A 10 "Environment Variables"
+```
+
+---
+
+### ✅ Шаг 4: Тестирование
+
+**Запуск индексации:**
+```powershell
+python run_web.py
+# В веб-интерфейсе: Index → D:\Scripts_Python\repo_sum → Start
+```
+
+**Ожидаемое поведение:**
+- ✅ Индексация 135 файлов завершится **БЕЗ timeout ошибок**
+- ⏱️ Время: 10-15 минут (pessimistic) или 3-5 минут (optimistic)
+- ⚠️ Будет **медленно** из-за swap thrashing при 99% RAM
+- ✅ Circuit Breaker должен оставаться **CLOSED**
+
+**Мониторинг логов PC:**
+```powershell
+# В отдельном терминале
+Get-Content D:\Scripts_Python\repo_sum\*.log -Wait
+```
+
+**Что смотреть:**
+- ❌ **НЕ должно быть:** `Circuit breaker OPEN`, `TimeoutError`, `VMTimeoutError`
+- ✅ **Должно быть:** медленный прогресс (1 батч каждые 2-5 минут)
+
+**Мониторинг RAM на VM:**
+```bash
+ssh user@10.61.11.54
+watch -n 5 'free -h'
+```
+
+**Что смотреть:**
+- RAM usage: стремиться к <95% (не 99%)
+- Python процесс: 5-8 GB (не 20+ GB)
+
+---
+
 ## 🔄 Откат (Rollback)
 
 Если HOTFIX не помогает или вызывает другие проблемы:
