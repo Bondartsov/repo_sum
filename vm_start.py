@@ -395,6 +395,7 @@ class VMSetupManager:
             commands = [
                 f"cd {self.vm_repo_dir}",
                 "git fetch --all --prune",
+                f"git checkout {self.repo_branch}",  # Переключаемся на нужную ветку
                 f"git reset --hard origin/{self.repo_branch}",
                 "git clean -fd"
             ]
