@@ -231,7 +231,7 @@ EMB_TRUST_REMOTE_CODE=true
 - MMR (Maximal Marginal Relevance)
 
 ### VM Infrastructure
-- Intel Xeon Gold 6248R, 31GB RAM
+- Intel Xeon Gold 6248R, 60GB RAM
 - Ubuntu 22.04.4 LTS
 - FastAPI service на 10.61.11.54:8000
 - SSH automation через paramiko

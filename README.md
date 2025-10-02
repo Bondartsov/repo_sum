@@ -59,7 +59,7 @@ _Дополнительные языки можно подключить, реа
 - **RRF Fusion**: Reciprocal Rank Fusion для ранжирования
 
 ### 🏗️ Инфраструктура
-- **VM Server**: Intel Xeon Gold 6248R, 31GB RAM, Ubuntu 22.04.4
+- **VM Server**: Intel Xeon Gold 6248R, 60GB RAM, Ubuntu 22.04.4
 - **Векторная БД**: Qdrant с квантованием и репликацией
 - **API**: FastAPI на порту 8000 с health checks
 - **SSH Automation**: полная автоматизация развертывания
@@ -262,7 +262,7 @@ python run_web.py  # запустить UI для тестирования
 
 ### 🎯 Революционная RAG-as-a-Service Модель
 ```
-[Локальная машина]     HTTP REST API     [VM t-ubuntu-redis 31GB]
+[Локальная машина]     HTTP REST API     [VM t-ubuntu-redis 60GB]
 ├─ repo_sum CLI    ←─────────────→       ├─ FastAPI :8000 ✅
 ├─ Web UI          ←─────────────→       ├─ Jina v3 (570M) ✅
 ├─ OpenAI анализ   ←─────────────→       ├─ Qdrant :6333 ✅
@@ -303,7 +303,7 @@ python run_web.py  # запустить UI для тестирования
 ### ✅ **Текущий Статус: M2.5 VM Migration - 80% ЗАВЕРШЕНО**
 
 #### **Достигнутые Результаты:**
-- ✅ **VM Infrastructure**: Xeon Gold 6248R, 31GB RAM, Ubuntu 22.04.4
+- ✅ **VM Infrastructure**: Xeon Gold 6248R, 60GB RAM, Ubuntu 22.04.4
 - ✅ **Jina v3 Success**: 570M параметров работают стабильно
 - ✅ **FastAPI Service**: запущен на 10.61.11.54:8000, health check "healthy"
 - ✅ **SSH Automation**: полная автоматизация через vm_start.py

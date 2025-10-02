@@ -33,7 +33,7 @@
 ### 📊 Актуальные технические метрики:
 - **Model Loading**: <10 секунд для Jina v3 (570M параметров) ✅
 - **Inference Speed**: 4.35it/s для batch обработки на VM ✅
-- **Memory Usage**: стабильная работа в 31GB RAM ✅
+- **Memory Usage**: стабильная работа в 60GB RAM ✅
 - **API Response**: FastAPI health check <200ms ✅
 - **Service Uptime**: 100% стабильность после запуска ✅
 
@@ -47,7 +47,7 @@
 
 ```mermaid
 flowchart TD
-    A[Локальная машина] -->|HTTP REST API| B[VM t-ubuntu-redis 31GB]
+    A[Локальная машина] -->|HTTP REST API| B[VM t-ubuntu-redis 60GB]
     A -->|CLI команды| B
     A -->|Web UI| B
     A -->|OpenAI анализ| B
@@ -322,7 +322,7 @@ datasets>=2.21.0                  # Вспомогательные утилит�
 ```yaml
 VM Infrastructure:
   CPU: Intel Xeon Gold 6248R
-  RAM: 31GB
+  RAM: 60GB
   OS: Ubuntu 22.04.4 LTS
   Python: 3.10.12
   Storage: SSD, sufficient for models

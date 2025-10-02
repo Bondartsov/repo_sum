@@ -36,7 +36,7 @@
 
 ### 🏗️ Революционная архитектура:
 ```
-[Локальная машина]     HTTP REST API     [VM t-ubuntu-redis 31GB]
+[Локальная машина]     HTTP REST API     [VM t-ubuntu-redis 60GB]
 ├─ repo_sum CLI    ←─────────────→       ├─ FastAPI :8000
 ├─ Web UI          ←─────────────→       ├─ Jina v3 (570M, 1024d)
 ├─ OpenAI анализ   ←─────────────→       ├─ Qdrant :6333
@@ -71,7 +71,7 @@
 **РЕВОЛЮЦИОННЫЙ ПРОРЫВ**: Первая RAG-as-a-Service архитектура!
 
 #### **✅ Достигнутые результаты:**
-- ✅ **VM Infrastructure**: Xeon Gold 6248R, 31GB RAM, Ubuntu 22.04.4
+- ✅ **VM Infrastructure**: Xeon Gold 6248R, 60GB RAM, Ubuntu 22.04.4
 - ✅ **Jina v3 Success**: jinaai/jina-embeddings-v3 (570M) загружена и работает
 - ✅ **FastAPI Service**: запущен на 10.61.11.54:8000, health check "healthy"
 - ✅ **Dual Task Architecture**: retrieval.query/passage функционирует
@@ -114,7 +114,7 @@
 
 ```mermaid
 flowchart TD
-    A[Локальная машина] -->|HTTP REST API| B[VM t-ubuntu-redis 31GB]
+    A[Локальная машина] -->|HTTP REST API| B[VM t-ubuntu-redis 60GB]
     A -->|CLI команды| B
     A -->|Web UI| B
     A -->|OpenAI анализ| B
@@ -130,7 +130,7 @@ flowchart TD
 ```
 
 ### **Технические достижения:**
-- **VM Infrastructure**: Xeon Gold 6248R, 31GB RAM, Ubuntu 22.04.4 ✅
+- **VM Infrastructure**: Xeon Gold 6248R, 60GB RAM, Ubuntu 22.04.4 ✅
 - **Jina v3 Integration**: 570M параметров, dual task архитектура ✅
 - **FastAPI Service**: 10.61.11.54:8000, health check "healthy" ✅
 - **SSH Automation**: полная автоматизация через vm_start.py ✅
@@ -267,7 +267,7 @@ flowchart TD
 ### ✅ **Достигнутые VM Metrics:**
 - **VM Model Loading**: <10 секунд (Jina v3, 570M параметров)
 - **VM Inference**: 4.35it/s batch processing
-- **VM Memory**: стабильная работа в 31GB RAM
+- **VM Memory**: стабильная работа в 60GB RAM
 - **VM API Response**: <200ms FastAPI health check
 - **VM Uptime**: 100% после запуска
 

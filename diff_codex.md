@@ -576,7 +576,7 @@ index 9fe18cab54339961dd976f7bc26253db67e99fa3..6826e8f9d256d006bd45004e19c29700
  
  ### 🏗️ Революционная архитектура:
  ```
- [Локальная машина]     HTTP REST API     [VM t-ubuntu-redis 31GB]
+ [Локальная машина]     HTTP REST API     [VM t-ubuntu-redis 60GB]
  ├─ repo_sum CLI    ←─────────────→       ├─ FastAPI :8000
  ├─ Web UI          ←─────────────→       ├─ Jina v3 (570M, 1024d)
  ├─ OpenAI анализ   ←─────────────→       ├─ Qdrant :6333
@@ -625,7 +625,7 @@ index 80a8c799ac75f2933688e527da4b42eaad3d9ffe..f945ef24aba4337bf163564430d6ee45
  ### 📊 Актуальные технические метрики:
  - **Model Loading**: <10 секунд для Jina v3 (570M параметров) ✅
  - **Inference Speed**: 4.35it/s для batch обработки на VM ✅
- - **Memory Usage**: стабильная работа в 31GB RAM ✅
+ - **Memory Usage**: стабильная работа в 60GB RAM ✅
  - **API Response**: FastAPI health check <200ms ✅
  - **Service Uptime**: 100% стабильность после запуска ✅
  
@@ -639,7 +639,7 @@ index 80a8c799ac75f2933688e527da4b42eaad3d9ffe..f945ef24aba4337bf163564430d6ee45
  
  ```mermaid
  flowchart TD
-     A[Локальная машина] -->|HTTP REST API| B[VM t-ubuntu-redis 31GB]
+     A[Локальная машина] -->|HTTP REST API| B[VM t-ubuntu-redis 60GB]
 diff --git a/rules/Technical Debt.md b/rules/Technical Debt.md
 index 184b0b6ee731bf4e91e42c55f90370692b8870d0..c63ecfe85d1eebdcf5525d2d1d713808b3d1542d 100644
 --- a/rules/Technical Debt.md	
