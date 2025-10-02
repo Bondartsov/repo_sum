@@ -1,0 +1,10 @@
+[lint]
+ignore = []
+
+[lint.per-file-ignores]
+"tests/mocks/**/*.py" = [
+    "SLF001",
+]
+
+[lint.flake8-self]
+ignore-names = ["_*"]
