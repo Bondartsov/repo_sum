@@ -217,11 +217,16 @@ class VMSetupManager:
         self.console.print(table)
 
     def get_available_branches(self) -> list:
-        """Получение списка доступных веток из GitHub репозитория"""
+        """
+        Получение списка доступных веток из GitHub репозитория с информацией о коммитах.
+
+        Returns:
+            List[dict] - список словарей с ключами: name, commit_hash, commit_date
+        """
         self.console.print("[blue]🔍 Получаю список веток из GitHub...[/blue]")
 
         try:
-            # Используем git ls-remote для получения списка веток
+            # Используем git ls-remote для получения списка веток с хэшами
             success, output, error = self.execute_command(
                 f"git ls-remote --heads {self.repo_url}",
                 timeout=30
@@ -231,26 +236,40 @@ class VMSetupManager:
                 self.console.print(f"[red]❌ Не удалось получить список веток: {error}[/red]")
                 return []
 
-            # Парсим вывод: refs/heads/branch_name -> branch_name
-            branches = []
+            # Парсим вывод: commit_hash refs/heads/branch_name
+            branch_info = []
             for line in output.strip().splitlines():
                 if 'refs/heads/' in line:
-                    branch_name = line.split('refs/heads/')[-1].strip()
-                    branches.append(branch_name)
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        commit_hash = parts[0][:7]  # Короткий хэш
+                        branch_name = parts[1].split('refs/heads/')[-1].strip()
+
+                        # Получаем дату последнего коммита для ветки
+                        date_cmd = f"git log -1 --format=%ci {commit_hash}"
+                        date_success, date_output, _ = self.execute_command(date_cmd, timeout=10)
+                        commit_date = date_output.strip().split()[0] if date_success else "N/A"
+
+                        branch_info.append({
+                            'name': branch_name,
+                            'commit_hash': commit_hash,
+                            'commit_date': commit_date
+                        })
 
             # Сортируем ветки, приоритет: master, main, затем остальные по алфавиту
-            def branch_sort_key(branch: str) -> tuple:
-                if branch == 'master':
-                    return (0, branch)
-                elif branch == 'main':
-                    return (1, branch)
+            def branch_sort_key(branch: dict) -> tuple:
+                name = branch['name']
+                if name == 'master':
+                    return (0, name)
+                elif name == 'main':
+                    return (1, name)
                 else:
-                    return (2, branch)
+                    return (2, name)
 
-            branches.sort(key=branch_sort_key)
+            branch_info.sort(key=branch_sort_key)
 
-            self.console.print(f"[green]✅ Найдено веток: {len(branches)}[/green]")
-            return branches
+            self.console.print(f"[green]✅ Найдено веток: {len(branch_info)}[/green]")
+            return branch_info
 
         except Exception as e:
             self.console.print(f"[red]❌ Ошибка получения списка веток: {e}[/red]")
@@ -258,7 +277,15 @@ class VMSetupManager:
             return []
 
     def select_branch_interactive(self, branches: list) -> Optional[str]:
-        """Интерактивный выбор ветки из списка"""
+        """
+        Интерактивный выбор ветки из списка.
+
+        Args:
+            branches: List[dict] - список словарей с ключами name, commit_hash, commit_date
+
+        Returns:
+            Имя выбранной ветки или None
+        """
         if not branches:
             self.console.print("[red]❌ Список веток пуст[/red]")
             return None
@@ -267,11 +294,21 @@ class VMSetupManager:
         table = Table(title="📁 Выберите ветку для развертывания")
         table.add_column("№", style="cyan", justify="right")
         table.add_column("Ветка", style="bold green")
+        table.add_column("Коммит", style="yellow")
+        table.add_column("Дата", style="dim")
 
-        for idx, branch in enumerate(branches, start=1):
+        for idx, branch_info in enumerate(branches, start=1):
+            branch_name = branch_info['name']
+            commit_hash = branch_info['commit_hash']
+            commit_date = branch_info['commit_date']
+
             # Выделяем текущую ветку
-            branch_display = f"[bold yellow]{branch}[/bold yellow] (текущая)" if branch == self.repo_branch else branch
-            table.add_row(str(idx), branch_display)
+            if branch_name == self.repo_branch:
+                branch_display = f"[bold yellow]{branch_name}[/bold yellow] (текущая)"
+            else:
+                branch_display = branch_name
+
+            table.add_row(str(idx), branch_display, commit_hash, commit_date)
 
         self.console.print(table)
 
@@ -285,7 +322,7 @@ class VMSetupManager:
 
             idx = int(choice)
             if 1 <= idx <= len(branches):
-                selected_branch = branches[idx - 1]
+                selected_branch = branches[idx - 1]['name']
                 self.console.print(f"[green]✅ Выбрана ветка: {selected_branch}[/green]")
                 return selected_branch
             else:
@@ -314,14 +351,24 @@ class VMSetupManager:
 
         # Сохраняем старую версию если репозиторий уже существует
         old_commit = None
+        old_branch = None
+        old_date = None
         if repo_ready:
             action = "update"
-            # Получаем старую версию перед обновлением
-            old_success, old_output, _ = self.execute_command(
-                f"cd {self.vm_repo_dir} && git rev-parse --short HEAD"
+            # Получаем старую ветку, коммит и дату перед обновлением
+            old_info_cmd = (
+                f"cd {self.vm_repo_dir} && "
+                f"git rev-parse --abbrev-ref HEAD && "
+                f"git rev-parse --short HEAD && "
+                f"git log -1 --format=%ci"
             )
+            old_success, old_output, _ = self.execute_command(old_info_cmd)
             if old_success:
-                old_commit = old_output.strip()
+                old_lines = [line.strip() for line in old_output.strip().splitlines() if line.strip()]
+                if len(old_lines) >= 3:
+                    old_branch = old_lines[0]
+                    old_commit = old_lines[1]
+                    old_date = old_lines[2].split()[0]  # Берем только дату
 
             commands = [
                 f"cd {self.vm_repo_dir}",
@@ -340,7 +387,8 @@ class VMSetupManager:
         commands.extend([
             "git submodule update --init --recursive",
             "git rev-parse --abbrev-ref HEAD",
-            "git rev-parse --short HEAD"
+            "git rev-parse --short HEAD",
+            "git log -1 --format=%ci"
         ])
 
         combined_command = " && ".join(commands)
@@ -348,21 +396,31 @@ class VMSetupManager:
 
         if success:
             lines = [line.strip() for line in output.strip().splitlines() if line.strip()]
-            branch = lines[-2] if len(lines) >= 2 else self.repo_branch
-            new_commit = lines[-1] if lines else ""
+            if len(lines) >= 3:
+                branch = lines[-3]
+                new_commit = lines[-2]
+                new_date = lines[-1].split()[0]  # Берем только дату
+            else:
+                branch = self.repo_branch
+                new_commit = ""
+                new_date = "N/A"
+
             status_label = "склонирован" if action == "clone" else "обновлён"
 
             # Формируем сообщение о версии
-            if action == "update" and old_commit and new_commit:
-                if old_commit == new_commit:
-                    version_msg = f"версия {new_commit} (без изменений)"
+            if action == "update" and old_commit and old_branch and new_commit:
+                if old_commit == new_commit and old_branch == branch:
+                    version_msg = f"версия {new_commit} ({new_date}) (без изменений)"
                 else:
-                    version_msg = f"версия обновлена с {old_commit} на {new_commit}"
+                    version_msg = (
+                        f"версия обновлена с ветки ({old_branch}) {old_commit} ({old_date}) "
+                        f"на ветку ({branch}) {new_commit} ({new_date})"
+                    )
             else:
-                version_msg = f"версия {new_commit}"
+                version_msg = f"версия {new_commit} ({new_date}), ветка: {branch}"
 
-            self.console.print(f"[green]✅ Репозиторий {status_label}: {version_msg} (ветка: {branch})[/green]")
-            logger.info(f"Repository {action} -> {branch}@{new_commit} (old: {old_commit or 'N/A'})")
+            self.console.print(f"[green]✅ Репозиторий {status_label}: {version_msg}[/green]")
+            logger.info(f"Repository {action} -> {branch}@{new_commit} (old: {old_branch or 'N/A'}@{old_commit or 'N/A'})")
             return True, old_commit, new_commit, branch
 
         self.console.print(f"[red]❌ Ошибка синхронизации репозитория: {error}")
@@ -410,25 +468,28 @@ class VMSetupManager:
         if not venv_exists:
             commands.append("python3 -m venv venv")
 
+        # Используем pip install с флагами -q (quiet) и перенаправлением вывода для полного отключения шума
         commands.extend([
             "source venv/bin/activate",
-            "pip install --upgrade pip setuptools wheel",
-            "pip install -r requirements.txt",
-            "pip install sentence-transformers>=3.0 transformers>=4.35.0"
+            "pip install -q --disable-pip-version-check --upgrade pip setuptools wheel > /dev/null 2>&1",
+            "pip install -q --disable-pip-version-check -r requirements.txt > /dev/null 2>&1",
+            "pip install -q --disable-pip-version-check sentence-transformers>=3.0 transformers>=4.35.0 > /dev/null 2>&1",
+            "echo 'INSTALL_COMPLETE'"  # Маркер успешной установки
         ])
 
         combined_command = " && ".join(commands)
         success, output, error = self.execute_command(combined_command, timeout=900)
 
-        if success:
+        if success and "INSTALL_COMPLETE" in output:
             state = "создано" if not venv_exists else "обновлено"
-            self.console.print(f"[green]✅ Python окружение {state}[/green]")
-            logger.info(f"Python environment {state}: {output.strip()}")
+            deps_msg = "(зависимости обновлены)"
+
+            self.console.print(f"[green]✅ Python окружение {state} {deps_msg}[/green]")
+            logger.info(f"Python environment {state}")
             return True
 
-        self.console.print(f"[red]❌ Ошибка установки Python окружения: {error}")
-        if output.strip():
-            logger.error(f"Venv output: {output.strip()}")
+        self.console.print(f"[red]❌ Ошибка установки Python окружения: {error}[/red]")
+        logger.error(f"Venv error: {error}")
         return False
 
     def test_jina_v3(self) -> bool:
