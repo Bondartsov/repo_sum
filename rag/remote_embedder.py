@@ -8,14 +8,22 @@ HTTP клиент для удалённых эмбеддингов через RA
 import os
 import logging
 import time
-from typing import List, Optional, Dict, Any
-from config import EmbeddingConfig, ParallelismConfig, RemoteServiceConfig
+from typing import Any, Dict, List, Optional
+
 import numpy as np
-import json
+
+from config import EmbeddingConfig, ParallelismConfig, RemoteServiceConfig
+
+from .circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerOpenException,
+)
+from .embedder_protocol import EmbedderProtocol, TransportClientProtocol
 from .exceptions import EmbeddingException, VMConnectionError, VMTimeoutError
 from .event_loop_manager import run_async_safe, get_shared_http_session
 from .retry_policy import RetryPolicy, RetryConfig
-from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerOpenException
+from .transport_client import AiohttpTransportClient
 from .vm_diagnostics import diagnose_vm_connection
 
 logger = logging.getLogger(__name__)
@@ -34,10 +42,10 @@ def _log(logger_method, message: str, *args, **kwargs):
     logger_method(_safe_message(message), *args, **kwargs)
 
 
-class RemoteVMEmbedder:
+class RemoteVMEmbedder(EmbedderProtocol):
     """
     HTTP клиент для получения эмбеддингов от Jina v3 сервиса на VM.
-    
+
     Возможности:
     - HTTP запросы к FastAPI сервису на VM (10.61.11.54:8000)
     - Jina v3 dual task support (retrieval.query/passage)
@@ -45,16 +53,22 @@ class RemoteVMEmbedder:
     - Батчевая обработка через HTTP
     - Retry логика с понятными сообщениями об ошибках
     """
-    
-    def __init__(self, embedding_config: Optional[EmbeddingConfig] = None, 
-                 parallelism_config: Optional[ParallelismConfig] = None, 
-                 remote_service_config: Optional[RemoteServiceConfig] = None):
+
+    def __init__(
+        self,
+        embedding_config: Optional[EmbeddingConfig] = None,
+        parallelism_config: Optional[ParallelismConfig] = None,
+        remote_service_config: Optional[RemoteServiceConfig] = None,
+        transport_client: Optional[TransportClientProtocol] = None,
+    ):
         """
         Инициализация удалённого эмбеддера.
-        
+
         Args:
             embedding_config: Конфигурация эмбеддингов (игнорируется, для совместимости)
             parallelism_config: Конфигурация параллелизма (игнорируется, для совместимости)
+            remote_service_config: Конфигурация удалённого сервиса
+            transport_client: Транспортный клиент для HTTP запросов (опционально)
         """
         # Читаем конфигурацию из переменных окружения
         # Настройки удалённого сервиса
@@ -76,11 +90,11 @@ class RemoteVMEmbedder:
         self.embedding_dim = getattr(embedding_config, "embedding_dim", int(os.getenv("EMB_DIM", "1024")))
         self.truncate_dim = self.embedding_dim
 
-        # HTTP параметры 
+        # HTTP параметры
         self.timeout_seconds = int(os.getenv("RAG_TIMEOUT_SECONDS", str(self.remote_config.timeout_seconds)))
         self.max_retries = int(os.getenv("RAG_MAX_RETRIES", str(self.remote_config.max_retries)))
         self.retry_delay = float(os.getenv("RAG_RETRY_DELAY", str(self.remote_config.retry_delay)))
-        
+
         # 2.1.2: Создаём RetryPolicy для переиспользуемой retry логики
         import aiohttp
         import asyncio
@@ -93,9 +107,10 @@ class RemoteVMEmbedder:
             retryable_exceptions=(
                 asyncio.TimeoutError,
                 aiohttp.ClientError,
+                RuntimeError,
             )
         ))
-        
+
         # 2.2.2: Создаём Circuit Breaker для защиты от каскадных падений
         self.circuit_breaker = CircuitBreaker(CircuitBreakerConfig(
             failure_threshold=5,          # Открываем после 5 неудач подряд
@@ -103,7 +118,12 @@ class RemoteVMEmbedder:
             timeout_seconds=60.0,         # Ждём 60s перед half_open
             half_open_max_calls=1         # Один пробный запрос в half_open
         ))
-        
+
+        # Транспортный слой абстракции
+        self.transport: TransportClientProtocol = (
+            transport_client if transport_client is not None else AiohttpTransportClient()
+        )
+
         # Статистика
         self.stats = {
             'total_requests': 0,
@@ -113,10 +133,10 @@ class RemoteVMEmbedder:
             'retry_count': 0,
             'avg_response_time': 0.0
         }
-        
+
         self._is_warmed_up = False
         _log(logger.info, f"RemoteVMEmbedder инициализирован: {self.embeddings_endpoint}")
-    
+
 
     def embed_texts(
         self,
@@ -131,9 +151,9 @@ class RemoteVMEmbedder:
         # 1.1.3: Используем config вместо hardcode
         if deadline_ms is None:
             deadline_ms = self.timeout_seconds * 1000  # Из config (по умолчанию 60s)
-        
+
         base_timeout = deadline_ms / 1000.0
-        
+
         # 1.1.1: Гармонизация timeout - рассчитываем total_timeout
         # Формула: base × retries + sum(delay × 2^i для exponential backoff)
         # ИСПРАВЛЕНИЕ #4: Backoff интервалов на один меньше, чем попыток (последний retry не ждёт)
@@ -141,8 +161,8 @@ class RemoteVMEmbedder:
         num_backoff_intervals = max(0, self.max_retries - 1)
         backoff_total = sum(self.retry_delay * (2 ** i) for i in range(num_backoff_intervals))
         total_timeout = (base_timeout * self.max_retries) + backoff_total
-        
-        _log(logger.debug, 
+
+        _log(logger.debug,
             f"Timeout конфигурация: base={base_timeout}s, retries={self.max_retries}, "
             f"backoff_total={backoff_total}s, total={total_timeout}s"
         )
@@ -166,7 +186,7 @@ class RemoteVMEmbedder:
         deadline_ms: int = 30000
     ) -> np.ndarray:
         """Выполняет фактический HTTP запрос к VM и обновляет статистику.
-        
+
         Note:
             Использует time.monotonic() для точного измерения производительности,
             не подверженного изменениям системных часов.
@@ -212,7 +232,7 @@ class RemoteVMEmbedder:
             self.stats['total_time'] += elapsed_time
             self.stats['avg_response_time'] = self.stats['total_time'] / self.stats['total_requests']
 
-            _log(logger.debug, 
+            _log(logger.debug,
                 f"Получены embeddings с VM: {len(texts)} элементов, "
                 f"shape={embeddings_array.shape}, time={elapsed_time:.3f}s"
             )
@@ -225,38 +245,38 @@ class RemoteVMEmbedder:
             raise EmbeddingException("Удалённый сервис эмбеддингов вернул ошибку", provider=self.provider_name, model_name=self.model_name, details=str(e))
 
     async def _make_request_with_retry(
-        self, 
+        self,
         payload: Dict[str, Any]
     ) -> List[List[float]]:
         """
         Выполняет HTTP запрос с retry логикой через RetryPolicy и Circuit Breaker.
-        
+
         Args:
             payload: Данные для отправки
-            
+
         Returns:
             Список эмбеддингов
-            
+
         Note:
             Использует time.monotonic() для точного измерения времени, не подверженного
             изменениям системных часов (NTP синхронизация, ручная корректировка).
         """
         import asyncio
         import aiohttp
-        
+
         # ИСПРАВЛЕНИЕ #1 + УЛУЧШЕНИЕ: Используем monotonic для корректных таймаутов
         request_start_time = time.monotonic()
-        
+
         # ИСПРАВЛЕНИЕ #2: Инвертируем композицию - RetryPolicy вызывает CircuitBreaker для каждой попытки
         # Теперь CB будет видеть каждую отдельную попытку, а не весь цикл retry целиком
         async def _single_attempt():
             """Одна попытка запроса через Circuit Breaker"""
             return await self.circuit_breaker.call(self._make_single_request, payload=payload)
-        
+
         try:
             # RetryPolicy управляет попытками, каждая из которых проходит через CB
             return await self.retry_policy.execute_with_retry(_single_attempt)
-        
+
         except CircuitBreakerOpenException as e:
             # Circuit Breaker открыт - VM сервис недоступен
             cb_state = self.circuit_breaker.get_state()
@@ -270,14 +290,14 @@ class RemoteVMEmbedder:
                 vm_port=self.service_port,
                 error_details=str(e)
             )
-        
+
         except asyncio.TimeoutError as e:
             # ИСПРАВЛЕНИЕ #1 + УЛУЧШЕНИЕ: Используем monotonic + локальный счетчик попыток
             elapsed_seconds = time.monotonic() - request_start_time
-            
+
             # УЛУЧШЕНИЕ #2: Логируем локальный лимит попыток вместо глобального счетчика
             max_attempts = self.retry_policy.config.max_attempts
-            
+
             # Конвертируем в VMTimeoutError для консистентной обработки
             raise VMTimeoutError(
                 message=f"VM сервис не отвечает после {max_attempts} попыток",
@@ -286,7 +306,7 @@ class RemoteVMEmbedder:
                 operation="embedding",
                 retry_attempt=max_attempts  # Локальный контекст: достигли лимита
             )
-        
+
         except aiohttp.ClientError as e:
             # Конвертируем в VMConnectionError для консистентной обработки
             raise VMConnectionError(
@@ -295,56 +315,42 @@ class RemoteVMEmbedder:
                 vm_port=self.service_port,
                 error_details=str(e)
             )
-    
+
     async def _make_single_request(
         self,
         payload: Dict[str, Any]
     ) -> List[List[float]]:
         """
         Выполняет один HTTP запрос к VM без retry логики.
-        
+
         Args:
             payload: Данные для отправки
-            
+
         Returns:
             Список эмбеддингов
         """
-        import aiohttp
-        
-        # Получаем shared HTTP session
-        session = await get_shared_http_session()
-        
-        # Выполняем POST запрос
-        async with session.post(
+        result = await self.transport.post_json(
             self.embeddings_endpoint,
-            json=payload,
-            headers={'Content-Type': 'application/json'}
-        ) as response:
-            
-            if response.status == 200:
-                result = await response.json()
-                
-                # Ожидаем формат: {"embeddings": [[...], [...], ...]}
-                if "embeddings" in result:
-                    return result["embeddings"]
-                else:
-                    raise ValueError(f"Неожиданный формат ответа: {result.keys()}")
-            
-            else:
-                error_text = await response.text()
-                raise RuntimeError(f"HTTP {response.status}: {error_text}")
-    
+            payload,
+            timeout=self.timeout_seconds,
+        )
+
+        if "embeddings" in result:
+            return result["embeddings"]
+
+        raise ValueError(f"Неожиданный формат ответа: {result.keys()}")
+
     async def _async_health_check(self) -> Dict[str, Any]:
         """
         Асинхронная проверка состояния удалённого сервиса с диагностикой.
-        
+
         Note:
             Использует time.monotonic() для точного измерения latency,
             не подверженного изменениям системных часов.
         """
         import asyncio
         import aiohttp
-        
+
         health_info = {
             "status": "unknown",
             "components": {
@@ -374,7 +380,7 @@ class RemoteVMEmbedder:
             session = await get_shared_http_session()
             async with session.post(self.embeddings_endpoint, json=test_payload) as response:
                 response_time_ms = (time.monotonic() - start_time) * 1000
-                
+
                 if response.status == 200:
                     result = await response.json()
                     if "embeddings" in result and len(result["embeddings"]) > 0:
@@ -404,16 +410,16 @@ class RemoteVMEmbedder:
                         "recommendation": self._get_http_error_recommendation(response.status),
                         "response_time_ms": response_time_ms
                     }
-        
+
         except aiohttp.ClientConnectorError as e:
             response_time_ms = (time.monotonic() - start_time) * 1000
             health_info["status"] = "error"
             health_info["error"] = f"ClientConnectorError: {e}"
-            
+
             # 2.3.3: Используем vm_diagnostics для комплексной диагностики
             try:
                 diagnostics = await diagnose_vm_connection(self.service_host, self.service_port)
-                
+
                 health_info["diagnostic"] = {
                     "error_type": "connection_refused",
                     "vm_host": self.service_host,
@@ -439,7 +445,7 @@ class RemoteVMEmbedder:
                     ),
                     "response_time_ms": response_time_ms
                 }
-        
+
         except asyncio.TimeoutError as e:
             response_time_ms = (time.monotonic() - start_time) * 1000
             health_info["status"] = "error"
@@ -451,7 +457,7 @@ class RemoteVMEmbedder:
                 "recommendation": "VM embedder не отвечает. Проверьте загрузку VM и latency.",
                 "response_time_ms": response_time_ms
             }
-        
+
         except Exception as e:
             response_time_ms = (time.monotonic() - start_time) * 1000
             health_info["status"] = "error"
@@ -464,14 +470,14 @@ class RemoteVMEmbedder:
             }
 
         return health_info
-    
+
     def _get_http_error_recommendation(self, status_code: int) -> str:
         """
         Возвращает рекомендацию по устранению HTTP ошибки.
-        
+
         Args:
             status_code: HTTP статус код
-            
+
         Returns:
             Строка с рекомендацией
         """
@@ -484,7 +490,7 @@ class RemoteVMEmbedder:
             413: "Payload Too Large. Уменьшите размер батча текстов.",
             429: "Too Many Requests. Rate limit превышен."
         }
-        
+
         return recommendations.get(
             status_code,
             f"HTTP {status_code}. Проверьте документацию VM API."
@@ -495,63 +501,78 @@ class RemoteVMEmbedder:
         Синхронная обёртка для health check.
         """
         return run_async_safe(self._async_health_check(), timeout=30)
-    
+
     def warmup(self) -> None:
         """
         Прогрев удалённого сервиса с правильным event loop management.
         """
         if self._is_warmed_up:
             return
-            
+
         _log(logger.info, "Прогрев удалённого VM сервиса...")
-        
+
         try:
             # Используем EventLoopManager для правильной работы с async кодом
             run_async_safe(self._async_warmup(), timeout=30)
         except Exception as e:
             _log(logger.warning, f"Ошибка прогрева VM сервиса: {e}")
             # Не критично, продолжаем работу
-            
+
     async def _async_warmup(self) -> None:
         """Асинхронный прогрев сервиса"""
         try:
             health_info = await self._async_health_check()
-            
+
             if health_info['status'] in ('connected', 'ok', 'healthy'):
                 self._is_warmed_up = True
                 _log(logger.info, f"VM сервис готов: {health_info['components']['embedder'].get('actual_embedding_dim', 'N/A')}d векторы")
             else:
                 _log(logger.warning, f"VM сервис не готов: {health_info.get('error', 'Unknown error')}")
-                
+
         except Exception as e:
             _log(logger.error, f"Ошибка асинхронного прогрева: {e}")
-    
+
     def get_stats(self) -> Dict[str, Any]:
-        """Возвращает статистику использования"""
-        stats = self.stats.copy()
-        
-        # 2.1.3: Добавляем статистику retry policy
+        """Возвращает статистику использования в версионированном формате."""
+        base_stats = self.stats.copy()
         retry_stats = self.retry_policy.get_stats()
-        # ИСПРАВЛЕНИЕ #3: Используем total_retries вместо подсчёта проваленных циклов
-        # total_retries содержит фактическое количество дополнительных попыток
-        stats['retry_count'] = retry_stats['total_retries']
-        
-        # 2.2.3: Добавляем статистику circuit breaker
         cb_state = self.circuit_breaker.get_state()
-        
-        stats.update({
-            'service_url': self.embeddings_endpoint,
-            'provider': self.provider_name,
-            'model_name': self.model_name,
-            'is_warmed_up': self._is_warmed_up,
-            'embedding_dim': self.embedding_dim,
-            'truncate_dim': self.truncate_dim,
-            'retry_policy_stats': retry_stats,      # Полная статистика retry policy
-            'circuit_breaker_state': cb_state       # Полная статистика circuit breaker
-        })
-        
-        return stats
-    
+        cb_stats = self.circuit_breaker.get_stats()
+
+        return {
+            "schema_version": 1,
+            "requests": {
+                "total": base_stats.get('total_requests', 0),
+                "errors": base_stats.get('error_count', 0),
+                "texts": base_stats.get('total_texts', 0)
+            },
+            "retry": {
+                "total_retries": retry_stats.get('total_retries', 0),
+                "attempts": retry_stats.get('total_executions', 0)
+            },
+            "latency": {
+                "avg_ms": base_stats.get('avg_response_time', 0.0) * 1000,
+                "total_time": base_stats.get('total_time', 0.0)
+            },
+            "cb": {
+                "state": cb_state.get('state', 'unknown'),
+                "failure_count": cb_state.get('failure_count', 0)
+            },
+            "total_requests": base_stats.get('total_requests', 0),
+            "total_texts": base_stats.get('total_texts', 0),
+            "error_count": base_stats.get('error_count', 0),
+            "retry_count": retry_stats.get('total_retries', 0),
+            "avg_response_time": base_stats.get('avg_response_time', 0.0),
+            "is_warmed_up": self._is_warmed_up,
+            "provider": self.provider_name,
+            "model_name": self.model_name,
+            "service_url": self.embeddings_endpoint,
+            "embedding_dim": self.embedding_dim,
+            "truncate_dim": self.truncate_dim,
+            "retry_policy_stats": retry_stats,
+            "circuit_breaker_stats": cb_stats,
+        }
+
     def reset_stats(self) -> None:
         """Сбрасывает статистику"""
         self.stats = {
@@ -563,6 +584,8 @@ class RemoteVMEmbedder:
             'avg_response_time': 0.0
         }
         _log(logger.info, "Статистика RemoteVMEmbedder сброшена")
+        self.retry_policy.reset_stats()
+        self.circuit_breaker.reset_stats()
 
 
 # Обратная совместимость: алиас для старого класса
