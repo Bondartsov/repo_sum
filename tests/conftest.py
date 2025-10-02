@@ -132,6 +132,7 @@ def embedder_factory(request):
         model: Optional[str] = None,
         provider: Optional[str] = None,
         transport_client: Optional[Any] = None,
+        remote_service_config: Optional[Any] = None,
     ):
         should_mock = override_mock if override_mock is not None else (use_mock_cli or env_flag)
 
@@ -147,15 +148,11 @@ def embedder_factory(request):
 
         from rag.remote_embedder import RemoteVMEmbedder
 
-        # Попытка создать embedder с transport_client если он предоставлен
-        try:
-            if transport_client is not None:
-                return RemoteVMEmbedder(transport_client=transport_client)
-        except TypeError:
-            # Текущая реализация RemoteVMEmbedder не поддерживает transport_client — игнорируем параметр.
-            pass
-
-        embedder = RemoteVMEmbedder()
+        # Создаём embedder с переданными параметрами
+        embedder = RemoteVMEmbedder(
+            remote_service_config=remote_service_config,
+            transport_client=transport_client
+        )
         if model is not None:
             setattr(embedder, "model_name", model)
         if provider is not None:
