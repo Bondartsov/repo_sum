@@ -93,7 +93,7 @@ class RetryPolicy:
     
     Пример использования:
     ```python
-    config = RetryConfig(max_attempts=3, base_delay=2.0, timeout_seconds=60.0)
+    config = RetryConfig(max_attempts=5, base_delay=10.0, timeout_seconds=600.0)  # HOTFIX значения
     policy = RetryPolicy(config)
     
     async def risky_operation():

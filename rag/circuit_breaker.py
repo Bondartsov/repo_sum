@@ -50,9 +50,9 @@ class CircuitBreakerConfig:
         half_open_max_calls: Максимальное количество вызовов в HALF_OPEN состоянии
         excluded_exceptions: Tuple исключений, которые НЕ считаются failure
     """
-    failure_threshold: int = 5
+    failure_threshold: int = 10  # HOTFIX: было 5
     success_threshold: int = 2
-    timeout_seconds: float = 60.0
+    timeout_seconds: float = 300.0  # HOTFIX: было 60.0 (5 минут)
     half_open_max_calls: int = 1
     excluded_exceptions: tuple = ()
     
@@ -102,9 +102,9 @@ class CircuitBreaker:
     Пример использования:
     ```python
     config = CircuitBreakerConfig(
-        failure_threshold=5,
+        failure_threshold=10,         # HOTFIX: было 5
         success_threshold=2,
-        timeout_seconds=60.0
+        timeout_seconds=300.0         # HOTFIX: было 60.0 (5 минут)
     )
     breaker = CircuitBreaker(config)
     
