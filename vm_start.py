@@ -238,17 +238,33 @@ class VMSetupManager:
 
             # Парсим вывод: commit_hash refs/heads/branch_name
             branch_info = []
+
+            # Используем GitHub API для получения дат коммитов (более надежно)
+            # Формат ls-remote: <hash> refs/heads/<branch>
             for line in output.strip().splitlines():
                 if 'refs/heads/' in line:
                     parts = line.split()
                     if len(parts) >= 2:
                         commit_hash = parts[0][:7]  # Короткий хэш
+                        full_hash = parts[0]  # Полный хэш для API
                         branch_name = parts[1].split('refs/heads/')[-1].strip()
 
-                        # Получаем дату последнего коммита для ветки
-                        date_cmd = f"git log -1 --format=%ci {commit_hash}"
-                        date_success, date_output, _ = self.execute_command(date_cmd, timeout=10)
-                        commit_date = date_output.strip().split()[0] if date_success else "N/A"
+                        # Получаем дату через GitHub API (работает без клонирования)
+                        # Используем curl к GitHub API для получения информации о коммите
+                        api_url = f"https://api.github.com/repos/Bondartsov/repo_sum/commits/{full_hash}"
+                        date_cmd = f"curl -s {api_url} | grep '\"date\":' | head -1 | cut -d'\"' -f4"
+                        date_success, date_output, _ = self.execute_command(date_cmd, timeout=15)
+
+                        if date_success and date_output.strip():
+                            # Парсим ISO формат: 2025-10-02T15:30:00Z -> 02.10.2025
+                            iso_date = date_output.strip().split('T')[0]  # 2025-10-02
+                            try:
+                                year, month, day = iso_date.split('-')
+                                commit_date = f"{day}.{month}.{year}"
+                            except:
+                                commit_date = "N/A"
+                        else:
+                            commit_date = "N/A"
 
                         branch_info.append({
                             'name': branch_name,
@@ -368,7 +384,13 @@ class VMSetupManager:
                 if len(old_lines) >= 3:
                     old_branch = old_lines[0]
                     old_commit = old_lines[1]
-                    old_date = old_lines[2].split()[0]  # Берем только дату
+                    # Берем дату и конвертируем в ДД.ММ.ГГГГ формат
+                    iso_date = old_lines[2].split()[0]  # 2025-10-02
+                    try:
+                        year, month, day = iso_date.split('-')
+                        old_date = f"{day}.{month}.{year}"
+                    except:
+                        old_date = iso_date
 
             commands = [
                 f"cd {self.vm_repo_dir}",
@@ -399,7 +421,13 @@ class VMSetupManager:
             if len(lines) >= 3:
                 branch = lines[-3]
                 new_commit = lines[-2]
-                new_date = lines[-1].split()[0]  # Берем только дату
+                # Берем дату и конвертируем в ДД.ММ.ГГГГ формат
+                iso_date = lines[-1].split()[0]  # 2025-10-02
+                try:
+                    year, month, day = iso_date.split('-')
+                    new_date = f"{day}.{month}.{year}"
+                except:
+                    new_date = iso_date
             else:
                 branch = self.repo_branch
                 new_commit = ""
