@@ -216,18 +216,113 @@ class VMSetupManager:
 
         self.console.print(table)
 
-    def setup_repository(self) -> bool:
-        """Manage repository on the VM by cloning or syncing."""
+    def get_available_branches(self) -> list:
+        """Получение списка доступных веток из GitHub репозитория"""
+        self.console.print("[blue]🔍 Получаю список веток из GitHub...[/blue]")
+
+        try:
+            # Используем git ls-remote для получения списка веток
+            success, output, error = self.execute_command(
+                f"git ls-remote --heads {self.repo_url}",
+                timeout=30
+            )
+
+            if not success or not output.strip():
+                self.console.print(f"[red]❌ Не удалось получить список веток: {error}[/red]")
+                return []
+
+            # Парсим вывод: refs/heads/branch_name -> branch_name
+            branches = []
+            for line in output.strip().splitlines():
+                if 'refs/heads/' in line:
+                    branch_name = line.split('refs/heads/')[-1].strip()
+                    branches.append(branch_name)
+
+            # Сортируем ветки, приоритет: master, main, затем остальные по алфавиту
+            def branch_sort_key(branch: str) -> tuple:
+                if branch == 'master':
+                    return (0, branch)
+                elif branch == 'main':
+                    return (1, branch)
+                else:
+                    return (2, branch)
+
+            branches.sort(key=branch_sort_key)
+
+            self.console.print(f"[green]✅ Найдено веток: {len(branches)}[/green]")
+            return branches
+
+        except Exception as e:
+            self.console.print(f"[red]❌ Ошибка получения списка веток: {e}[/red]")
+            logger.error(f"Branch list error: {e}")
+            return []
+
+    def select_branch_interactive(self, branches: list) -> Optional[str]:
+        """Интерактивный выбор ветки из списка"""
+        if not branches:
+            self.console.print("[red]❌ Список веток пуст[/red]")
+            return None
+
+        # Создаем красивую таблицу с ветками
+        table = Table(title="📁 Выберите ветку для развертывания")
+        table.add_column("№", style="cyan", justify="right")
+        table.add_column("Ветка", style="bold green")
+
+        for idx, branch in enumerate(branches, start=1):
+            # Выделяем текущую ветку
+            branch_display = f"[bold yellow]{branch}[/bold yellow] (текущая)" if branch == self.repo_branch else branch
+            table.add_row(str(idx), branch_display)
+
+        self.console.print(table)
+
+        # Запрашиваем выбор пользователя
+        try:
+            choice = input(f"\nВведите номер ветки [1-{len(branches)}] или 'q' для отмены: ").strip()
+
+            if choice.lower() == 'q':
+                self.console.print("[yellow]⏹️ Выбор ветки отменен[/yellow]")
+                return None
+
+            idx = int(choice)
+            if 1 <= idx <= len(branches):
+                selected_branch = branches[idx - 1]
+                self.console.print(f"[green]✅ Выбрана ветка: {selected_branch}[/green]")
+                return selected_branch
+            else:
+                self.console.print(f"[red]❌ Неверный номер. Выберите от 1 до {len(branches)}[/red]")
+                return None
+
+        except (ValueError, KeyboardInterrupt):
+            self.console.print("[yellow]⏹️ Выбор ветки отменен[/yellow]")
+            return None
+
+    def setup_repository(self) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
+        """
+        Manage repository on the VM by cloning or syncing.
+
+        Returns:
+            Tuple[success, old_commit, new_commit, branch_name]
+        """
         self.console.print("[blue]📁 Настраиваю репозиторий...[/blue]")
 
         success, _, _ = self.execute_command(f"mkdir -p {self.vm_work_dir}")
         if not success:
             self.console.print("[red]❌ Не удалось создать рабочую папку[/red]")
-            return False
+            return False, None, None, None
 
         repo_ready, _, _ = self.execute_command(f"test -d {self.vm_repo_dir}/.git")
+
+        # Сохраняем старую версию если репозиторий уже существует
+        old_commit = None
         if repo_ready:
             action = "update"
+            # Получаем старую версию перед обновлением
+            old_success, old_output, _ = self.execute_command(
+                f"cd {self.vm_repo_dir} && git rev-parse --short HEAD"
+            )
+            if old_success:
+                old_commit = old_output.strip()
+
             commands = [
                 f"cd {self.vm_repo_dir}",
                 "git fetch --all --prune",
@@ -254,16 +349,26 @@ class VMSetupManager:
         if success:
             lines = [line.strip() for line in output.strip().splitlines() if line.strip()]
             branch = lines[-2] if len(lines) >= 2 else self.repo_branch
-            commit = lines[-1] if lines else ""
+            new_commit = lines[-1] if lines else ""
             status_label = "склонирован" if action == "clone" else "обновлён"
-            self.console.print(f"[green]✅ Репозиторий {status_label}: {branch} @ {commit}[/green]")
-            logger.info(f"Repository {action} -> {branch}@{commit}")
-            return True
+
+            # Формируем сообщение о версии
+            if action == "update" and old_commit and new_commit:
+                if old_commit == new_commit:
+                    version_msg = f"версия {new_commit} (без изменений)"
+                else:
+                    version_msg = f"версия обновлена с {old_commit} на {new_commit}"
+            else:
+                version_msg = f"версия {new_commit}"
+
+            self.console.print(f"[green]✅ Репозиторий {status_label}: {version_msg} (ветка: {branch})[/green]")
+            logger.info(f"Repository {action} -> {branch}@{new_commit} (old: {old_commit or 'N/A'})")
+            return True, old_commit, new_commit, branch
 
         self.console.print(f"[red]❌ Ошибка синхронизации репозитория: {error}")
         if output.strip():
             logger.error(f"Git output: {output.strip()}")
-        return False
+        return False, None, None, None
 
     def check_critical_files(self) -> bool:
         """Проверка критических файлов"""
@@ -777,9 +882,21 @@ except Exception as e:
             if not self.connect_ssh():
                 return False
 
+            # Интерактивный выбор ветки (если не указан через --branch)
+            if not hasattr(self, 'selected_branch') or not self.selected_branch:
+                branches = self.get_available_branches()
+                if branches:
+                    selected = self.select_branch_interactive(branches)
+                    if selected:
+                        self.repo_branch = selected
+                    # Если выбор отменён, используем дефолтную ветку из .env
+                else:
+                    self.console.print("[yellow]⚠️ Использую дефолтную ветку из .env[/yellow]")
+
             status = self.check_vm_status()
 
-            if not self.setup_repository():
+            repo_result = self.setup_repository()
+            if not repo_result[0]:  # repo_result[0] = success
                 return False
             status['repo_exists'] = True
 
@@ -851,10 +968,22 @@ except Exception as e:
         self.console.print("[blue]🔄 Обновляю код на VM...[/blue]")
 
         try:
-            repo_sync = self.setup_repository()
-            if repo_sync:
+            # Интерактивный выбор ветки (если не указан через --branch)
+            if not hasattr(self, 'selected_branch') or not self.selected_branch:
+                branches = self.get_available_branches()
+                if branches:
+                    selected = self.select_branch_interactive(branches)
+                    if selected:
+                        self.repo_branch = selected
+                    # Если выбор отменён, используем дефолтную ветку из .env
+                else:
+                    self.console.print("[yellow]⚠️ Использую дефолтную ветку из .env[/yellow]")
+
+            repo_result = self.setup_repository()
+            success = repo_result[0]
+            if success:
                 self.console.print("[green]✅ Код на VM синхронизирован[/green]")
-            return repo_sync
+            return success
         except Exception as e:
             self.console.print(f"[red]❌ Критическая ошибка обновления: {e}[/red]")
             return False
@@ -882,7 +1011,7 @@ except Exception as e:
 def main():
     """Главная функция"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Автоматическая настройка VM для Jina v3 RAG")
     parser.add_argument(
         "action",
@@ -891,11 +1020,22 @@ def main():
         choices=["start", "stop", "status", "diagnose", "update"],
         help="Режимы: start (по умолчанию, запуск и проверка), stop (остановка), status (проверка), diagnose (диагностика), update (обновление кода)"
     )
+    parser.add_argument(
+        "--branch",
+        type=str,
+        help="Ветка для развертывания (пропустить интерактивный выбор)"
+    )
 
     args = parser.parse_args()
-    
+
     try:
         manager = VMSetupManager()
+
+        # Устанавливаем выбранную ветку из CLI аргумента
+        if args.branch:
+            manager.selected_branch = args.branch
+            manager.repo_branch = args.branch
+            manager.console.print(f"[green]✅ Выбрана ветка из CLI: {args.branch}[/green]")
         
         if args.action == "start":
             success = manager.run_full_setup()
