@@ -1,6 +1,7 @@
 """Модуль разбивки кода на логические части для анализа OpenAI GPT."""
 
 import logging
+import math
 import os
 import sys
 from typing import List, Optional
@@ -9,6 +10,11 @@ import tiktoken
 
 from config import get_config
 from utils import ParsedFile, CodeChunk, count_lines_in_text
+
+# Фаза 3: OOM рефакторинг - ограничения на размер чанков
+CHUNK_MAX_TOKENS = 768  # Максимальный размер чанка в токенах
+CHUNK_MIN_TOKENS = 160  # Минимальный размер для группировки мелких
+CHUNK_TARGET_TOKENS = 512  # Целевой размер чанка (оптимальный)
 
 
 def _is_offline_mode() -> bool:
@@ -100,30 +106,35 @@ class CodeChunker:
                 with open(parsed_file.file_info.path, 'r', encoding=parsed_file.file_info.encoding) as f:
                     source_code = f.read()
             # 1. Создаем чанк для импортов и заголовка файла
-            header_chunk = self._create_header_chunk(parsed_file, source_code)
-            if header_chunk:
-                chunks.append(header_chunk)
+            header_chunks = self._create_header_chunk(parsed_file, source_code)
+            chunks.extend(header_chunks)
+            
             # 2. Создаем отдельные чанки для классов
             for element in parsed_file.elements:
                 if element.type == 'class':
-                    class_chunk = self._create_class_chunk(element, parsed_file, source_code)
-                    if class_chunk:
-                        chunks.append(class_chunk)
+                    class_chunks = self._create_class_chunk(element, parsed_file, source_code)
+                    chunks.extend(class_chunks)
+            
             # 3. Группируем функции в чанки
             function_chunks = self._group_functions_into_chunks(parsed_file, source_code)
             chunks.extend(function_chunks)
+            
             # 4. Создаем чанк для глобальных переменных и констант
-            variables_chunk = self._create_variables_chunk(parsed_file, source_code)
-            if variables_chunk:
-                chunks.append(variables_chunk)
+            variables_chunks = self._create_variables_chunk(parsed_file, source_code)
+            chunks.extend(variables_chunks)
+            
             self.logger.debug(f"Создано {len(chunks)} чанков для {parsed_file.file_info.path}")
+            
+            # Логируем метрики распределения
+            self._log_chunk_metrics(chunks)
+            
             return chunks
         except Exception as e:
             self.logger.error(f"Ошибка при разбивке файла {parsed_file.file_info.path}: {e}")
             # Возвращаем хотя бы один чанк с основной информацией
             return [self._create_fallback_chunk(parsed_file)]
     
-    def _create_header_chunk(self, parsed_file: ParsedFile, source_code: str) -> Optional[CodeChunk]:
+    def _create_header_chunk(self, parsed_file: ParsedFile, source_code: str) -> List[CodeChunk]:
         """Создает чанк для импортов и комментариев файла"""
         header_content = []
         
@@ -142,12 +153,12 @@ class CodeChunker:
                     header_content.append(f"# {comment}")
         
         if not header_content:
-            return None
+            return []
         
         content = "\n".join(header_content)
         tokens = self._count_tokens(content)
         
-        return CodeChunk(
+        chunk = CodeChunk(
             name=f"Header of {parsed_file.file_info.name}",
             content=content,
             start_line=1,
@@ -155,8 +166,11 @@ class CodeChunker:
             chunk_type="file_header",
             tokens_estimate=tokens
         )
+        
+        # Проверка размера и дробление если нужно
+        return self._split_large_chunk(chunk)
     
-    def _create_class_chunk(self, class_element, parsed_file: ParsedFile, source_code: str) -> Optional[CodeChunk]:
+    def _create_class_chunk(self, class_element, parsed_file: ParsedFile, source_code: str) -> List[CodeChunk]:
         """Создает отдельный чанк для класса"""
         try:
             lines = source_code.splitlines()
@@ -181,7 +195,7 @@ class CodeChunker:
             
             tokens = self._count_tokens(content)
             
-            return CodeChunk(
+            chunk = CodeChunk(
                 name=class_element.name,
                 content=content,
                 start_line=class_element.line_number,
@@ -190,9 +204,12 @@ class CodeChunker:
                 tokens_estimate=tokens
             )
             
+            # Проверка размера и дробление если нужно
+            return self._split_large_chunk(chunk)
+            
         except Exception as e:
             self.logger.warning(f"Ошибка при создании чанка для класса {class_element.name}: {e}")
-            return None
+            return []
     
     def _group_functions_into_chunks(self, parsed_file: ParsedFile, source_code: str) -> List[CodeChunk]:
         """Группирует функции в чанки логически"""
@@ -221,9 +238,8 @@ class CodeChunker:
                 
                 # Если накопилось достаточно функций, создаем чанк
                 if len(current_chunk_functions) >= max_functions_per_chunk:
-                    chunk = self._create_functions_chunk(current_chunk_functions, "functions")
-                    if chunk:
-                        function_chunks.append(chunk)
+                    chunks = self._create_functions_chunk(current_chunk_functions, "functions")
+                    function_chunks.extend(chunks)
                     current_chunk_functions = []
                 
                 # Добавляем функцию к текущему чанку
@@ -241,18 +257,17 @@ class CodeChunker:
         
         # Добавляем оставшиеся функции
         if current_chunk_functions:
-            chunk = self._create_functions_chunk(current_chunk_functions, "functions")
-            if chunk:
-                function_chunks.append(chunk)
+            chunks = self._create_functions_chunk(current_chunk_functions, "functions")
+            function_chunks.extend(chunks)
         
         return function_chunks
     
-    def _create_variables_chunk(self, parsed_file: ParsedFile, source_code: str) -> Optional[CodeChunk]:
+    def _create_variables_chunk(self, parsed_file: ParsedFile, source_code: str) -> List[CodeChunk]:
         """Создает чанк для глобальных переменных и констант"""
         variables = [elem for elem in parsed_file.elements if elem.type in ['variable', 'constant']]
         
         if not variables:
-            return None
+            return []
         
         content_parts = ["# Глобальные переменные и константы:"]
         
@@ -263,7 +278,7 @@ class CodeChunker:
         content = "\n".join(content_parts)
         tokens = self._count_tokens(content)
         
-        return CodeChunk(
+        chunk = CodeChunk(
             name="Global Variables",
             content=content,
             start_line=min(var.line_number for var in variables),
@@ -271,11 +286,14 @@ class CodeChunker:
             chunk_type="variables",
             tokens_estimate=tokens
         )
+        
+        # Проверка размера и дробление если нужно
+        return self._split_large_chunk(chunk)
     
-    def _create_functions_chunk(self, functions_data: List[dict], chunk_type: str) -> Optional[CodeChunk]:
+    def _create_functions_chunk(self, functions_data: List[dict], chunk_type: str) -> List[CodeChunk]:
         """Создает чанк из группы функций"""
         if not functions_data:
-            return None
+            return []
         
         content_parts = []
         total_tokens = 0
@@ -293,7 +311,7 @@ class CodeChunker:
         
         content = "\n".join(content_parts).strip()
         
-        return CodeChunk(
+        chunk = CodeChunk(
             name=f"Functions: {', '.join(function_names[:3])}" + ("..." if len(function_names) > 3 else ""),
             content=content,
             start_line=min_line,
@@ -301,6 +319,9 @@ class CodeChunker:
             chunk_type=chunk_type,
             tokens_estimate=total_tokens
         )
+        
+        # Проверка размера и дробление если нужно
+        return self._split_large_chunk(chunk)
     
     def _create_large_function_chunk(self, func_element) -> Optional[CodeChunk]:
         """Создает чанк для большой функции (только сигнатура и докстринг)"""
@@ -414,3 +435,95 @@ class CodeChunker:
             current_tokens += line_tokens
         
         return "\n".join(truncated_lines)
+
+    
+    def _split_large_chunk(self, chunk: CodeChunk) -> List[CodeChunk]:
+        """
+        Дробит чанк >CHUNK_MAX_TOKENS на части с сохранением контекста
+        
+        Args:
+            chunk: Большой чанк для дробления
+            
+        Returns:
+            List[CodeChunk]: Список чанков ≤CHUNK_MAX_TOKENS
+        """
+        token_count = self._count_tokens(chunk.content)
+        
+        # Если чанк в пределах лимита - вернуть как есть
+        if token_count <= CHUNK_MAX_TOKENS:
+            return [chunk]
+        
+        # Чанк слишком большой - нужно дробить
+        lines = chunk.content.split('\n')
+        total_lines = len(lines)
+        
+        # Вычислить количество частей
+        num_parts = math.ceil(token_count / CHUNK_TARGET_TOKENS)
+        lines_per_part = max(10, total_lines // num_parts)  # Минимум 10 строк на часть
+        
+        parts = []
+        for part_idx in range(num_parts):
+            start_line = part_idx * lines_per_part
+            end_line = min(start_line + lines_per_part, total_lines)
+            
+            if start_line >= total_lines:
+                break
+                
+            part_lines = lines[start_line:end_line]
+            part_content = '\n'.join(part_lines)
+            
+            # Проверить что часть не пустая
+            if not part_content.strip():
+                continue
+            
+            # Создать новый чанк для части
+            part_chunk = CodeChunk(
+                name=f"{chunk.name} (часть {part_idx + 1}/{num_parts})",
+                content=part_content,
+                start_line=chunk.start_line + start_line,
+                end_line=chunk.start_line + end_line - 1,
+                chunk_type=chunk.chunk_type,
+                tokens_estimate=self._count_tokens(part_content)
+            )
+            
+            # Добавляем метаданные если chunk имеет атрибут metadata
+            if hasattr(chunk, 'metadata') and chunk.metadata:
+                part_chunk.metadata = {
+                    **chunk.metadata,
+                    "part": f"{part_idx + 1}/{num_parts}",
+                    "original_chunk": chunk.name,
+                    "is_split": True
+                }
+            
+            parts.append(part_chunk)
+        
+        return parts if parts else [chunk]
+    
+    def _log_chunk_metrics(self, chunks: List[CodeChunk]) -> None:
+        """Логирует метрики распределения размера чанков"""
+        if not chunks:
+            return
+        
+        token_counts = [self._count_tokens(c.content) for c in chunks]
+        
+        # Вычислить статистики
+        p50 = sorted(token_counts)[len(token_counts) // 2]
+        p90 = sorted(token_counts)[int(len(token_counts) * 0.9)]
+        p99 = sorted(token_counts)[int(len(token_counts) * 0.99)]
+        max_tokens = max(token_counts)
+        avg_tokens = sum(token_counts) / len(token_counts)
+        
+        # Подсчитать чанки превышающие лимит
+        oversized = sum(1 for t in token_counts if t > CHUNK_MAX_TOKENS)
+        
+        print(f"\n📊 Метрики чанков:")
+        print(f"   Всего чанков: {len(chunks)}")
+        print(f"   Средний размер: {avg_tokens:.0f} токенов")
+        print(f"   p50: {p50} токенов")
+        print(f"   p90: {p90} токенов")
+        print(f"   p99: {p99} токенов (ЛИМИТ: {CHUNK_MAX_TOKENS})")
+        print(f"   Максимум: {max_tokens} токенов")
+        print(f"   Превышают лимит: {oversized} чанков")
+        
+        if p99 > CHUNK_MAX_TOKENS:
+            print(f"   ⚠️ ВНИМАНИЕ: p99 превышает лимит!")
