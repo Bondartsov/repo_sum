@@ -357,9 +357,7 @@ close_sync: timeout=10
 
 ## 🔗 Связанные Документы
 
-- [`TIMEOUT_PROBLEM_DIAGNOSIS.md`](./TIMEOUT_PROBLEM_DIAGNOSIS.md) - Детальная диагностика
 - [`!!!!ATTENTION(02_10_2025).md`](./!!!!ATTENTION(02_10_2025).md) - Критическая проблема памяти
-- [`OOM_PROTECTION.md`](../OOM_PROTECTION.md) - OOM Protection v2.0
 
 ---
 

@@ -1,0 +1,22 @@
+--- vm_rag_service.py.original	2025-10-03 12:00:00.000000000 +0300
++++ vm_rag_service.py	2025-10-03 13:00:00.000000000 +0300
+@@ -558,11 +558,18 @@
+ def start_service():
+     """Запуск сервиса"""
+     logger.info("🚀 Запуск RAG-as-a-Service на VM...")
+     try:
+         uvicorn.run(
+             app,
+             host="0.0.0.0",  # Слушаем на всех интерфейсах
+             port=8000,
++            workers=1,  # ФАЗА 2: Один worker для предсказуемого потребления памяти
++            limit_concurrency=2,  # ФАЗА 2: Ограничение конкурентных запросов
++            timeout_keep_alive=600,  # ФАЗА 2: Увеличенный timeout для long-running запросов
++            limit_max_requests=1000,  # ФАЗА 2: Перезапуск worker после 1000 запросов (защита от утечек)
++            backlog=10,  # ФАЗА 2: Ограничение очереди подключений
+             log_level="info",
+-            access_log=True
++            access_log=True,
++            use_colors=False  # ФАЗА 2: Отключаем цвета в логах для systemd
+         )
+     except Exception as e:
