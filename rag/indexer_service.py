@@ -13,7 +13,7 @@ import time
 import uuid
 import psutil
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple, Any, AsyncGenerator
 from datetime import datetime
 import numpy as np
 
@@ -186,19 +186,37 @@ class IndexerService:
             self.stats['total_files'] = len(files)
             self.console.print(f"[green]✓ Найдено {len(files)} файлов для индексации[/green]")
             
-            # 3. Обработка файлов с прогресс-баром
-            if show_progress:
-                chunks = await self._process_files_with_progress(files, repo_path)
-            else:
-                chunks = await self._process_files_simple(files, repo_path)
+            # 3. Стримовая обработка файлов и индексация батчами
+            self.console.print("[bold blue]🔄 Обработка файлов и индексация...[/bold blue]")
+            indexed_count = 0
+            total_chunks = 0
             
-            if not chunks:
+            async for chunk_batch in self._process_files_generator(files, repo_path, batch_size):
+                # Логирование памяти
+                mem_info = self._get_memory_info()
+                total_chunks += len(chunk_batch)
+                self.stats['total_chunks'] = total_chunks
+                
+                logger.info(f"Обработка батча из {len(chunk_batch)} чанков. "
+                            f"Память: {mem_info['used_gb']:.1f}GB / {mem_info['total_gb']:.1f}GB "
+                            f"({mem_info['percent']:.1f}%)")
+                
+                if show_progress:
+                    self.console.print(
+                        f"[dim]Батч: {len(chunk_batch)} чанков, "
+                        f"Память: {mem_info['used_gb']:.1f}GB/{mem_info['total_gb']:.1f}GB[/dim]"
+                    )
+                
+                # Индексация батча
+                batch_indexed = await self._index_chunks_batch(chunk_batch, batch_size, show_progress)
+                indexed_count += batch_indexed
+            
+            if total_chunks == 0:
                 self.console.print("[bold yellow]⚠️ Не создано ни одного чанка для индексации[/bold yellow]")
                 return {'success': False, 'error': 'Не создано чанков для индексации'}
             
-            # 4. Генерация эмбеддингов и индексация
-            self.console.print(f"[bold blue]🧩 Создано {len(chunks)} чанков кода[/bold blue]")
-            indexed_count = await self._index_chunks_batch(chunks, batch_size, show_progress)
+            # 4. Результаты
+            self.console.print(f"[bold blue]🧩 Всего создано {total_chunks} чанков кода[/bold blue]")
             
             # 5. Статистика
             total_time = time.time() - start_time
@@ -307,6 +325,60 @@ class IndexerService:
         
         self.stats['total_chunks'] = len(all_chunks)
         return all_chunks
+    
+    async def _process_files_generator(
+        self,
+        files: List[FileInfo],
+        repo_path: Path,
+        batch_size: int = 256
+    ) -> AsyncGenerator[List[Tuple[CodeChunk, Dict[str, Any]]], None]:
+        """
+        Генератор для потоковой обработки файлов батчами
+        
+        Args:
+            files: Список файлов для обработки
+            repo_path: Корневая директория репозитория
+            batch_size: Размер батча чанков (default: 256)
+            
+        Yields:
+            List[Tuple[CodeChunk, Dict[str, Any]]]: Батч чанков готовых к индексации
+        """
+        current_batch = []
+        
+        for file_info in files:
+            try:
+                # Получить чанки для файла
+                file_chunks = await self._process_single_file(file_info, repo_path)
+                
+                # Добавить в текущий батч
+                current_batch.extend(file_chunks)
+                
+                # Обновить статистику
+                self.stats['processed_files'] += 1
+                
+                # Если батч достиг размера - отдать его
+                while len(current_batch) >= batch_size:
+                    # Извлечь батч
+                    batch_to_yield = current_batch[:batch_size]
+                    current_batch = current_batch[batch_size:]
+                    
+                    # Отдать батч для индексации
+                    yield batch_to_yield
+                    
+            except Exception as e:
+                logger.error(f"Ошибка обработки файла {file_info.path}: {e}")
+                self.stats['failed_files'] += 1
+                from datetime import datetime, timezone
+                self.stats['errors'].append({
+                    'file': file_info.path,
+                    'error': str(e),
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+                continue
+        
+        # Отдать остатки
+        if current_batch:
+            yield current_batch
     
     async def _process_single_file(
         self, 
@@ -428,6 +500,23 @@ class IndexerService:
             logger.error(f"Ошибка проверки памяти: {e}")
             # При ошибке возвращаем безопасный размер
             return min(128, current_batch_size)
+    
+    def _get_memory_info(self) -> dict:
+        """Получить информацию о текущем использовании памяти"""
+        try:
+            process = psutil.Process()
+            mem = process.memory_info()
+            system_mem = psutil.virtual_memory()
+            
+            return {
+                'used_gb': mem.rss / (1024**3),
+                'total_gb': system_mem.total / (1024**3),
+                'percent': (mem.rss / system_mem.total) * 100,
+                'available_gb': system_mem.available / (1024**3)
+            }
+        except Exception as e:
+            logger.warning(f"Не удалось получить info памяти: {e}")
+            return {'used_gb': 0, 'total_gb': 0, 'percent': 0, 'available_gb': 0}
     
     async def _index_chunks_batch(
         self, 
