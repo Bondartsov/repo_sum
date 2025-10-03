@@ -858,13 +858,11 @@ except Exception as e:
         if output.strip():
             self.console.print(f"[dim]Вывод скрипта: {output.strip()}[/dim]")
         
-        # Проверка что запустился
-        self.console.print("[blue]⏳ Ожидание запуска сервиса...[/blue]")
-        time.sleep(3)
-        
-        if self.check_service_running():
+        # Проверка что запустился - используем умный health check
+        print()  # Новая строка для читаемости
+        if self.verify_service_health():
             pid = self.get_service_pid()
-            self.console.print(f"[green]✅ Сервис запущен с PID {pid}[/green]")
+            self.console.print(f"[green]✅ Сервис полностью готов с PID {pid}[/green]")
             return True
         else:
             self.console.print("[red]❌ Не удалось запустить сервис![/red]")
@@ -894,29 +892,67 @@ except Exception as e:
             self.console.print("[yellow]⚠️ Скрипт start_vm_rag.sh не найден, использую стандартный запуск[/yellow]")
             return self.start_rag_service()
     
-    def verify_service_health(self, health_url: str = None) -> bool:
-        """Проверка health endpoint"""
-        if health_url is None:
-            health_url = "http://localhost:8000/health"
+    def verify_service_health(self, health_url="http://localhost:8000/health",
+                             max_attempts=18, interval=5):
+        """
+        Проверка health endpoint с retry-логикой
         
-        self.console.print("[blue]🏥 Проверка health endpoint...[/blue]")
+        Args:
+            health_url: URL health endpoint (по умолчанию localhost:8000/health)
+            max_attempts: Максимальное количество попыток (default: 18 = 90 секунд)
+            interval: Интервал между попытками в секундах (default: 5)
         
-        success, output, _ = self.execute_command(f"curl -s {health_url}")
+        Returns:
+            bool: True если сервис отвечает корректно
+        """
+        print(f"🏥 Проверка health endpoint (макс. {max_attempts * interval} сек)...")
         
-        if success and output.strip():
-            # Проверяем наличие ключевых слов
-            if "connected" in output.lower() or "status" in output.lower() or "ok" in output.lower():
-                self.console.print("[green]✅ Health check пройден[/green]")
-                # Показываем первые 200 символов
-                preview = output.strip()[:200]
-                if len(output.strip()) > 200:
-                    preview += "..."
-                self.console.print(f"[dim]{preview}[/dim]")
-                return True
+        for attempt in range(1, max_attempts + 1):
+            # Индикатор прогресса
+            elapsed = (attempt - 1) * interval
+            print(f"   ⏳ Попытка {attempt}/{max_attempts} (прошло {elapsed} сек)...", end='', flush=True)
+            
+            try:
+                # Выполнение health check
+                stdin, stdout, stderr = self.ssh_client.exec_command(
+                    f"curl -s -f {health_url} --connect-timeout 5 --max-time 10",
+                    timeout=15
+                )
+                
+                exit_status = stdout.channel.recv_exit_status()
+                response = stdout.read().decode().strip()
+                
+                # Проверка успешности
+                if exit_status == 0 and response:
+                    # Проверка содержимого ответа
+                    if any(keyword in response.lower() for keyword in ["connected", "status", "ok", "healthy"]):
+                        print(f" ✅ УСПЕХ!")
+                        print(f"   📊 Сервис готов (время загрузки: {elapsed} сек)")
+                        
+                        # Показать превью ответа
+                        print(f"   🔍 Ответ: {response[:150]}{'...' if len(response) > 150 else ''}")
+                        return True
+                
+                # Endpoint ответил, но не корректно
+                if exit_status == 0:
+                    print(f" ⚠️ Ответ получен, но некорректный")
+                    print(f"      Код: {exit_status}, Ответ: {response[:100]}")
+                else:
+                    # Endpoint не доступен, но это может быть нормально (модель загружается)
+                    print(f" ⏳ Ещё загружается...")
+                    
+            except Exception as e:
+                print(f" ⚠️ Ошибка: {str(e)[:50]}")
+            
+            # Если это не последняя попытка - ждём
+            if attempt < max_attempts:
+                time.sleep(interval)
+            else:
+                # Последняя попытка провалилась
+                print(f"\n   ❌ Health check не пройден после {max_attempts * interval} секунд")
+                print(f"   💡 Проверьте логи: ssh user@10.61.11.54 'tail -100 ~/repo_sum_rag/repo_sum/rag_service.log'")
+                return False
         
-        self.console.print("[yellow]⚠️ Health check не пройден[/yellow]")
-        if output.strip():
-            self.console.print(f"[dim]Ответ: {output.strip()[:100]}[/dim]")
         return False
     
     
