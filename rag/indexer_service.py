@@ -135,9 +135,9 @@ class IndexerService:
             raise VectorStoreConnectionError(f"Не удалось подключиться к векторному хранилищу: {e}")
     
     async def index_repository(
-        self, 
-        repo_path: str, 
-        batch_size: int = 512, 
+        self,
+        repo_path: str,
+        batch_size: int = 128,  # TIMEOUT FIX: Уменьшен batch_size по умолчанию для безопасности
         recreate: bool = False,
         show_progress: bool = True
     ) -> Dict[str, Any]:
@@ -330,7 +330,7 @@ class IndexerService:
         self,
         files: List[FileInfo],
         repo_path: Path,
-        batch_size: int = 256
+        batch_size: int = 128  # TIMEOUT FIX: Уменьшено с 256 до 128 для безопасности
     ) -> AsyncGenerator[List[Tuple[CodeChunk, Dict[str, Any]]], None]:
         """
         Генератор для потоковой обработки файлов батчами
@@ -338,12 +338,14 @@ class IndexerService:
         Args:
             files: Список файлов для обработки
             repo_path: Корневая директория репозитория
-            batch_size: Размер батча чанков (default: 256)
+            batch_size: Размер батча чанков (default: 128)
             
         Yields:
             List[Tuple[CodeChunk, Dict[str, Any]]]: Батч чанков готовых к индексации
         """
         current_batch = []
+        processed_count = 0
+        total_files = len(files)
         
         for file_info in files:
             try:
@@ -355,6 +357,16 @@ class IndexerService:
                 
                 # Обновить статистику
                 self.stats['processed_files'] += 1
+                processed_count += 1
+                
+                # Прогресс-индикатор каждые 10 файлов или на последнем файле
+                if processed_count % 10 == 0 or processed_count == total_files:
+                    progress_percent = processed_count / total_files * 100
+                    bar_filled = int(processed_count * 20 / total_files)
+                    bar_empty = 20 - bar_filled
+                    logger.info(f"📂 Обработано файлов: {processed_count}/{total_files} "
+                                f"({progress_percent:.1f}%) "
+                                f"{'█' * bar_filled}{'░' * bar_empty}")
                 
                 # Если батч достиг размера - отдать его
                 while len(current_batch) >= batch_size:

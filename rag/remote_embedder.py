@@ -115,7 +115,7 @@ class RemoteVMEmbedder(EmbedderProtocol):
         self.circuit_breaker = CircuitBreaker(CircuitBreakerConfig(
             failure_threshold=10,         # HOTFIX: 10 неудач (было 5) - для swap thrashing
             success_threshold=2,          # Закрываем после 2 успехов в half_open
-            timeout_seconds=300.0,        # HOTFIX: 5 минут (было 60s) - даём время на восстановление
+            timeout_seconds=1800.0,       # TIMEOUT FIX: 30 минут (было 300s) - для больших батчей
             half_open_max_calls=1         # Один пробный запрос в half_open
         ))
 
@@ -148,9 +148,18 @@ class RemoteVMEmbedder(EmbedderProtocol):
         if not texts:
             return np.array([])
 
+        # Адаптивный timeout на основе размера батча
+        batch_size = len(texts)
+        estimated_time_per_chunk = 1.5  # секунд на чанк (консервативно)
+        adaptive_timeout = max(3600, batch_size * estimated_time_per_chunk * 2)  # ×2 запас
+
+        logger.info(f"Эмбеддинг батча из {batch_size} чанков. "
+                    f"Ожидаемое время: {batch_size * estimated_time_per_chunk:.0f}s, "
+                    f"Timeout: {adaptive_timeout:.0f}s")
+
         # 1.1.3: Используем config вместо hardcode
         if deadline_ms is None:
-            deadline_ms = self.timeout_seconds * 1000  # Из config (по умолчанию 60s)
+            deadline_ms = int(adaptive_timeout * 1000)  # Используем адаптивный timeout
 
         base_timeout = deadline_ms / 1000.0
 
@@ -266,16 +275,31 @@ class RemoteVMEmbedder(EmbedderProtocol):
 
         # ИСПРАВЛЕНИЕ #1 + УЛУЧШЕНИЕ: Используем monotonic для корректных таймаутов
         request_start_time = time.monotonic()
+        
+        # Прогресс-индикатор: логируем начало обработки батча
+        batch_size = len(payload.get('texts', []))
+        max_attempts = self.retry_policy.config.max_attempts
+        logger.info(f"⏳ Начинаем эмбеддинг батча из {batch_size} чанков. "
+                    f"Максимум попыток: {max_attempts}")
 
         # ИСПРАВЛЕНИЕ #2: Инвертируем композицию - RetryPolicy вызывает CircuitBreaker для каждой попытки
         # Теперь CB будет видеть каждую отдельную попытку, а не весь цикл retry целиком
+        attempt_counter = {'count': 0}  # Счётчик попыток для прогресс-индикатора
+        
         async def _single_attempt():
             """Одна попытка запроса через Circuit Breaker"""
+            attempt_counter['count'] += 1
+            elapsed = time.monotonic() - request_start_time
+            logger.info(f"⏳ Эмбеддинг батча... Попытка {attempt_counter['count']}/{max_attempts}, "
+                        f"Прошло времени: {elapsed:.0f}s")
             return await self.circuit_breaker.call(self._make_single_request, payload=payload)
 
         try:
             # RetryPolicy управляет попытками, каждая из которых проходит через CB
-            return await self.retry_policy.execute_with_retry(_single_attempt)
+            result = await self.retry_policy.execute_with_retry(_single_attempt)
+            elapsed = time.monotonic() - request_start_time
+            logger.info(f"✅ Эмбеддинг батча завершён успешно за {elapsed:.0f}s")
+            return result
 
         except CircuitBreakerOpenException as e:
             # Circuit Breaker открыт - VM сервис недоступен

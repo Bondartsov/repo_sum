@@ -48,7 +48,7 @@ class RetryConfig:
     base_delay: float = 10.0  # HOTFIX: больше задержка (было 2.0s)
     max_delay: float = 120.0  # HOTFIX: до 2 минут между попытками (было 30s)
     exponential_base: float = 2.0
-    timeout_seconds: float = 600.0  # HOTFIX: 10 минут общий таймаут (было 60s)
+    timeout_seconds: float = 3600.0  # TIMEOUT FIX: 1 час (было 600s) - для больших батчей
     retryable_exceptions: Tuple[type, ...] = (
         asyncio.TimeoutError,
         aiohttp.ClientError,
