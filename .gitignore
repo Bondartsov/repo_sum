@@ -195,3 +195,10 @@ temp/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+
+# VM-specific startup scripts
+start_vm_rag.sh
+rag_service.pid
+rag_service.log
+nohup.out

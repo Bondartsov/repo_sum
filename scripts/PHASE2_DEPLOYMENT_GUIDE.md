@@ -348,6 +348,159 @@ cp vm_rag_service.py.backup_phase2 vm_rag_service.py
 
 ---
 
+## 🎯 Метод 3: Развёртывание через nohup скрипт (Применено)
+
+**Дата развёртывания:** 03.10.2025
+**Метод:** Запуск через bash скрипт с переменными окружения (без systemd)
+
+### Контекст
+
+На VM (10.61.11.54) сервис `vm_rag_service.py` изначально запускался вручную через `nohup`, без использования systemd. Процесс PID 345383 работал **без применения переменных окружения OMP/MKL**, что приводило к избыточному потреблению потоков Jina v3 embedder.
+
+### Решение: Скрипт start_vm_rag.sh
+
+Создан скрипт запуска с переменными окружения:
+
+**Путь:** `/home/user/repo_sum_rag/repo_sum/start_vm_rag.sh`
+
+```bash
+#!/bin/bash
+cd ~/repo_sum_rag/repo_sum
+source venv/bin/activate
+
+# Ограничение потоков для Jina v3
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export TORCH_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+
+# Запуск сервиса
+nohup python vm_rag_service.py > rag_service.log 2>&1 &
+echo $! > rag_service.pid
+
+echo "VM RAG Service started with PID: $(cat rag_service.pid)"
+echo "OMP_NUM_THREADS=$OMP_NUM_THREADS"
+echo "MKL_NUM_THREADS=$MKL_NUM_THREADS"
+```
+
+### Результаты развёртывания
+
+**1. Остановка старого процесса:**
+```bash
+$ kill 345383
+$ ps aux | grep vm_rag_service | grep -v grep
+# Процесс успешно остановлен
+```
+
+**2. Запуск через новый скрипт:**
+```bash
+$ cd ~/repo_sum_rag/repo_sum && ./start_vm_rag.sh
+VM RAG Service started with PID: 365721
+OMP_NUM_THREADS=1
+MKL_NUM_THREADS=1
+```
+
+**3. Верификация переменных окружения:**
+```bash
+$ cat /proc/365721/environ | tr '\0' '\n' | grep -E 'OMP|MKL|TORCH'
+OMP_NUM_THREADS=1
+MKL_NUM_THREADS=1
+TORCH_NUM_THREADS=1
+```
+
+✅ **Все переменные применены корректно!**
+
+**4. Проверка процесса:**
+```bash
+$ ps aux | grep vm_rag_service | grep -v grep
+user  365721  15.0  8.3  11258844  5494632  pts/1  Sl  10:55  0:11  python vm_rag_service.py
+```
+
+- PID: 365721
+- Память: 5.5GB (8.3% от 60GB)
+- CPU: 15.0%
+- Статус: Running (Sl)
+
+**5. Health Check:**
+```bash
+$ curl -s http://localhost:8000/health
+{
+  "status": "connected",
+  "timestamp": "2025-10-03T10:57:37.629910+00:00",
+  "services": {
+    "embedder": {
+      "status": "connected",
+      "model": "jinaai/jina-embeddings-v3",
+      "provider": "fastembed"
+    },
+    "vector_store": {
+      "status": "connected",
+      "client_type": "http",
+      "collection_status": "exists",
+      "collection_info": {
+        "status": "green"
+      }
+    }
+  },
+  "collection_status": "exists",
+  "qdrant_status": "connected"
+}
+```
+
+✅ **Сервис полностью работоспособен!**
+
+### Преимущества этого метода
+
+1. **Простота:** Не требует настройки systemd
+2. **Прозрачность:** Все переменные видны в скрипте
+3. **Гибкость:** Легко изменить параметры
+4. **PID файл:** Отслеживание процесса через `rag_service.pid`
+5. **Логи:** Вывод в `rag_service.log`
+
+### Команды для управления
+
+**Запуск:**
+```bash
+cd ~/repo_sum_rag/repo_sum && ./start_vm_rag.sh
+```
+
+**Остановка:**
+```bash
+kill $(cat ~/repo_sum_rag/repo_sum/rag_service.pid)
+```
+
+**Перезапуск:**
+```bash
+kill $(cat ~/repo_sum_rag/repo_sum/rag_service.pid) && sleep 2 && cd ~/repo_sum_rag/repo_sum && ./start_vm_rag.sh
+```
+
+**Проверка статуса:**
+```bash
+ps aux | grep $(cat ~/repo_sum_rag/repo_sum/rag_service.pid) | grep -v grep
+```
+
+**Просмотр логов:**
+```bash
+tail -f ~/repo_sum_rag/repo_sum/rag_service.log
+```
+
+### Верификация после перезагрузки VM
+
+После перезагрузки сервера потребуется ручной запуск:
+
+```bash
+ssh user@10.61.11.54
+cd ~/repo_sum_rag/repo_sum
+./start_vm_rag.sh
+```
+
+Для автозапуска можно добавить в crontab:
+```bash
+@reboot cd /home/user/repo_sum_rag/repo_sum && ./start_vm_rag.sh
+```
+
+---
+
 ## ✅ Критерии успеха Фазы 2
 
 - [x] Swap 64GB создан и активен

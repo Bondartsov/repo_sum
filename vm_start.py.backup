@@ -790,135 +790,6 @@ except Exception as e:
                 self.console.print(f"[red]❌ Ошибка ручного запуска: {output} {error}[/red]")
         
         return diagnostics
-    def check_service_running(self, service_name: str = "vm_rag_service.py") -> bool:
-        """Проверка запущен ли сервис на VM"""
-        success, output, _ = self.execute_command(
-            f"ps aux | grep '{service_name}' | grep -v grep"
-        )
-        return success and bool(output.strip())
-    
-    def get_service_pid(self, pid_file: str = None) -> Optional[str]:
-        """Получить PID сервиса из файла"""
-        if pid_file is None:
-            pid_file = f"{self.vm_repo_dir}/rag_service.pid"
-        
-        success, output, _ = self.execute_command(f"cat {pid_file} 2>/dev/null")
-        pid = output.strip()
-        return pid if pid else None
-    
-    def stop_service(self, pid_file: str = None) -> bool:
-        """Остановить сервис"""
-        if pid_file is None:
-            pid_file = f"{self.vm_repo_dir}/rag_service.pid"
-        
-        pid = self.get_service_pid(pid_file)
-        if pid:
-            self.console.print(f"[blue]🛑 Остановка процесса PID {pid}...[/blue]")
-            success, _, _ = self.execute_command(f"kill {pid}")
-            time.sleep(2)
-            
-            # Проверяем что процесс остановился
-            if not self.check_service_running():
-                self.console.print("[green]✅ Сервис остановлен[/green]")
-                return True
-            else:
-                self.console.print("[yellow]⚠️ Процесс не остановился, пробуем kill -9[/yellow]")
-                self.execute_command(f"kill -9 {pid}")
-                time.sleep(1)
-                return not self.check_service_running()
-        else:
-            self.console.print("[yellow]⚠️ PID файл не найден или пуст[/yellow]")
-            # Проверим, может процесс все равно запущен
-            if self.check_service_running():
-                self.console.print("[yellow]Процесс найден, попытка остановить через pkill...[/yellow]")
-                self.execute_command("pkill -f vm_rag_service.py")
-                time.sleep(2)
-                return not self.check_service_running()
-            return False
-    
-    def start_service_via_script(self, script_path: str = None) -> bool:
-        """Запустить сервис через скрипт start_vm_rag.sh"""
-        if script_path is None:
-            script_path = f"{self.vm_repo_dir}/start_vm_rag.sh"
-        
-        self.console.print(f"[blue]🚀 Запуск сервиса через {script_path}...[/blue]")
-        
-        # Проверка существования скрипта
-        success, output, _ = self.execute_command(f"test -f {script_path} && echo 'exists'")
-        if not output.strip():
-            self.console.print(f"[red]❌ Скрипт {script_path} не найден![/red]")
-            self.console.print("[yellow]💡 Создайте скрипт согласно docs/VM_STARTUP_CONFIGURATION.md[/yellow]")
-            self.console.print("[yellow]💡 Или используйте python vm_start.py start для запуска без скрипта[/yellow]")
-            return False
-        
-        # Запуск через скрипт
-        start_command = f"cd {self.vm_repo_dir} && {script_path}"
-        success, output, error = self.execute_command(start_command, ignore_exit_codes=[7, 127])
-        
-        if output.strip():
-            self.console.print(f"[dim]Вывод скрипта: {output.strip()}[/dim]")
-        
-        # Проверка что запустился
-        self.console.print("[blue]⏳ Ожидание запуска сервиса...[/blue]")
-        time.sleep(3)
-        
-        if self.check_service_running():
-            pid = self.get_service_pid()
-            self.console.print(f"[green]✅ Сервис запущен с PID {pid}[/green]")
-            return True
-        else:
-            self.console.print("[red]❌ Не удалось запустить сервис![/red]")
-            # Проверим логи
-            log_success, logs, _ = self.execute_command(
-                f"cd {self.vm_repo_dir} && tail -5 rag_service.log 2>/dev/null"
-            )
-            if log_success and logs.strip():
-                self.console.print(f"[yellow]📄 Последние строки логов:[/yellow]\n{logs.strip()}")
-            return False
-    
-    def restart_service(self) -> bool:
-        """Перезапуск сервиса"""
-        self.console.print("[blue]🔄 Перезапуск сервиса...[/blue]")
-        
-        # Остановка
-        self.stop_service()
-        time.sleep(2)
-        
-        # Запуск через скрипт если он существует, иначе стандартный метод
-        script_path = f"{self.vm_repo_dir}/start_vm_rag.sh"
-        success, _, _ = self.execute_command(f"test -f {script_path}")
-        
-        if success:
-            return self.start_service_via_script(script_path)
-        else:
-            self.console.print("[yellow]⚠️ Скрипт start_vm_rag.sh не найден, использую стандартный запуск[/yellow]")
-            return self.start_rag_service()
-    
-    def verify_service_health(self, health_url: str = None) -> bool:
-        """Проверка health endpoint"""
-        if health_url is None:
-            health_url = "http://localhost:8000/health"
-        
-        self.console.print("[blue]🏥 Проверка health endpoint...[/blue]")
-        
-        success, output, _ = self.execute_command(f"curl -s {health_url}")
-        
-        if success and output.strip():
-            # Проверяем наличие ключевых слов
-            if "connected" in output.lower() or "status" in output.lower() or "ok" in output.lower():
-                self.console.print("[green]✅ Health check пройден[/green]")
-                # Показываем первые 200 символов
-                preview = output.strip()[:200]
-                if len(output.strip()) > 200:
-                    preview += "..."
-                self.console.print(f"[dim]{preview}[/dim]")
-                return True
-        
-        self.console.print("[yellow]⚠️ Health check не пройден[/yellow]")
-        if output.strip():
-            self.console.print(f"[dim]Ответ: {output.strip()[:100]}[/dim]")
-        return False
-    
     
     def start_rag_service(self) -> bool:
         """Запуск RAG сервиса с улучшенной диагностикой"""
@@ -1244,21 +1115,6 @@ def main():
         type=str,
         help="Ветка для развертывания (пропустить интерактивный выбор)"
     )
-    parser.add_argument(
-        "--auto-restart",
-        action="store_true",
-        help="Автоматически перезапустить сервис после обновления кода"
-    )
-    parser.add_argument(
-        "--no-restart",
-        action="store_true",
-        help="НЕ перезапускать сервис после обновления кода"
-    )
-    parser.add_argument(
-        "--check-only",
-        action="store_true",
-        help="Только проверить статус сервиса без изменений"
-    )
 
     args = parser.parse_args()
 
@@ -1293,93 +1149,21 @@ def main():
             
         elif args.action == "update":
             if manager.connect_ssh():
-                # Обработка --check-only (только проверка статуса)
-                if args.check_only:
-                    manager.console.print("\n" + "="*60)
-                    manager.console.print("ПРОВЕРКА СТАТУСА СЕРВИСА")
-                    manager.console.print("="*60)
-                    
-                    is_running = manager.check_service_running()
-                    if is_running:
-                        pid = manager.get_service_pid()
-                        manager.console.print(f"[green]✅ Сервис запущен (PID {pid})[/green]")
-                        manager.verify_service_health()
-                    else:
-                        manager.console.print("[yellow]⚠️ Сервис НЕ запущен[/yellow]")
-                    
-                    manager.ssh_client.close()
-                    sys.exit(0)
-                
                 # 1) Синхронизация кода
                 manager.update_code_on_vm()
-                
                 # 2) Обновление .env на основе .env.example + локального .env с подстановкой localhost
                 manager.create_env_file()
-                
-                # 3) Управление сервисом
-                manager.console.print("\n" + "="*60)
-                manager.console.print("УПРАВЛЕНИЕ СЕРВИСОМ")
-                manager.console.print("="*60)
-                
-                is_running = manager.check_service_running()
-                
-                if is_running:
-                    manager.console.print("[green]✅ Сервис запущен[/green]")
-                    
-                    # Автоматический режим с --auto-restart
-                    if args.auto_restart:
-                        manager.console.print("[blue]🔄 Автоматический перезапуск (--auto-restart)[/blue]")
-                        if manager.restart_service():
-                            manager.verify_service_health()
-                    # Режим без перезапуска с --no-restart
-                    elif args.no_restart:
-                        manager.console.print("[yellow]⏭️ Перезапуск пропущен (--no-restart)[/yellow]")
-                        manager.console.print("[yellow]⚠️ Сервис продолжит работать со СТАРЫМ кодом[/yellow]")
-                        manager.console.print("[yellow]💡 Для применения изменений потребуется ручной перезапуск[/yellow]")
-                    # Интерактивный режим
-                    else:
-                        restart = input("Перезапустить сервис для применения нового кода? (y/N): ")
-                        if restart.lower() == 'y':
-                            if manager.restart_service():
-                                manager.verify_service_health()
-                        else:
-                            manager.console.print("[yellow]⚠️ Сервис продолжит работать со СТАРЫМ кодом[/yellow]")
-                            manager.console.print("[yellow]💡 Для применения изменений потребуется ручной перезапуск[/yellow]")
+                # 3) Перезапуск RAG-сервиса, чтобы применить .env
+                manager.execute_command(f"cd {manager.vm_repo_dir} && kill $(cat rag_service.pid 2>/dev/null) 2>/dev/null || true")
+                started = manager.start_rag_service()
+                # Явный health-пинг после старта
+                ok, _, _ = manager.execute_command("curl -s http://localhost:8000/health >/dev/null 2>&1")
+                if ok and started:
+                    print("[green]✔ VM service is healthy on http://localhost:8000[/green]")
+                elif ok:
+                    print("[yellow]! VM service responded healthy, старт-команда вернула non-zero (игнорировано)[/yellow]")
                 else:
-                    manager.console.print("[yellow]⚠️ Сервис НЕ запущен[/yellow]")
-                    
-                    # Автоматический запуск если --auto-restart
-                    if args.auto_restart:
-                        manager.console.print("[blue]🚀 Автоматический запуск (--auto-restart)[/blue]")
-                        script_path = f"{manager.vm_repo_dir}/start_vm_rag.sh"
-                        success, _, _ = manager.execute_command(f"test -f {script_path}")
-                        
-                        if success:
-                            if manager.start_service_via_script(script_path):
-                                manager.verify_service_health()
-                        else:
-                            if manager.start_rag_service():
-                                manager.verify_service_health()
-                    # Не запускать если --no-restart
-                    elif args.no_restart:
-                        manager.console.print("[yellow]⏭️ Запуск пропущен (--no-restart)[/yellow]")
-                        manager.console.print("[yellow]💡 Используйте ./start_vm_rag.sh на VM для запуска[/yellow]")
-                    # Интерактивный режим
-                    else:
-                        start = input("Запустить сервис? (Y/n): ")
-                        if start.lower() != 'n':
-                            script_path = f"{manager.vm_repo_dir}/start_vm_rag.sh"
-                            success, _, _ = manager.execute_command(f"test -f {script_path}")
-                            
-                            if success:
-                                if manager.start_service_via_script(script_path):
-                                    manager.verify_service_health()
-                            else:
-                                if manager.start_rag_service():
-                                    manager.verify_service_health()
-                        else:
-                            manager.console.print("[yellow]💡 Сервис не запущен. Используйте ./start_vm_rag.sh на VM[/yellow]")
-                
+                    print("[red]✖ VM service health didn’t respond; см. rag_service.log[/red]")
                 manager.ssh_client.close()
             sys.exit(0)
             
