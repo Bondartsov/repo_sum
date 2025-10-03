@@ -247,12 +247,25 @@ class JinaV3DatabaseMigration:
                 return True
             
             # Chunking кода
+            from parsers.base_parser import ParserRegistry
+            
+            parser_registry = ParserRegistry()
             chunker = CodeChunker()
             all_chunks = []
             
             for file_info in files:
                 try:
-                    chunks = chunker.chunk_file(file_info)
+                    # Получаем парсер для файла
+                    parser = parser_registry.get_parser(file_info.path)
+                    if not parser:
+                        logger.warning(f"⚠️ No parser available for: {file_info.path}")
+                        continue
+                    
+                    # Парсим файл
+                    parsed_file = parser.safe_parse(file_info)
+                    
+                    # Разбиваем на чанки
+                    chunks = chunker.chunk_parsed_file(parsed_file)
                     all_chunks.extend(chunks)
                     
                     if self.config.progress_reporting and len(all_chunks) % 50 == 0:
