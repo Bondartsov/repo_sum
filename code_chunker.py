@@ -101,10 +101,20 @@ class CodeChunker:
         """Основной метод разбивки файла на части. Если source_code передан — использовать его, иначе читать с диска."""
         chunks = []
         try:
+            # ДИАГНОСТИКА: Проверяем тип source_code
+            if source_code is not None:
+                self.logger.debug(f"🔍 ДИАГНОСТИКА: source_code передан, тип: {type(source_code)}")
+                if not isinstance(source_code, str):
+                    self.logger.error(f"❌ ОШИБКА: source_code должен быть str, получен {type(source_code)}")
+                    raise TypeError(f"source_code должен быть строкой, получен {type(source_code)}")
+            
             # Используем переданный source_code, если он есть
             if source_code is None:
+                self.logger.debug(f"📂 Открываем файл: {parsed_file.file_info.path}")
+                self.logger.debug(f"📝 Кодировка: {parsed_file.file_info.encoding}")
                 with open(parsed_file.file_info.path, 'r', encoding=parsed_file.file_info.encoding) as f:
                     source_code = f.read()
+                self.logger.debug(f"✅ Файл прочитан, длина: {len(source_code)} символов")
             # 1. Создаем чанк для импортов и заголовка файла
             header_chunks = self._create_header_chunk(parsed_file, source_code)
             chunks.extend(header_chunks)
@@ -136,6 +146,11 @@ class CodeChunker:
     
     def _create_header_chunk(self, parsed_file: ParsedFile, source_code: str) -> List[CodeChunk]:
         """Создает чанк для импортов и комментариев файла"""
+        # ДИАГНОСТИКА
+        self.logger.debug(f"🔍 _create_header_chunk: тип source_code = {type(source_code)}")
+        if not isinstance(source_code, str):
+            self.logger.error(f"❌ _create_header_chunk: ожидается str, получен {type(source_code)}")
+        
         header_content = []
         
         # Добавляем импорты
@@ -173,6 +188,12 @@ class CodeChunker:
     def _create_class_chunk(self, class_element, parsed_file: ParsedFile, source_code: str) -> List[CodeChunk]:
         """Создает отдельный чанк для класса"""
         try:
+            # ДИАГНОСТИКА
+            self.logger.debug(f"🔍 _create_class_chunk: тип source_code = {type(source_code)}")
+            if not isinstance(source_code, str):
+                self.logger.error(f"❌ _create_class_chunk: ожидается str, получен {type(source_code)}")
+                raise TypeError(f"source_code должен быть строкой, получен {type(source_code)}")
+            
             lines = source_code.splitlines()
             class_start = class_element.line_number - 1  # Преобразуем в 0-индекс
             
@@ -503,6 +524,11 @@ class CodeChunker:
         """Логирует метрики распределения размера чанков"""
         if not chunks:
             return
+        
+        # ДИАГНОСТИКА: Проверяем тип content у чанков
+        for i, c in enumerate(chunks):
+            if not isinstance(c.content, str):
+                self.logger.error(f"❌ Чанк {i} содержит неверный тип content: {type(c.content)}")
         
         token_counts = [self._count_tokens(c.content) for c in chunks]
         
