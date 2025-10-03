@@ -101,20 +101,11 @@ class CodeChunker:
         """Основной метод разбивки файла на части. Если source_code передан — использовать его, иначе читать с диска."""
         chunks = []
         try:
-            # ДИАГНОСТИКА: Проверяем тип source_code
-            if source_code is not None:
-                self.logger.debug(f"🔍 ДИАГНОСТИКА: source_code передан, тип: {type(source_code)}")
-                if not isinstance(source_code, str):
-                    self.logger.error(f"❌ ОШИБКА: source_code должен быть str, получен {type(source_code)}")
-                    raise TypeError(f"source_code должен быть строкой, получен {type(source_code)}")
-            
             # Используем переданный source_code, если он есть
             if source_code is None:
-                self.logger.debug(f"📂 Открываем файл: {parsed_file.file_info.path}")
-                self.logger.debug(f"📝 Кодировка: {parsed_file.file_info.encoding}")
                 with open(parsed_file.file_info.path, 'r', encoding=parsed_file.file_info.encoding) as f:
                     source_code = f.read()
-                self.logger.debug(f"✅ Файл прочитан, длина: {len(source_code)} символов")
+            
             # 1. Создаем чанк для импортов и заголовка файла
             header_chunks = self._create_header_chunk(parsed_file, source_code)
             chunks.extend(header_chunks)
@@ -133,12 +124,18 @@ class CodeChunker:
             variables_chunks = self._create_variables_chunk(parsed_file, source_code)
             chunks.extend(variables_chunks)
             
-            self.logger.debug(f"Создано {len(chunks)} чанков для {parsed_file.file_info.path}")
+            # ФАЗА 3: Применяем дробление ко ВСЕМ чанкам ПОСЛЕ их создания
+            final_chunks = []
+            for chunk in chunks:
+                split_chunks = self._split_large_chunk(chunk)
+                final_chunks.extend(split_chunks)
+            
+            self.logger.debug(f"Создано {len(final_chunks)} чанков для {parsed_file.file_info.path}")
             
             # Логируем метрики распределения
-            self._log_chunk_metrics(chunks)
+            self._log_chunk_metrics(final_chunks)
             
-            return chunks
+            return final_chunks
         except Exception as e:
             self.logger.error(f"Ошибка при разбивке файла {parsed_file.file_info.path}: {e}")
             # Возвращаем хотя бы один чанк с основной информацией
@@ -146,11 +143,6 @@ class CodeChunker:
     
     def _create_header_chunk(self, parsed_file: ParsedFile, source_code: str) -> List[CodeChunk]:
         """Создает чанк для импортов и комментариев файла"""
-        # ДИАГНОСТИКА
-        self.logger.debug(f"🔍 _create_header_chunk: тип source_code = {type(source_code)}")
-        if not isinstance(source_code, str):
-            self.logger.error(f"❌ _create_header_chunk: ожидается str, получен {type(source_code)}")
-        
         header_content = []
         
         # Добавляем импорты
@@ -182,18 +174,12 @@ class CodeChunker:
             tokens_estimate=tokens
         )
         
-        # Проверка размера и дробление если нужно
-        return self._split_large_chunk(chunk)
+        # ОТКАТ ФАЗЫ 3: Возвращаем чанк как есть, дробление будет в chunk_parsed_file
+        return [chunk]
     
     def _create_class_chunk(self, class_element, parsed_file: ParsedFile, source_code: str) -> List[CodeChunk]:
         """Создает отдельный чанк для класса"""
         try:
-            # ДИАГНОСТИКА
-            self.logger.debug(f"🔍 _create_class_chunk: тип source_code = {type(source_code)}")
-            if not isinstance(source_code, str):
-                self.logger.error(f"❌ _create_class_chunk: ожидается str, получен {type(source_code)}")
-                raise TypeError(f"source_code должен быть строкой, получен {type(source_code)}")
-            
             lines = source_code.splitlines()
             class_start = class_element.line_number - 1  # Преобразуем в 0-индекс
             
@@ -225,8 +211,8 @@ class CodeChunker:
                 tokens_estimate=tokens
             )
             
-            # Проверка размера и дробление если нужно
-            return self._split_large_chunk(chunk)
+            # ОТКАТ ФАЗЫ 3: Возвращаем чанк как есть
+            return [chunk]
             
         except Exception as e:
             self.logger.warning(f"Ошибка при создании чанка для класса {class_element.name}: {e}")
@@ -308,8 +294,8 @@ class CodeChunker:
             tokens_estimate=tokens
         )
         
-        # Проверка размера и дробление если нужно
-        return self._split_large_chunk(chunk)
+        # ОТКАТ ФАЗЫ 3: Возвращаем чанк как есть
+        return [chunk]
     
     def _create_functions_chunk(self, functions_data: List[dict], chunk_type: str) -> List[CodeChunk]:
         """Создает чанк из группы функций"""
@@ -341,8 +327,8 @@ class CodeChunker:
             tokens_estimate=total_tokens
         )
         
-        # Проверка размера и дробление если нужно
-        return self._split_large_chunk(chunk)
+        # ОТКАТ ФАЗЫ 3: Возвращаем чанк как есть
+        return [chunk]
     
     def _create_large_function_chunk(self, func_element) -> Optional[CodeChunk]:
         """Создает чанк для большой функции (только сигнатура и докстринг)"""
@@ -525,31 +511,33 @@ class CodeChunker:
         if not chunks:
             return
         
-        # ДИАГНОСТИКА: Проверяем тип content у чанков
-        for i, c in enumerate(chunks):
-            if not isinstance(c.content, str):
-                self.logger.error(f"❌ Чанк {i} содержит неверный тип content: {type(c.content)}")
-        
-        token_counts = [self._count_tokens(c.content) for c in chunks]
-        
-        # Вычислить статистики
-        p50 = sorted(token_counts)[len(token_counts) // 2]
-        p90 = sorted(token_counts)[int(len(token_counts) * 0.9)]
-        p99 = sorted(token_counts)[int(len(token_counts) * 0.99)]
-        max_tokens = max(token_counts)
-        avg_tokens = sum(token_counts) / len(token_counts)
-        
-        # Подсчитать чанки превышающие лимит
-        oversized = sum(1 for t in token_counts if t > CHUNK_MAX_TOKENS)
-        
-        print(f"\n📊 Метрики чанков:")
-        print(f"   Всего чанков: {len(chunks)}")
-        print(f"   Средний размер: {avg_tokens:.0f} токенов")
-        print(f"   p50: {p50} токенов")
-        print(f"   p90: {p90} токенов")
-        print(f"   p99: {p99} токенов (ЛИМИТ: {CHUNK_MAX_TOKENS})")
-        print(f"   Максимум: {max_tokens} токенов")
-        print(f"   Превышают лимит: {oversized} чанков")
-        
-        if p99 > CHUNK_MAX_TOKENS:
-            print(f"   ⚠️ ВНИМАНИЕ: p99 превышает лимит!")
+        try:
+            token_counts = [self._count_tokens(c.content) for c in chunks]
+            
+            # Вычислить статистики
+            p50 = sorted(token_counts)[len(token_counts) // 2]
+            p90 = sorted(token_counts)[int(len(token_counts) * 0.9)]
+            p99 = sorted(token_counts)[int(len(token_counts) * 0.99)]
+            max_tokens = max(token_counts)
+            avg_tokens = sum(token_counts) / len(token_counts)
+            
+            # Подсчитать чанки превышающие лимит
+            oversized = sum(1 for t in token_counts if t > CHUNK_MAX_TOKENS)
+            
+            # КРИТИЧНО: Используем logger вместо print() для VM-совместимости
+            # print() может кидать "I/O operation on closed file" если stdout закрыт
+            self.logger.info(f"📊 Метрики чанков:")
+            self.logger.info(f"   Всего чанков: {len(chunks)}")
+            self.logger.info(f"   Средний размер: {avg_tokens:.0f} токенов")
+            self.logger.info(f"   p50: {p50} токенов")
+            self.logger.info(f"   p90: {p90} токенов")
+            self.logger.info(f"   p99: {p99} токенов (ЛИМИТ: {CHUNK_MAX_TOKENS})")
+            self.logger.info(f"   Максимум: {max_tokens} токенов")
+            self.logger.info(f"   Превышают лимит: {oversized} чанков")
+            
+            if p99 > CHUNK_MAX_TOKENS:
+                self.logger.warning(f"⚠️ ВНИМАНИЕ: p99 ({p99}) превышает лимит ({CHUNK_MAX_TOKENS})!")
+                
+        except Exception as e:
+            # Не даём метрикам уронить процесс разбивки
+            self.logger.debug(f"Не удалось вычислить метрики чанков: {e}")
