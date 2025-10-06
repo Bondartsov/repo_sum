@@ -222,14 +222,25 @@ class SearchService:
                 else self.config.query_engine.use_hybrid
             )
 
-            # ИСПРАВЛЕНИЕ БАГА 3: vector_store.search это async функция, используем await напрямую
-            raw_results = await self.vector_store.search(
-                query_vector,
-                top_k * 2,  # запросим больше результатов для reranking
-                structured_filters,
-                hybrid_enabled,
-                sparse_vector
-            )
+            # ИСПРАВЛЕНИЕ: Проверяем тип функции search (RemoteVMVectorStore.search - синхронная)
+            search_fn = getattr(self.vector_store, 'search')
+            if asyncio.iscoroutinefunction(search_fn):
+                raw_results = await search_fn(
+                    query_vector,
+                    top_k * 2,
+                    structured_filters,
+                    hybrid_enabled,
+                    sparse_vector
+                )
+            else:
+                raw_results = await asyncio.to_thread(
+                    search_fn,
+                    query_vector,
+                    top_k * 2,
+                    structured_filters,
+                    hybrid_enabled,
+                    sparse_vector
+                )
             search_time = time.time() - search_start
             
             logger.debug(f"Поиск выполнен за {search_time:.3f}s, найдено {len(raw_results)} результатов")

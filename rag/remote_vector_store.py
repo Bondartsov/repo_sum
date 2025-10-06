@@ -261,23 +261,38 @@ class RemoteVMVectorStore:
                 # Используем shared HTTP session с connection pooling
                 session = await get_shared_http_session()
                 
+                # 🔍 ЛОГ 1: Перед отправкой
+                _log(logger.info, f"📤 Отправка на VM: {len(payload.get('documents', []))} документов, endpoint={self.index_endpoint}")
+                
                 async with session.post(
                     self.index_endpoint,
                     json=payload,
                     headers={'Content-Type': 'application/json'}
                 ) as response:
                     
+                    # 🔍 ЛОГ 2: HTTP статус
+                    _log(logger.info, f"📥 Ответ VM: HTTP {response.status}, headers={dict(response.headers)}")
+                    
                     if response.status == 200:
                         result = await response.json()
                         
+                        # 🔍 ЛОГ 3: Полный ответ
+                        _log(logger.info, f"📊 JSON ответ VM: {result}")
+                        
                         # Ожидаем формат: {"indexed_count": 123, "status": "success"}
                         if "indexed_count" in result:
-                            return result["indexed_count"]
+                            indexed_count = result["indexed_count"]
+                            # 🔍 ЛОГ 4: Извлеченное значение
+                            _log(logger.info, f"✅ Extracted indexed_count = {indexed_count}, type = {type(indexed_count).__name__}")
+                            return indexed_count
                         else:
+                            # 🔍 ЛОГ 5: Неожиданный формат
+                            _log(logger.error, f"❌ Ключ 'indexed_count' отсутствует! Доступные ключи: {list(result.keys())}")
                             raise ValueError(f"Неожиданный формат ответа индексации: {result.keys()}")
                     
                     else:
                         error_text = await response.text()
+                        _log(logger.error, f"❌ HTTP {response.status}: {error_text}")
                         raise RuntimeError(f"HTTP {response.status}: {error_text}")
             
             except Exception as e:

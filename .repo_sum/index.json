@@ -1,0 +1,578 @@
+{
+  "D:\\Scripts_Python\\repo_sum\\code_chunker.py": {
+    "hash": "a8b3117ae65822c4a1be0ebb45fc16eca54a454f35c93cda13855e6d60ce7451",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\collect_vm_metrics.py": {
+    "hash": "efef2b9ef83b283021bf6e420fdfe54956d24118db4bfdfad7806a29103782eb",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\config.py": {
+    "hash": "e3daaa288ca4a0504b13f807e966f5a6813a4eafe3bf8f23c315b755ab4d4e1c",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\doc_generator.py": {
+    "hash": "4d83401e78f326ccb16468c44b8b199ebf0686fb03a52c0e09f0d0e90e2dcc21",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\file_scanner.py": {
+    "hash": "5e9bcba82e409ab87720a7a27ba937faeaf002dc818f6f48344b4334e814a959",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\main.py": {
+    "hash": "deb84eb655ed068b6db0641936e396ec24e39ff016c22bb04d9e02f9a3978f6c",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\openai_integration.py": {
+    "hash": "251db01fcb9a61d33f137ff8c32caa22677c517b8a0add33cdd0b911f89bd27a",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\parsers\\base_parser.py": {
+    "hash": "dc3708b610050468d72b45c05280be702465f10cf59941a98acb69a630eaf3e6",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\parsers\\cpp_parser.py": {
+    "hash": "afef3f91d7185e4406677fa6d8150072b6cc7ceddfc0e38f533cecccd44109df",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\parsers\\csharp_parser.py": {
+    "hash": "85382bb439788203b3efafc67748996c9258bbf7ab1fc2746350023509136eef",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\parsers\\javascript_parser.py": {
+    "hash": "9bc5786c5f4c15334d501ac6708b2c540df541ff3faffe892dc587dd9205ab08",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\parsers\\python_parser.py": {
+    "hash": "625825922d5acba3b6bb521864cb9a788c9a15c1af9c1d2f3354eeb3ac620aba",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\parsers\\typescript_parser.py": {
+    "hash": "369bb7341813caf005c12cca89478f4fa20756e9f84341fd60d95cee8cf13ff6",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\parsers\\__init__.py": {
+    "hash": "a4d8eb61104f161c70b5a1f084a80651c810f8b8e992a9d291287d98ceba6dc3",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\circuit_breaker.py": {
+    "hash": "a3aba80c74900cbd194d2fd6f6de7c5b589a32753f6c6f9fc2ac92aa5e05f069",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\embedder.py": {
+    "hash": "43e7771d797dc21faa338637db347e4b35ece899d9eea9a50577cc4b257f1048",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\embedder_protocol.py": {
+    "hash": "daab2e4805a2bcd127172589df3ab463005ccb898a486cfc21b02e3da26640c5",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\event_loop_manager.py": {
+    "hash": "fd5962fc83af8788ed3c926352971817ea0f61572d539a965a93a59d8dcff8a2",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\exceptions.py": {
+    "hash": "e9b6e49094dea95967d32303716cbc44556fd6413ed9f073f08469f8372a6e90",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\indexer_service.py": {
+    "hash": "a054c4c7516997d7c189f38490b582a6d93fd23582b991705c9b98898a4c2328",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\memory_vector_store.py": {
+    "hash": "b7f0c367cd1bc2a384cc4513ab971709d39c2d8ad65e807d9d3775226405cb9d",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\query_engine.py": {
+    "hash": "2f73c40c7e0a9cba15034f65943869ee5b381a3932f4a86d42ec58d3eda9c2af",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\remote_embedder.py": {
+    "hash": "65ab5e550168ffddc543e6f0fd0f64046f24c3a98bb617195bfd3b0bcfaba534",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\remote_vector_store.py": {
+    "hash": "d2f226b744bc9c68328cdc1f048f68fcae7aedfb3bc143ea7acf3ca3035e3c9c",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\retry_policy.py": {
+    "hash": "7abac1859f954479cc0791e4048c6ddb21e70a3ae987b3a6a4b5652d357687b4",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\search_service.py": {
+    "hash": "666697f20038d8d1b36cd5f0b8d11b032ae6f38864e2327630a01f542cd59d4c",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\sparse_encoder.py": {
+    "hash": "66920f92928d885d63510b2fc57ba93c7084d11125e487864b861af2bb207378",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\transport_client.py": {
+    "hash": "f1dd633676b2e7ce1c3fda3de262e47c1f37a800e5d1117036de929620feebfa",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\vector_store.py": {
+    "hash": "eb8ae00c34bf8efdeee5112edef06b78b0418d29404d817b01f0d94b36ecf67e",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\vm_diagnostics.py": {
+    "hash": "a5d7871e7d1bb176c35211a1ac82baf3690a3a86b188df9ff89c9ea759c25622",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\rag\\__init__.py": {
+    "hash": "37ced251b34a692d4a77763ccbc39da1572838aa1e6ccdb2fc697b7dc94d0918",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\run_web.py": {
+    "hash": "e85620d9e5acf73c191e9f70e96302f2fd12492b24a6154308ecc793d39daa69",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\scripts\\backup_env_settings.py": {
+    "hash": "38c920fdec8af013239edc79c452339ce43aa68e4ec449c3022761ff5079818c",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\scripts\\check_timeouts.py": {
+    "hash": "5d254b43dfe23d6d5ec8f187f2bbc88d3b64e7a94f5fc79824ca2f0f31396979",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\scripts\\cleanup_old_collections.py": {
+    "hash": "8d8f07252d3db003f37ec244063c46de86020f63249d2be42589f55c63f7ee72",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\scripts\\clean_pycache.py": {
+    "hash": "3b9bb678e496180dc9dc7fafcec1391f94732ffe186d17456ea407790d30a035",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\scripts\\database_migration_jina_v3.py": {
+    "hash": "cb58256baadeb175bc440d0f74a3268b24f0d0eb3d8ea56664cf3c6902b27a8d",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\scripts\\migrate_to_jina_v3.py": {
+    "hash": "1f05a7180ccf0ef285110c6377047bb39216c7d7840bf6f3a9a7b58a40e4518b",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\scripts\\validate_vm_env.py": {
+    "hash": "783dc26136f8eedb131232eed38bbb0cd495cf7d768632f0d391ba6716120d06",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\scripts\\verify_requirements.py": {
+    "hash": "85b85efcc524d83975d37c1cb616fdbb511e3786b20ef15915f1c68a24a7bcc8",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\scripts\\vm_diagnostics_phase2.py": {
+    "hash": "c7e09083b9c356830b31ebd19d7a8726bb0d835e5eaaa576b486a8fd0098aaab",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\scripts\\vm_setup_phase1.py": {
+    "hash": "9e4dae4ecddb1b8d4dbcd5a03ff6c9cd975bb4fb0fe67439854ddddbd6b979f8",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\bench\\generate_synthetic_repo.py": {
+    "hash": "ce463c2166b93a117599ab29b4008f0d8fb7e1bd683b28956c7895a410acad17",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\bench\\memory_sampler.py": {
+    "hash": "b8d6b2f82e4f5cc1c918b0e8e58e04a43e62aebf8a019010da29bb0bbd9c8c9e",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\bench\\retrieval_ab.py": {
+    "hash": "121dc3acc3281ad9f452dfa1fee01313a2a664a7a3a379ce0b919bc2be63bf27",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\bench\\run_ab.py": {
+    "hash": "a44967866e4a68c92566d4cfe0f085d4283f81cf8f4531dadae7671b9cedbf28",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\conftest.py": {
+    "hash": "cbfdffc6bbd07546dcbc6806a4571199cc02d0982eba393dfe6c892c4dbcafd4",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\e2e\\test_e2e_cli_analyze_generate_docs.py": {
+    "hash": "a7366aba414ce28c98777c43d1f58d1192566694a41e566dde2a6ad0a5471732",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\e2e\\test_e2e_cli_analyze_incremental.py": {
+    "hash": "25242e40f037af7f4ced1edf25eeb4af78cc63d0a039991e94b1cf2d7899db32",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\fixtures\\test_repo\\auth\\middleware.py": {
+    "hash": "a1b1e5820c8f8d0ebb05487a65f8d97d3210146895b4d313da9049ed1206db66",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\fixtures\\test_repo\\auth\\user.py": {
+    "hash": "47358ded2795ca17adc2855dae1e3454f82669f1a368ebd34670e05a0ef4c90a",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\fixtures\\test_repo\\db\\connection.py": {
+    "hash": "46412b816f72545005f45f92be958bdcc408f10dfbc2f951b6ba503dfb451519",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\fixtures\\test_repo\\db\\models.py": {
+    "hash": "cb58583d9925acf442bc2130f8e4f2010427c1cb556df06308e385806ff51509",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\fixtures\\test_repo\\utils\\helpers.py": {
+    "hash": "e2c53b4fe249f931fe8e52292d8d498a46522b22649b7604d99d30194adad93b",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\fixtures\\test_repo\\utils\\validators.py": {
+    "hash": "8b5e1c9fd5da116d891911f95a55c727cd36649f446a56bbe6dd343d8e823e53",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\mocks\\mock_cpu_embedder.py": {
+    "hash": "7111e8defb1309813e026d8cad57ef8f3c3babdaf8124e63921299756b545678",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\mocks\\mock_remote_embedder.py": {
+    "hash": "474adb764d4fe12be20b279f955f528240977a0d2ba6300f57fc136ba838becc",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\mocks\\mock_sparse_model.py": {
+    "hash": "56e6b2d49131e77e9482b8e2d3e4b43a60210fa63e71b71497051b6f827f38fd",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\mocks\\mock_tokenizer.py": {
+    "hash": "02e48dac066818ab00fa71e1fd2647289d9ad63b81badc8c32b7b1de920450e2",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\mocks\\mock_transport_client.py": {
+    "hash": "6117d2c86af3fc64616f8d3c62c90d14bcc4273631e028712943060e7b783eda",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\mocks\\mock_vector_store.py": {
+    "hash": "4b8b11e45d9cda191d0273b7968218b9dec1cee0b4c822565e3214e5fee850c1",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\mocks\\__init__.py": {
+    "hash": "b8d7200799c9be59b87dc76a8c0a61c7516347b6082d002ddb97f7ef5b2ac48a",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\network_utils.py": {
+    "hash": "e09d6abdd8a355f36ab898efde38da8d4c2ac3cb2fd8b7521201651421521e0b",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\conftest.py": {
+    "hash": "d0f7bbf083b5b1ff9f269b73f99cf4460e05ada7f1fa8a34a8b91dbc52a93df8",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\run_jina_v3_phase7_benchmark.py": {
+    "hash": "d46801a6bf5d56ae4f4a5f51875af75017cbc2ed80926ecb7087a4d83012d136",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\run_rag_tests.py": {
+    "hash": "836bb53b17b0fe8e356d280e84bdb84a1656229f74b3da34d73c86a9a4019681",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_circuit_breaker.py": {
+    "hash": "ef8112f5f8317e2f03ff8697f12bafde9e1d8c5bd912c863483c188fe68690da",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_indexer_service_health.py": {
+    "hash": "a12938a3ac909f3746fddfaf481b499fcb135737dcbc7cfda7da9db42d8f50a4",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_jina_v3_performance_impact.py": {
+    "hash": "32c0bd6f9586c688a2f47e649f34ef51989a796fb4594c9710a8d7bbc7b08126",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_jina_v3_quality_benchmark.py": {
+    "hash": "f089d30a41907c76bd1ce7945b5e67eed214edbc1399b249a77bb822ef99f886",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_jina_v3_vs_bge_benchmarking.py": {
+    "hash": "0fac3f5e95280d6476768b4faa32ab0bed348284827dc888eea7480c6a5fb24c",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_query_engine_health.py": {
+    "hash": "cea91948b8042c20210aecc74458a1c2f4756385b78efa59840683c1a91bcdb3",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_rag_e2e_cli.py": {
+    "hash": "b96da9bd31d7b4946bc1f03a5779d8e2d8fa827fe13d9dbcf16253ffbd2b2b38",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_rag_integration.py": {
+    "hash": "950615fc3124f54cb1add3b79453222868bca94c980cb4ae6558bb9d40b69429",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_rag_performance.py": {
+    "hash": "2e0c089b3643cec5ffc34b8fada1c42b95a683700ad72ae682a58a0d1bfc95ba",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_retry_circuit_integration.py": {
+    "hash": "3cda9b81b2dac55b99338e719b17300374756f311ecbc5c688c7a74f66ea1781",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_retry_policy.py": {
+    "hash": "63cbc6b12a6eb09128c7bc5420cc0180c1043c085784729d7659d4b1b7c00861",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_retry_property_based.py": {
+    "hash": "8b593abac3c03496955bf75ed43e384f9977c87021a38564f51bd3c4f898eb8b",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_search_service_min_score_zero.py": {
+    "hash": "9bd36cc84e1201ca3e36d255bda0abfb3d5ac77ce1ea7276ba3545d03b41bd71",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_search_stats_contains_threshold.py": {
+    "hash": "5c0404b89b5b6013a28a1e64d965370917f55cd779fc556e241a3ab8b7370ed9",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_sparse_encoder.py": {
+    "hash": "3d37ccac8f4214d4082eff80b0a2fdb8c26c2d1fc3fcfe8cc635ea29f7e7652c",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_splade_encoder.py": {
+    "hash": "9e6998188d2f27afd2797843f720f668d8f4f6967585ed25a1790548cfe31a38",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_vm_backend_integration.py": {
+    "hash": "99000e6c738d6029d28d88c2b7a4ce474bcaa7ba3c5ba93163002e5cc924f8a2",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\test_vm_qdrant_connectivity.py": {
+    "hash": "1ab7dcd8ecfa0e17adef85e2318fe6bc4eb27a1398348ccad0d39b92fa63eb8a",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\rag\\__init__.py": {
+    "hash": "f1f12dddd3b597f9c8bca91d027d2bbfd6dbbfa0e00ddfd9c6556d03adbc91e1",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_additional_chunker.py": {
+    "hash": "d15c5ed7ac55613621eb43fd66c6cf128ee7365322c8e64af47e4045a58913b2",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_additional_cli.py": {
+    "hash": "7750b318d4bfe7c19d7be192aa23268ab8d91613153b881b19686a4dc1b2a6bb",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_additional_config.py": {
+    "hash": "801a6b16737dcb5eeeeb43fa4c97ac456b0f6b3fbb126ed6aeaab11db2b951ce",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_additional_docgen.py": {
+    "hash": "f1d9d90d62d7eadb1cd1da00e7825afe00ea1f83702e9da59965d00ab87f0839",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_additional_openai.py": {
+    "hash": "f4c11310aacfb54e4f62a67603267c73eefaea0464b225701863c82bea9ba0ea",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_additional_parsers.py": {
+    "hash": "45176db971e7300e2bdcc7ef4c6990446f435731c62c3b13e6363e6b89b15c33",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_additional_scanner.py": {
+    "hash": "bd7bb4802f5ff39276149ed270d95881b7eacde15f4608a5743e801486334708",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_additional_utils.py": {
+    "hash": "ff7467dc22cd71d41a35a4a25fac19f0cf80f6ed976118d2bf436575b0c209bd",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_additional_verify_requirements.py": {
+    "hash": "996a68a2f9a57b25ac1d8fdf56d04691365e8277136de7e772f899b95672ce47",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_additional_web.py": {
+    "hash": "63a2a0168de593b05b9e26b35ca8e2bddb82bcb96b0af670f11f60406d76ad85",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_api_init.py": {
+    "hash": "3d379f52f30792669625938ecb22a65de91f0a00b4e0a241191a94575035fce2",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_code_chunker.py": {
+    "hash": "7593b86f6a84ff61d4cb072dd38c33e92797016f111f89ac1c1bafaa9fe3c2b6",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_config.py": {
+    "hash": "66673c09b4ab1ad76546850df6e8e8cee9be4be97ce2d59f03fc2c52d10e06b8",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_conftest_isolation.py": {
+    "hash": "0f437ef8ef5709470f1726ecbe3e16520c1cc8e93048c5cdef6e875c50e1ff81",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_cpu_query_engine.py": {
+    "hash": "7c42c5938a1b40ad33f1454f97c558a66c203aa7cfcac31f60f4047d2dbda927",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_debug_ascii.py": {
+    "hash": "86b4d6607b05b4dea374448d8ff2c58a7d048d086dbec8aaa7e2264b47d890ad",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_debug_encoding_diagnosis.py": {
+    "hash": "cc559b05f996244bdde02b1d7f449eccffb13843c85d05105b37d9a31f21d8ae",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_debug_failing_tests.py": {
+    "hash": "cc9bfe3e64b3b615309a7fbee2c775a3c6e268ce5a947d1d1270a10a3e6ed814",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_debug_simple.py": {
+    "hash": "2a2533a8edaa227da942767bfe8534966ee3a7c2be6e8d4366e257076412efad",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_doc_generator.py": {
+    "hash": "338e33ad27d6a75e7de7dfefd853e96c37c23d21ad64db46fe31e0a6d6e78045",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_embedder_contract.py": {
+    "hash": "2ade0b34f2d4e774bc6ca8551defcfc12c79bde844da3e1e27fedb985c12d79f",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_error_handling.py": {
+    "hash": "4f03922f3f01c158f5e5994444b050ed89a72d2dd67d34ed6c17d2a7d7698576",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_file_scanner.py": {
+    "hash": "af9f714a6ae59333ee87aa34df6e7c4993240f01003bd202c4118f5affee4c6d",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_integration_full_cycle.py": {
+    "hash": "406aeb646826a945647fd1e39db08de4c77f5a7fb2735ca09d329f6a537155d6",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_main.py": {
+    "hash": "9274cbc1824f98cab5807e3f457d64290248f8d1bc93dcc5a318a73be4791339",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_markdown_report.py": {
+    "hash": "3ddfa61d61e551100223e0b1db0ac076171cfb56eaea8f4a220d90d44d3159a1",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_new_functional.py": {
+    "hash": "a70cfc3031c002cb7430ee126a6821a09a5f62ebb59177fefdaf54ceb6657a89",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_new_integration.py": {
+    "hash": "8ddc1c69234c4de101b71377da3b02e23d7733e0811b50a66d36c48173bc024a",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_offline_no_network.py": {
+    "hash": "fdcd28b1c279208da9bb6d01a803af19611d9650fdac7670062f42532a019d9d",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_openai_integration.py": {
+    "hash": "7a81bc271add648e1239b2b927c99e30246337430fcce123732f0f0c525e9ab4",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_parsers.py": {
+    "hash": "d1b9c32df9070f51f65ea8086e7ba62a33f1fe69a4801af19c5b22ebe240b971",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_property_based.py": {
+    "hash": "8333f4aca3e6b5e9b91b911b320ed9c96f6f14a7244c082718c3c0bc89f014cd",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_rag_imports.py": {
+    "hash": "2614609048678d2dc9dea7b677662ef9bdb64a12b7a9377d3b7e1d371eb6f8d5",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_readme.py": {
+    "hash": "bb655be1e5dd503928735f2c5d90e09f130c8f87a7e7231f8ff00b492b764165",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_remote_clients.py": {
+    "hash": "6dd70a413f98e0ec960bb0938853abfca2918f22717959624029a9fa8d003ee1",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_remote_embedder_fixes.py": {
+    "hash": "9d85993e5f97a8a6ba20a028d1bb38782120b2c52873f67ba20763e9c31f6d96",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_run_web.py": {
+    "hash": "653fde35783b63630e65ae00e52e79156975e852aa2a1bd92c4518ac5179cce9",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_simple_cpu_query_engine.py": {
+    "hash": "79c460a1b5336bcee258b4f0fae43da8d624f68629fb2a8a1603d9dbaddecd4c",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_token_stats_contract.py": {
+    "hash": "501b46aefbb6aecad67d13949f4940f4b584a66db286ea05e0a3228393f82fcd",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_utils.py": {
+    "hash": "96851e3d9122e259f11e205c25d1e82460865d483e61b1c4569142db43f71d53",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_vector_store_basic.py": {
+    "hash": "08a03f08de1d149ba1612d5381fff0235799759780dfd065dc2834b5be12e950",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_vm_availability.py": {
+    "hash": "493e6e175ab5ca52ecfae50845579cae9ee3dcaa842831ff2bfcfbec07f47840",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\test_web_ui.py": {
+    "hash": "ed13373d8b4f9524171637a7f469ac61cbc5f78a360a0aec4cc4551cbb94deef",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\utils_cli.py": {
+    "hash": "1af5d75c90c5f56ff5043a308b22a3bdb8a25f521fd4989587996b60c7ee021b",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\vm\\test_vm_connectivity.py": {
+    "hash": "b13f012d77a3e818e4eb3f985bfcaa4b793e4844d39f3e65b9e984dbb643dd33",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\vm\\test_vm_firewall_config.py": {
+    "hash": "75deaa22d2795954de1e4e653bface6ad292bb17f41c88b2ad360f521ef4aa93",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\vm\\test_vm_health_monitoring.py": {
+    "hash": "e0cdb4df0ea218d8885f792593496b37c74935f7f1827e6592b9ed0328c97d24",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\vm\\vm_diagnostics.py": {
+    "hash": "f293a9b24f9000285aec1aaf3746c03ce14d02f3f57ff577e68b9e599358ff73",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\vm\\vm_utils.py": {
+    "hash": "9c630731eed6246828c9e85977cc7e4fa8f5dcf9a5bbb38bf9fc3e3c6db7f7c2",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\tests\\__init__.py": {
+    "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\test_async_sync_fix.py": {
+    "hash": "48d5cf194dfcd77b83cad969e0866f832a6dd88a50c081c509d985b00b6ec2ca",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\test_bugfixes_validation.py": {
+    "hash": "262583dd7ab9ae3d9c31fca2ee38a9322e2a0dc83e9b4f635c2be9ddb137a7f6",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\test_chunker_diagnosis.py": {
+    "hash": "759fa913b25a00b643cfe91b17ba0119c92de3dfa5380bf1e4a3b1999f8afc83",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\test_fixes_simple.py": {
+    "hash": "deb4e2570a6690f3f4c3c8df3aace5d633c803185239399a44ca85a9d4663345",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\unified_launcher.py": {
+    "hash": "c4ed9037de6a5a62ad7bb55a0d84a946f01b78d4c9ffc9e44d48abd324c5afb7",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\utils.py": {
+    "hash": "e6e718c7624f491d6c9afa6f11245bd77e6efceff3c7598559aaab7abcf891eb",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\vm_rag_service.py": {
+    "hash": "1de3ca2de4113d21f43ca3c728438d5001db39e38c729a8970f3037585569888",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\vm_start.py": {
+    "hash": "b7d629913280eec570aabab747133167104bf88e2cb48128a626d1deb883c3ea",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  },
+  "D:\\Scripts_Python\\repo_sum\\web_ui.py": {
+    "hash": "8c04093678a26a77bddb9b3e1d7f47a098002b357d59471951b0c53621a26ca7",
+    "analyzed_at": "2025-10-06T09:56:11.061100+00:00"
+  }
+}
