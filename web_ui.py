@@ -1067,52 +1067,8 @@ def main():
                 except Exception as e:
                     st.error(f"❌ Ошибка поиска: {e}")
                     logger.exception("Ошибка выполнения семантического поиска")
-                if not query.strip():
-                    st.warning("⚠️ Введите поисковый запрос")
-                elif not search_service:
-                    st.error("❌ RAG система недоступна")
-                else:
-                    try:
-                        with st.spinner("Выполнение семантического поиска..."):
-                            # Подготовка параметров поиска
-                            language_filter = None if lang_filter == "все" else lang_filter
-                            chunk_type_filter = None if chunk_type == "все" else chunk_type
-                            
-                            # Выполнение поиска
-                            results = run_async(search_service.search(
-                                query=query,
-                                top_k=top_k,
-                                language_filter=language_filter,
-                                chunk_type_filter=chunk_type_filter,
-                                min_score=0.5
-                            ))
-                            
-                            # Отображение результатов
-                            if results:
-                                st.success(f"🎯 Найдено {len(results)} результатов")
-                                
-                                # Форматирование результатов для отображения
-                                formatted_results = format_search_results_for_display(results)
-                                
-                                for result in formatted_results:
-                                    with st.expander(f"{result['title']} - {result['subtitle']}", expanded=False):
-                                        st.caption(result['metadata'])
-                                        
-                                        # Отображение кода с подсветкой синтаксиса
-                                        st.code(
-                                            result['content'],
-                                            language=result['language'],
-                                            line_numbers=True
-                                        )
-                                        
-                                        # Дополнительная информация
-                                        st.caption(f"📍 Строки: {result['start_line']}-{result['original_result'].end_line}")
-                            else:
-                                st.info("🔍 Результаты не найдены. Попробуйте изменить запрос или параметры поиска.")
-                                
-                    except Exception as e:
-                        st.error(f"❌ Ошибка поиска: {e}")
-                        logger.exception("Ошибка выполнения семантического поиска")
+                # ИСПРАВЛЕНИЕ БАГА 2: Удалён дублированный код блока поиска (копипаст-ошибка)
+                # Основной блок поиска уже выполняется выше в строках 1023-1069
         
         elif rag_mode == "💬 Q&A по репозиторию":
             st.subheader("💬 Q&A по репозиторию")

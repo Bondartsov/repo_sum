@@ -629,11 +629,8 @@ class IndexerService:
                 
                 # Индексируем в Qdrant
                 index_start = time.time()
-                index_fn = getattr(self.vector_store, 'index_documents')
-                if asyncio.iscoroutinefunction(index_fn):
-                    batch_indexed = await index_fn(points)
-                else:
-                    batch_indexed = await asyncio.to_thread(index_fn, points)
+                # ИСПРАВЛЕНИЕ БАГА 1: index_documents это async функция, используем await напрямую
+                batch_indexed = await self.vector_store.index_documents(points)
                 self.stats['indexing_time'] += time.time() - index_start
                 
                 indexed_count += batch_indexed

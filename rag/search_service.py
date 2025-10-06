@@ -222,8 +222,8 @@ class SearchService:
                 else self.config.query_engine.use_hybrid
             )
 
-            raw_results = await asyncio.to_thread(
-                self.vector_store.search,
+            # ИСПРАВЛЕНИЕ БАГА 3: vector_store.search это async функция, используем await напрямую
+            raw_results = await self.vector_store.search(
                 query_vector,
                 top_k * 2,  # запросим больше результатов для reranking
                 structured_filters,
