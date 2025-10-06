@@ -693,7 +693,15 @@ class IndexerService:
             logger.info(f"📦 Батч {batch_num}: обработка документов {i} - {min(i+batch_size, len(documents))}")
             
             batch_docs = documents[i:i + batch_size]
-            texts = [doc.get('text', '') for doc in batch_docs]
+            
+            # ✅ ИСПРАВЛЕНИЕ 1: Фильтруем пустые тексты
+            valid_docs = [(idx, doc) for idx, doc in enumerate(batch_docs) if doc.get('text', '').strip()]
+            
+            if not valid_docs:
+                logger.warning(f"❌ Батч {batch_num}: все тексты пустые, пропускаем")
+                continue
+            
+            texts = [doc.get('text', '') for _, doc in valid_docs]
             
             # Диагностика текстов
             if texts:
@@ -720,7 +728,7 @@ class IndexerService:
                 continue
 
             points = []
-            for j, doc in enumerate(batch_docs):
+            for j, (_, doc) in enumerate(valid_docs):
                 point_id = str(doc.get('id') or uuid.uuid4())
                 metadata = dict(doc.get('metadata') or {})
                 from datetime import datetime, timezone

@@ -210,12 +210,11 @@ class SearchService:
             if self.config.query_engine.use_hybrid:
                 try:
                     from .sparse_encoder import SparseEncoder
-                    from config import get_config
-                    cfg = get_config().sparse
-                    encoder = SparseEncoder(method=cfg.method)
+                    # ✅ ИСПРАВЛЕНИЕ 2: Используем стандартные параметры если sparse конфига нет
+                    encoder = SparseEncoder(method='bm25')  # Без конфига
                     sparse_vector = encoder.encode([query])[0]
                 except Exception as e:
-                    logger.warning(f"Ошибка генерации sparse-вектора: {e}")
+                    logger.warning(f"Sparse поиск недоступен: {e}")
             hybrid_enabled = (
                 use_hybrid
                 if use_hybrid is not None
