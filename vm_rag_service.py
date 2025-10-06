@@ -17,6 +17,7 @@ import psutil
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -337,8 +338,11 @@ async def search_documents(request: SearchRequest):
         
         query_time = asyncio.get_event_loop().time() - start_time
         
+        # Конвертируем SearchResult объекты в словари для Pydantic
+        results_dicts = [asdict(r) for r in results]
+        
         return SearchResponse(
-            results=results,
+            results=results_dicts,
             query_time=query_time,
             total_found=len(results),
             hybrid_used=request.use_hybrid
