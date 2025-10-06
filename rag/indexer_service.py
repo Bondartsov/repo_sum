@@ -678,7 +678,9 @@ class IndexerService:
 
         Используется VM API эндпоинтом /index.
         """
+        logger.info(f"📥 index_documents: получено {len(documents)} документов")
         if not documents:
+            logger.warning("⚠️ Пустой список документов!")
             return 0
 
         await self.initialize_vector_store(recreate=recreate_collection)
@@ -687,21 +689,33 @@ class IndexerService:
         total_indexed = 0
 
         for i in range(0, len(documents), batch_size):
+            batch_num = i // batch_size + 1
+            logger.info(f"📦 Батч {batch_num}: обработка документов {i} - {min(i+batch_size, len(documents))}")
+            
             batch_docs = documents[i:i + batch_size]
             texts = [doc.get('text', '') for doc in batch_docs]
+            
+            # Диагностика текстов
+            if texts:
+                first_text_preview = texts[0][:100] if len(texts[0]) > 100 else texts[0]
+                logger.info(f"📝 Извлечено {len(texts)} текстов. Первый: '{first_text_preview}...' (длина: {len(texts[0])})")
+            else:
+                logger.warning(f"⚠️ Батч {batch_num}: список текстов пуст!")
 
             embeddings = await asyncio.to_thread(self.embedder.embed_texts, texts, task=passage_task)
+            logger.info(f"🔢 Эмбеддинги получены: shape={getattr(embeddings, 'shape', None)}, type={type(embeddings).__name__}")
             try:
                 embeddings = np.asarray(embeddings)
                 if embeddings.ndim == 1 and len(texts) == 1:
                     embeddings = embeddings.reshape(1, -1)
+                logger.info(f"✅ Форма эмбеддингов после reshape: {embeddings.shape}")
             except Exception as e:
-                logger.error(f"Ошибка приведения формы эмбеддингов: {e}")
+                logger.error(f"❌ Ошибка приведения формы эмбеддингов: {e}", exc_info=True)
                 continue
 
             if embeddings.ndim != 2 or embeddings.shape[0] != len(texts):
                 logger.error(
-                    f"Некорректная форма эмбеддингов: shape={getattr(embeddings, 'shape', None)}, texts={len(texts)}"
+                    f"❌ БАТЧ {batch_num} ОТБРОШЕН! Некорректная форма эмбеддингов: shape={embeddings.shape}, ожидалось: ({len(texts)}, ?)"
                 )
                 continue
 
@@ -726,16 +740,23 @@ class IndexerService:
                     }
                 })
 
+            logger.info(f"💾 Отправка {len(points)} точек в vector_store.index_documents()")
             try:
                 index_fn = getattr(self.vector_store, 'index_documents')
+                logger.info(f"🔍 Тип функции index_documents: async={asyncio.iscoroutinefunction(index_fn)}")
+                
                 if asyncio.iscoroutinefunction(index_fn):
                     batch_indexed = await index_fn(points)
                 else:
                     batch_indexed = await asyncio.to_thread(index_fn, points)
+                
+                logger.info(f"✅ Батч {batch_num}: проиндексировано {batch_indexed} точек (type={type(batch_indexed).__name__})")
                 total_indexed += batch_indexed
             except Exception as e:
-                logger.error(f"Ошибка индексации пачки документов: {e}")
+                logger.error(f"❌ КРИТИЧЕСКАЯ ОШИБКА индексации батча {batch_num}: {e}", exc_info=True)
+                # НЕ пробрасываем ошибку, но фиксируем в логах
 
+        logger.info(f"🎯 ИТОГО проиндексировано: {total_indexed} из {len(documents)} документов")
         return total_indexed
 
     async def get_indexing_stats(self) -> Dict[str, Any]:
