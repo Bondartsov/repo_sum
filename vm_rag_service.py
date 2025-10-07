@@ -384,9 +384,13 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
         # Подготавливаем документы для индексации
         points = []
         for doc in request.documents:
+            # ✅ ИСПРАВЛЕНИЕ: Извлекаем текст из правильного места
+            # Сначала пробуем doc['text'], если нет - берём doc['payload']['content']
+            text = doc.get('text', '') or doc.get('payload', {}).get('content', '')
+            
             point = {
                 'id': doc.get('id'),
-                'text': doc.get('text', ''),
+                'text': text,
                 'metadata': doc.get('metadata', {}),
                 'timestamp': doc.get('timestamp', datetime.now(timezone.utc).isoformat())
             }

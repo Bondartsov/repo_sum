@@ -222,7 +222,9 @@ class RemoteVMVectorStore:
                 "documents": [
                     {
                         "id": str(point.get("id", f"doc_{i}")),
-                        "text": point.get("text", ""),
+                        # ✅ ИСПРАВЛЕНИЕ: Извлекаем текст из правильного места
+                        # Сначала пробуем point['text'], если нет - берём point['payload']['content']
+                        "text": point.get("text", "") or point.get("payload", {}).get("content", ""),
                         "metadata": point.get("metadata", {}),
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }
