@@ -320,6 +320,64 @@ else:
 
 ---
 
-**Автор:** Roo (Debug Mode)  
-**Дата:** 2025-10-06  
-**Версия:** 1.0
+## 🔄 ОБНОВЛЕНИЕ: Исправление бесконечной рекурсии на VM (7 октября 2025)
+
+### Новая проблема: Баг 4 - Бесконечная рекурсия на VM сервере
+
+После исправления Багов 1-3 обнаружена **КРИТИЧЕСКАЯ проблема бесконечной рекурсии** при индексации на VM.
+
+#### Симптомы
+- VM endpoint `/index` зависает и выходит по таймауту
+- В логах повторяются "📥 VM: Получено 256 документов"
+- IndexerService создаёт RemoteVMVectorStore вместо локального QdrantVectorStore
+
+#### Причина
+
+**Файл:** [`rag/__init__.py:11-12`](rag/__init__.py:11-12)
+
+Алиасы импортов перенаправляют на Remote версии:
+```python
+from .remote_vector_store import RemoteVMVectorStore as QdrantVectorStore
+```
+
+Когда IndexerService на VM импортирует `QdrantVectorStore`, он получает **Remote версию**, которая отправляет запрос обратно на тот же `/index` endpoint → рекурсия!
+
+#### Исправление
+
+**Файл:** [`rag/indexer_service.py:92-114`](rag/indexer_service.py:92-114)
+
+Добавлена проверка переменной окружения `FORCE_LOCAL_VECTOR_STORE`:
+
+```python
+if self.vector_store is None:
+    import os
+    force_local = os.getenv('FORCE_LOCAL_VECTOR_STORE', '').lower() in ('1', 'true', 'yes')
+    
+    if force_local:
+        # Прямой импорт локального QdrantVectorStore
+        from .vector_store import QdrantVectorStore as LocalQdrantVectorStore
+        self.vector_store = LocalQdrantVectorStore(config.rag.vector_store)
+        logger.info("🔧 FORCE_LOCAL_VECTOR_STORE включён")
+```
+
+#### Инструкция для VM
+
+На VM сервере установить переменную окружения:
+```bash
+export FORCE_LOCAL_VECTOR_STORE=true
+python vm_rag_service.py start
+```
+
+#### Результат
+
+✅ IndexerService использует локальный QdrantVectorStore
+✅ Нет рекурсивных вызовов `/index`
+✅ Индексация работает без таймаутов
+
+**Подробная документация:** [`rules/RECURSION_FIX_2025_10_07.md`](rules/RECURSION_FIX_2025_10_07.md)
+
+---
+
+**Автор:** Roo (Debug Mode)
+**Дата:** 2025-10-06 (обновлено 2025-10-07)
+**Версия:** 1.1

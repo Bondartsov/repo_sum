@@ -18,6 +18,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -46,6 +47,17 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Настройка диагностического логгера
+log_dir = Path("logs")
+log_dir.mkdir(exist_ok=True)
+
+# Создаём отдельный handler для диагностики
+diag_handler = logging.FileHandler(log_dir / "diagnostics.log", encoding='utf-8')
+diag_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+diag_logger = logging.getLogger("diagnostics")
+diag_logger.addHandler(diag_handler)
+diag_logger.setLevel(logging.INFO)
 
 # Pydantic модели для API
 class EmbeddingRequest(BaseModel):
@@ -372,14 +384,14 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
         start_time = asyncio.get_event_loop().time()
         
         # 🔍 ДИАГНОСТИКА 1: Что получил VM endpoint
-        logger.info(f"📥 VM: Получено {len(request.documents)} документов")
+        diag_logger.info(f"📥 VM: Получено {len(request.documents)} документов")
         if request.documents:
             first_doc_raw = request.documents[0]
-            logger.info(f"📥 VM: Первый document RAW = {first_doc_raw}")
-            logger.info(f"📥 VM: Тип документа = {type(first_doc_raw)}")
+            diag_logger.info(f"📥 VM: Первый document RAW = {first_doc_raw}")
+            diag_logger.info(f"📥 VM: Тип документа = {type(first_doc_raw)}")
             if isinstance(first_doc_raw, dict):
-                logger.info(f"📥 VM: Ключи документа = {list(first_doc_raw.keys())}")
-                logger.info(f"📥 VM: doc.get('text') = '{first_doc_raw.get('text', 'KEY_NOT_FOUND')[:100]}'")
+                diag_logger.info(f"📥 VM: Ключи документа = {list(first_doc_raw.keys())}")
+                diag_logger.info(f"📥 VM: doc.get('text') = '{first_doc_raw.get('text', 'KEY_NOT_FOUND')[:100]}'")
             
         # Подготавливаем документы для индексации
         points = []
@@ -399,8 +411,8 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
         # 🔍 ДИАГНОСТИКА 2: Что передаём в IndexerService
         if points:
             first_point = points[0]
-            logger.info(f"📤 VM: Первый point после обработки = {first_point}")
-            logger.info(f"📤 VM: point['text'] = '{first_point.get('text', 'EMPTY')[:100]}'")
+            diag_logger.info(f"📤 VM: Первый point после обработки = {first_point}")
+            diag_logger.info(f"📤 VM: point['text'] = '{first_point.get('text', 'EMPTY')[:100]}'")
         
         # Выполняем индексацию
         indexed_count = await services['indexer_service'].index_documents(

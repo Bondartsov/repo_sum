@@ -90,16 +90,26 @@ class IndexerService:
             self.vector_store = None
 
         if self.vector_store is None:
-            try:
-                self.vector_store = QdrantVectorStore(
-                    config.rag.vector_store,
-                    config.rag.remote_service
-                )
-            except TypeError:
-                # Local QdrantVectorStore expects only one argument
-                self.vector_store = QdrantVectorStore(
-                    config.rag.vector_store
-                )
+            # Проверяем переменную окружения для форсирования локального store на VM
+            import os
+            force_local = os.getenv('FORCE_LOCAL_VECTOR_STORE', '').lower() in ('1', 'true', 'yes')
+            
+            if force_local:
+                # Прямой импорт локального QdrantVectorStore
+                from .vector_store import QdrantVectorStore as LocalQdrantVectorStore
+                self.vector_store = LocalQdrantVectorStore(config.rag.vector_store)
+                logger.info("🔧 FORCE_LOCAL_VECTOR_STORE включён: используется локальный QdrantVectorStore")
+            else:
+                try:
+                    self.vector_store = QdrantVectorStore(
+                        config.rag.vector_store,
+                        config.rag.remote_service
+                    )
+                except TypeError:
+                    # Local QdrantVectorStore expects only one argument
+                    self.vector_store = QdrantVectorStore(
+                        config.rag.vector_store
+                    )
         
         # Статистика индексации
         self.stats = {

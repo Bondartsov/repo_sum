@@ -12,10 +12,22 @@ from typing import List, Dict, Optional, Any
 from config import RemoteServiceConfig
 import numpy as np
 from datetime import datetime, timezone
+from pathlib import Path
 from .event_loop_manager import run_async_safe, get_shared_http_session
 from .vm_diagnostics import diagnose_vm_connection
 
 logger = logging.getLogger(__name__)
+
+# Настройка диагностического логгера
+log_dir = Path("logs")
+log_dir.mkdir(exist_ok=True)
+
+# Создаём отдельный handler для диагностики
+diag_handler = logging.FileHandler(log_dir / "diagnostics.log", encoding='utf-8')
+diag_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+diag_logger = logging.getLogger("diagnostics")
+diag_logger.addHandler(diag_handler)
+diag_logger.setLevel(logging.INFO)
 
 
 def _safe_message(message: str) -> str:
@@ -210,12 +222,12 @@ class RemoteVMVectorStore:
         
         try:
             # 🔍 ДИАГНОСТИКА 1: Входные данные
-            _log(logger.info, f"📥 КЛИЕНТ: Получено {len(points)} points для индексации")
+            diag_logger.info(f"📥 КЛИЕНТ: Получено {len(points)} points для индексации")
             if points:
                 first_point = points[0]
-                _log(logger.info, f"📥 КЛИЕНТ: Первый point = {first_point}")
-                _log(logger.info, f"📥 КЛИЕНТ: Ключи первого point = {list(first_point.keys())}")
-                _log(logger.info, f"📥 КЛИЕНТ: point['text'] = '{first_point.get('text', 'KEY_NOT_FOUND')[:100]}'")
+                diag_logger.info(f"📥 КЛИЕНТ: Первый point = {first_point}")
+                diag_logger.info(f"📥 КЛИЕНТ: Ключи первого point = {list(first_point.keys())}")
+                diag_logger.info(f"📥 КЛИЕНТ: point['text'] = '{first_point.get('text', 'KEY_NOT_FOUND')[:100]}'")
                 
             # Подготовка данных для удалённого сервиса
             payload = {
@@ -237,8 +249,8 @@ class RemoteVMVectorStore:
             # 🔍 ДИАГНОСТИКА 2: Подготовленный payload
             if payload["documents"]:
                 first_doc = payload["documents"][0]
-                _log(logger.info, f"📤 КЛИЕНТ: Первый document после подготовки = {first_doc}")
-                _log(logger.info, f"📤 КЛИЕНТ: document['text'] = '{first_doc.get('text', 'EMPTY')[:100]}'")
+                diag_logger.info(f"📤 КЛИЕНТ: Первый document после подготовки = {first_doc}")
+                diag_logger.info(f"📤 КЛИЕНТ: document['text'] = '{first_doc.get('text', 'EMPTY')[:100]}'")
             
             # HTTP запрос на индексацию
             indexed_count = await self._make_index_request_with_retry(payload)
