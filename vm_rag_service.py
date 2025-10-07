@@ -371,6 +371,16 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
         
         start_time = asyncio.get_event_loop().time()
         
+        # 🔍 ДИАГНОСТИКА 1: Что получил VM endpoint
+        logger.info(f"📥 VM: Получено {len(request.documents)} документов")
+        if request.documents:
+            first_doc_raw = request.documents[0]
+            logger.info(f"📥 VM: Первый document RAW = {first_doc_raw}")
+            logger.info(f"📥 VM: Тип документа = {type(first_doc_raw)}")
+            if isinstance(first_doc_raw, dict):
+                logger.info(f"📥 VM: Ключи документа = {list(first_doc_raw.keys())}")
+                logger.info(f"📥 VM: doc.get('text') = '{first_doc_raw.get('text', 'KEY_NOT_FOUND')[:100]}'")
+            
         # Подготавливаем документы для индексации
         points = []
         for doc in request.documents:
@@ -381,6 +391,12 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
                 'timestamp': doc.get('timestamp', datetime.now(timezone.utc).isoformat())
             }
             points.append(point)
+        
+        # 🔍 ДИАГНОСТИКА 2: Что передаём в IndexerService
+        if points:
+            first_point = points[0]
+            logger.info(f"📤 VM: Первый point после обработки = {first_point}")
+            logger.info(f"📤 VM: point['text'] = '{first_point.get('text', 'EMPTY')[:100]}'")
         
         # Выполняем индексацию
         indexed_count = await services['indexer_service'].index_documents(

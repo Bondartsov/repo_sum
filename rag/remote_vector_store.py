@@ -209,6 +209,14 @@ class RemoteVMVectorStore:
         start_time = time.time()
         
         try:
+            # 🔍 ДИАГНОСТИКА 1: Входные данные
+            _log(logger.info, f"📥 КЛИЕНТ: Получено {len(points)} points для индексации")
+            if points:
+                first_point = points[0]
+                _log(logger.info, f"📥 КЛИЕНТ: Первый point = {first_point}")
+                _log(logger.info, f"📥 КЛИЕНТ: Ключи первого point = {list(first_point.keys())}")
+                _log(logger.info, f"📥 КЛИЕНТ: point['text'] = '{first_point.get('text', 'KEY_NOT_FOUND')[:100]}'")
+                
             # Подготовка данных для удалённого сервиса
             payload = {
                 "documents": [
@@ -223,6 +231,12 @@ class RemoteVMVectorStore:
                 "batch_size": min(512, len(points)),  # Батчевая обработка на сервере
                 "recreate": False
             }
+            
+            # 🔍 ДИАГНОСТИКА 2: Подготовленный payload
+            if payload["documents"]:
+                first_doc = payload["documents"][0]
+                _log(logger.info, f"📤 КЛИЕНТ: Первый document после подготовки = {first_doc}")
+                _log(logger.info, f"📤 КЛИЕНТ: document['text'] = '{first_doc.get('text', 'EMPTY')[:100]}'")
             
             # HTTP запрос на индексацию
             indexed_count = await self._make_index_request_with_retry(payload)
