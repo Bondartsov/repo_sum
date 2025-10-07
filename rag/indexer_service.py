@@ -26,7 +26,7 @@ from file_scanner import FileScanner
 from code_chunker import CodeChunker
 from parsers.base_parser import ParserRegistry
 from utils import FileInfo, ParsedFile, CodeChunk
-from . import CPUEmbedder, QdrantVectorStore
+from .factory import RAGFactory
 from .exceptions import VectorStoreException, VectorStoreConnectionError
 
 logger = logging.getLogger(__name__)
@@ -70,11 +70,10 @@ class IndexerService:
         self.file_scanner = FileScanner()
         self.parser_registry = ParserRegistry()
         self.code_chunker = CodeChunker()
-        self.embedder = CPUEmbedder(
-            config.rag.embeddings,
-            config.rag.parallelism,
-            config.rag.remote_service
-        )
+        
+        # ✅ ИСПРАВЛЕНИЕ РЕКУРСИИ: Используем RAGFactory для автоматического выбора
+        # На VM: CPUEmbedder (локальный), на клиенте: RemoteVMEmbedder
+        self.embedder = RAGFactory.create_embedder(config)
         import os as _os
         env_true = {'1', 'true', 'yes', 'on'}
         use_mock_vs = str(_os.getenv('USE_MOCK_VECTOR_STORE', '')).lower() in env_true or str(_os.getenv('OFFLINE_MODE', '')).lower() in env_true
@@ -90,26 +89,11 @@ class IndexerService:
             self.vector_store = None
 
         if self.vector_store is None:
-            # Проверяем переменную окружения для форсирования локального store на VM
-            import os
-            force_local = os.getenv('FORCE_LOCAL_VECTOR_STORE', '').lower() in ('1', 'true', 'yes')
-            
-            if force_local:
-                # Прямой импорт локального QdrantVectorStore
-                from .vector_store import QdrantVectorStore as LocalQdrantVectorStore
-                self.vector_store = LocalQdrantVectorStore(config.rag.vector_store)
-                logger.info("🔧 FORCE_LOCAL_VECTOR_STORE включён: используется локальный QdrantVectorStore")
-            else:
-                try:
-                    self.vector_store = QdrantVectorStore(
-                        config.rag.vector_store,
-                        config.rag.remote_service
-                    )
-                except TypeError:
-                    # Local QdrantVectorStore expects only one argument
-                    self.vector_store = QdrantVectorStore(
-                        config.rag.vector_store
-                    )
+            # ✅ ИСПРАВЛЕНИЕ РЕКУРСИИ: Используем RAGFactory для автоматического выбора
+            # На VM: QdrantVectorStore (локальный), на клиенте: RemoteVMVectorStore
+            # Factory автоматически определяет контекст и выбирает правильную реализацию
+            self.vector_store = RAGFactory.create_vector_store(config)
+            logger.info(f"✅ Vector store создан через RAGFactory: {type(self.vector_store).__name__}")
         
         # Статистика индексации
         self.stats = {

@@ -29,26 +29,14 @@ import uvicorn
 # Добавляем текущую директорию в Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Импортируем оригинальные (локальные) версии для VM
-try:
-    from rag.embedder import CPUEmbedder
-    from rag.vector_store import QdrantVectorStore
-    from rag.search_service import SearchService
-    from rag.indexer_service import IndexerService
-    from config import get_config
-except ImportError as e:
-    print(f"Ошибка импорта: {e}")
-    print("Убедитесь, что все зависимости установлены на VM")
-    sys.exit(1)
-
-# Настройка логирования
+# Настройка логирования (ПЕРЕД импортами RAG модулей!)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Настройка диагностического логгера
+# Настройка диагностического логгера (ПОСЛЕ logger!)
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
 
@@ -58,6 +46,26 @@ diag_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelnam
 diag_logger = logging.getLogger("diagnostics")
 diag_logger.addHandler(diag_handler)
 diag_logger.setLevel(logging.INFO)
+
+# ✅ ИСПРАВЛЕНИЕ РЕКУРСИИ: Используем Factory Pattern
+try:
+    from rag.factory import RAGFactory
+    from rag.context import ExecutionContext
+    from rag.embedder import CPUEmbedder
+    from rag.vector_store import QdrantVectorStore
+    from rag.search_service import SearchService
+    from rag.indexer_service import IndexerService
+    from config import get_config
+    
+    # КРИТИЧНО: Явно устанавливаем VM контекст перед созданием компонентов
+    RAGFactory.set_context(ExecutionContext.VM)
+    logger.info("🔧 VM контекст установлен явно - все компоненты будут локальными")
+    
+except ImportError as e:
+    logger.error(f"Ошибка импорта: {e}")
+    print(f"Ошибка импорта: {e}")
+    print("Убедитесь, что все зависимости установлены на VM")
+    sys.exit(1)
 
 # Pydantic модели для API
 class EmbeddingRequest(BaseModel):

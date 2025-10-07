@@ -21,8 +21,7 @@ from rich.syntax import Syntax
 from rich.panel import Panel
 
 from config import Config
-# ✅ ИСПРАВЛЕНО: Используем remote версии через алиасы
-from . import CPUEmbedder, QdrantVectorStore
+from .factory import RAGFactory
 from .exceptions import VectorStoreException
 
 logger = logging.getLogger(__name__)
@@ -72,11 +71,7 @@ class SearchService:
         self.silent_mode = silent_mode
         
         # Инициализация компонентов
-        self.embedder = CPUEmbedder(
-            self.config.embeddings,
-            self.config.parallelism,
-            self.config.remote_service
-        )
+        # ✅ ИСПРАВЛЕНИЕ РЕКУРСИИ: Используем RAGFactory для автоматического выбора
         import os as _os
         env_true = {'1', 'true', 'yes', 'on'}
         use_mock_vs = str(_os.getenv('USE_MOCK_VECTOR_STORE', '')).lower() in env_true or str(_os.getenv('OFFLINE_MODE', '')).lower() in env_true
@@ -85,23 +80,26 @@ class SearchService:
             try:
                 from .memory_vector_store import InMemoryVectorStore
                 self.vector_store = InMemoryVectorStore(self.config.vector_store, self.config.remote_service)
+                self.embedder = None  # Для mock режима embedder может быть не нужен
             except Exception as error:
                 logger.warning(f'Не удалось инициализировать InMemoryVectorStore: {error}')
                 self.vector_store = None
+                self.embedder = None
         else:
             self.vector_store = None
+            self.embedder = None
 
+        # Если не в mock режиме, создаём компоненты через Factory
         if self.vector_store is None:
-            try:
-                self.vector_store = QdrantVectorStore(
-                    self.config.vector_store,
-                    self.config.remote_service
-                )
-            except TypeError:
-                # Local QdrantVectorStore expects only one argument
-                self.vector_store = QdrantVectorStore(
-                    self.config.vector_store
-                )
+            # На VM: QdrantVectorStore (локальный), на клиенте: RemoteVMVectorStore
+            # Создаём полный Config объект для Factory
+            from config import Config as FullConfig
+            full_config = FullConfig() if not isinstance(config, FullConfig) else config
+            full_config.rag = self.config
+            
+            self.vector_store = RAGFactory.create_vector_store(full_config)
+            self.embedder = RAGFactory.create_embedder(full_config)
+            logger.info(f"✅ Компоненты созданы через RAGFactory: embedder={type(self.embedder).__name__}, vector_store={type(self.vector_store).__name__}")
         
         # Thread-safe кэш запросов с блокировками
         self._query_cache = {}
