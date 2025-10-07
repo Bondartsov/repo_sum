@@ -57,15 +57,17 @@ try:
     from rag.indexer_service import IndexerService
     from config import get_config
     
-    # КРИТИЧНО: Явно устанавливаем VM контекст перед созданием компонентов
-    RAGFactory.set_context(ExecutionContext.VM)
-    logger.info("🔧 VM контекст установлен явно - все компоненты будут локальными")
-    
 except ImportError as e:
     logger.error(f"Ошибка импорта: {e}")
     print(f"Ошибка импорта: {e}")
     print("Убедитесь, что все зависимости установлены на VM")
     sys.exit(1)
+
+# ✅ КРИТИЧНО: Устанавливаем VM контекст на уровне модуля (перед созданием app)!
+# Это гарантирует, что все последующие вызовы RAGFactory используют VM контекст
+# и создают локальные компоненты (CPUEmbedder, QdrantVectorStore), а НЕ remote-клиенты
+RAGFactory.set_context(ExecutionContext.VM)
+logger.info("🔧 VM контекст установлен на уровне модуля (перед созданием app)")
 
 # Pydantic модели для API
 class EmbeddingRequest(BaseModel):
