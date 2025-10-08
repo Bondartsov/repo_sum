@@ -65,6 +65,8 @@ async with session.post(
 
 ### Решение
 
+✅ **ВЫПОЛНЕНО** (08.10.2025)
+
 **Вариант A: Добавить per-request timeout для /search**
 
 ```python
@@ -273,7 +275,9 @@ graph LR
 
 ### Решение
 
-**✅ Рекомендация: Вариант A (Векторный протокол)**
+**✅ ВЫПОЛНЕНО** (08.10.2025)
+
+**✅ Рекомендация: Вариант A (Векторный протокол)** - РЕАЛИЗОВАНО
 
 Причины:
 1. Клиент УЖЕ вычислил embeddings для кэширования
@@ -2034,20 +2038,21 @@ async def metrics():
 
 **Приоритет: НЕМЕДЛЕННО**
 
-1. **P0-1: Таймауты в /search** (2 часа)
-   - [ ] Добавить timeout параметры в __init__
-   - [ ] Добавить ClientTimeout в _make_search_request_with_retry
-   - [ ] Добавить ClientTimeout в _async_health_check
-   - [ ] Тесты: test_search_has_explicit_timeout
-   - [ ] Commit: "fix(remote_vector_store): add explicit timeouts for /search endpoint"
+1. **P0-1: Таймауты в /search** ✅ **ЗАВЕРШЕНО** (08.10.2025)
+   - [x] Добавить timeout параметры в __init__
+   - [x] Добавить ClientTimeout в _make_search_request_with_retry
+   - [x] Добавить ClientTimeout в _async_health_check
+   - [x] Добавить ClientTimeout в _async_get_collection_info
+   - [x] Тесты: test_search_has_explicit_timeout
+   - [x] Commit: "fix(remote_vector_store): add explicit timeouts for /search endpoint"
 
-2. **P0-2: Поиск с placeholder** (4 часа)
-   - [ ] Изменить _async_search: передавать dense_vector + sparse_vector
-   - [ ] Обновить VM: SearchRequest model (добавить векторы)
-   - [ ] Обновить VM: /search endpoint (принимать векторы)
-   - [ ] Тесты: test_search_sends_vectors_not_placeholder
-   - [ ] Интеграционный тест: test_search_integration_with_vm
-   - [ ] Commit: "fix(search): use vector protocol instead of placeholder"
+2. **P0-2: Поиск с placeholder** ✅ **ЗАВЕРШЕНО** (08.10.2025)
+   - [x] Изменить _async_search: передавать dense_vector + sparse_vector
+   - [x] Обновить VM: SearchRequest model (добавить векторы)
+   - [x] Обновить VM: /search endpoint (принимать векторы)
+   - [x] Тесты: test_search_sends_vectors_not_placeholder
+   - [x] Интеграционный тест: test_search_integration_with_vm
+   - [x] Commit: "fix(search): use vector protocol instead of placeholder"
 
 **Ожидаемый результат Фазы 1:**
 - ✅ Поиск работает корректно (возвращает результаты)
@@ -2103,11 +2108,11 @@ async def metrics():
 
 ### Минимальные критерии (P0):
 
-- [ ] **Таймауты исправлены:**
+- [x] **Таймауты исправлены:**
   - Нет SocketTimeoutError после 5+ минут индексации
   - Все HTTP запросы имеют явные timeout
   
-- [ ] **Поиск работает:**
+- [x] **Поиск работает:**
   - Поиск возвращает релевантные результаты
   - Нет "search_query_placeholder" в логах
   - Query vectors передаются в VM
@@ -2188,6 +2193,18 @@ async def metrics():
 ## 📋 Pre-Production Checklist
 
 ### P0 (Обязательно перед production):
+
+#### Таймауты в /search ✅ ЗАВЕРШЕНО
+- [x] timeout параметры добавлены в __init__
+- [x] ClientTimeout в _make_search_request_with_retry
+- [x] ClientTimeout в _async_health_check
+- [x] ClientTimeout в _async_get_collection_info
+
+#### Поиск с векторами ✅ ЗАВЕРШЕНО
+- [x] Векторный протокол реализован
+- [x] SearchRequest model обновлена
+- [x] /search endpoint принимает векторы
+- [x] Обратная совместимость (query fallback)
 
 #### Асинхронная индексация
 - [ ] JobsManager реализован и протестирован

@@ -77,7 +77,13 @@ class EmbeddingRequest(BaseModel):
     normalize: bool = Field(True, description="Применять L2 нормализацию")
 
 class SearchRequest(BaseModel):
-    query: str = Field(..., description="Поисковый запрос")
+    # Векторный протокол (приоритет)
+    dense_vector: Optional[List[float]] = Field(None, description="Dense вектор запроса (1024d)")
+    sparse_vector: Optional[Dict[int, float]] = Field(None, description="Sparse вектор (BM25/SPLADE)")
+    
+    # Текстовый протокол (legacy, для совместимости)
+    query: Optional[str] = Field(None, description="Поисковый запрос (legacy)")
+    
     top_k: int = Field(10, description="Количество результатов")
     use_hybrid: bool = Field(True, description="Использовать гибридный поиск")
     filters: Dict[str, Any] = Field(default_factory=dict, description="Фильтры по метаданным")
@@ -342,21 +348,67 @@ async def get_embeddings(request: EmbeddingRequest):
 
 @app.post("/search", response_model=SearchResponse)
 async def search_documents(request: SearchRequest):
-    """Гибридный поиск по документам"""
+    """Гибридный поиск по документам (поддержка векторного и текстового протоколов)"""
     if 'search_service' not in services:
         raise HTTPException(status_code=503, detail="Search service не инициализирован")
     
     try:
         start_time = asyncio.get_event_loop().time()
         
-        # Выполняем поиск через SearchService
-        results = await services['search_service'].search(
-            query=request.query,
-            top_k=request.top_k,
-            filters=request.filters,
-            use_hybrid=request.use_hybrid,
-            task=request.task
-        )
+        # Векторный протокол (приоритет) - используем готовые векторы
+        if request.dense_vector:
+            logger.info("🔵 Векторный протокол: используем готовые векторы")
+            
+            # Конвертируем list в numpy array
+            dense_vector = np.array(request.dense_vector, dtype=np.float32)
+            
+            # Прямой поиск в vector_store с готовыми векторами
+            raw_results = await asyncio.to_thread(
+                services['vector_store'].search,
+                query_vector=dense_vector,
+                top_k=request.top_k,
+                filters=request.filters,
+                use_hybrid=request.use_hybrid,
+                sparse_vector=request.sparse_vector
+            )
+            
+            # Конвертируем в SearchResult объекты
+            from rag.search_service import SearchResult
+            results = []
+            for result in raw_results:
+                payload = result.get('payload', {})
+                search_result = SearchResult(
+                    chunk_id=result['id'],
+                    file_path=payload.get('file_path', ''),
+                    file_name=payload.get('file_name', ''),
+                    chunk_name=payload.get('chunk_name', ''),
+                    chunk_type=payload.get('chunk_type', ''),
+                    language=payload.get('language', ''),
+                    start_line=payload.get('start_line', 0),
+                    end_line=payload.get('end_line', 0),
+                    score=result['score'],
+                    content=payload.get('content', ''),
+                    metadata=payload
+                )
+                results.append(search_result)
+        
+        # Текстовый протокол (legacy fallback)
+        elif request.query:
+            logger.info("🟡 Текстовый протокол (legacy): генерируем эмбеддинги из текста")
+            
+            # Выполняем поиск через SearchService (с генерацией эмбеддингов)
+            results = await services['search_service'].search(
+                query=request.query,
+                top_k=request.top_k,
+                filters=request.filters,
+                use_hybrid=request.use_hybrid,
+                task=request.task
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Необходим либо dense_vector (векторный протокол), либо query (текстовый протокол)"
+            )
         
         query_time = asyncio.get_event_loop().time() - start_time
         

@@ -78,6 +78,11 @@ class RemoteVMVectorStore:
         self.max_retries = int(os.getenv("RAG_MAX_RETRIES", str(self.remote_config.max_retries)))
         self.retry_delay = float(os.getenv("RAG_RETRY_DELAY", str(self.remote_config.retry_delay)))
 
+        # Таймауты для разных операций (конфигурируемые)
+        self.search_timeout = int(os.getenv("RAG_SEARCH_TIMEOUT", "300"))  # 5 минут для поиска
+        self.index_timeout = int(os.getenv("RAG_INDEX_TIMEOUT", "1800"))  # 30 минут для индексации
+        self.health_timeout = int(os.getenv("RAG_HEALTH_TIMEOUT", "60"))  # 1 минута для health check
+
         # Статистика
         self.stats = {
             'total_searches': 0,
@@ -298,7 +303,7 @@ class RemoteVMVectorStore:
                     self.index_endpoint,
                     json=payload,
                     headers={'Content-Type': 'application/json'},
-                    timeout=ClientTimeout(total=1800, sock_read=1800)  # 30 минут для индексации
+                    timeout=ClientTimeout(total=self.index_timeout, sock_read=self.index_timeout)
                 ) as response:
                     
                     # 🔍 ЛОГ 2: HTTP статус
@@ -345,14 +350,14 @@ class RemoteVMVectorStore:
         sparse_vector: Optional[Dict[int, float]] = None
     ) -> List[Dict]:
         """
-        Выполняет поиск через удалённый сервис.
+        Выполняет поиск через удалённый сервис с готовыми векторами.
         
         Args:
-            query_vector: Вектор запроса (не используется напрямую - текст будет векторизован на VM)
+            query_vector: Dense вектор запроса (1024d для Jina v3)
             top_k: Количество результатов
             filters: Фильтры по метаданным
             use_hybrid: Использовать гибридный поиск
-            sparse_vector: Разреженный вектор (не используется - обрабатывается на VM)
+            sparse_vector: Sparse вектор (BM25/SPLADE)
             
         Returns:
             Список результатов поиска
@@ -360,16 +365,19 @@ class RemoteVMVectorStore:
         start_time = time.time()
         
         try:
-            # Подготовка запроса для удалённого поиска
-            # Поскольку у нас нет текста запроса здесь, используем заглушку
-            # В реальном использовании query должен содержать текст
+            # ✅ ИСПРАВЛЕНИЕ: Передаём готовые векторы (векторный протокол)
+            # Конвертируем numpy array в list для JSON сериализации
+            dense_vector_list = query_vector.tolist() if hasattr(query_vector, 'tolist') else list(query_vector)
+            
             payload = {
-                "query": "search_query_placeholder",  # Будет заменен в search_service
+                "dense_vector": dense_vector_list,  # ✅ Передаём dense вектор
+                "sparse_vector": sparse_vector,     # ✅ Передаём sparse вектор (опционально)
                 "top_k": top_k,
-                "use_hybrid": use_hybrid,
+                "use_hybrid": use_hybrid and sparse_vector is not None,
                 "filters": filters or {},
-                "task": "retrieval.query"
             }
+            
+            _log(logger.debug, f"Отправка векторного поиска: dense_vector={len(dense_vector_list)}d, sparse={sparse_vector is not None}")
             
             # HTTP запрос на поиск
             results = await self._make_search_request_with_retry(payload)
@@ -451,10 +459,12 @@ class RemoteVMVectorStore:
                 # Используем shared HTTP session с connection pooling
                 session = await get_shared_http_session()
                 
+                timeout_ctx = ClientTimeout(total=self.search_timeout, sock_read=self.search_timeout)
                 async with session.post(
                     self.search_endpoint,
                     json=payload,
-                    headers={'Content-Type': 'application/json'}
+                    headers={'Content-Type': 'application/json'},
+                    timeout=timeout_ctx
                 ) as response:
                     
                     if response.status == 200:
@@ -508,7 +518,8 @@ class RemoteVMVectorStore:
             health_endpoint = f"http://{self.service_host}:{self.service_port}{self.remote_config.health_endpoint}"
             session = await get_shared_http_session()
             
-            async with session.get(health_endpoint) as response:
+            timeout_ctx = ClientTimeout(total=self.health_timeout, sock_read=self.health_timeout)
+            async with session.get(health_endpoint, timeout=timeout_ctx) as response:
                 response_time_ms = (time.time() - start_time) * 1000
                 
                 if response.status == 200:
@@ -677,7 +688,8 @@ class RemoteVMVectorStore:
             # Используем shared HTTP session
             session = await get_shared_http_session()
             
-            async with session.get(info_endpoint) as response:
+            timeout_ctx = ClientTimeout(total=self.health_timeout, sock_read=self.health_timeout)
+            async with session.get(info_endpoint, timeout=timeout_ctx) as response:
                 
                 if response.status == 200:
                     return await response.json()
