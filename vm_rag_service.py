@@ -392,7 +392,7 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
         # Автоматически уменьшаем batch_size при высоком потреблении памяти
         original_batch_size = request.batch_size
         if memory_info.get('is_warning', False):
-            request.batch_size = min(1, original_batch_size // 4)
+            request.batch_size = max(1, original_batch_size // 4)  # ✅ ИСПРАВЛЕНО: max вместо min
             logger.warning(f"⚠️ Уменьшен batch_size: {original_batch_size} -> {request.batch_size}")
         
         start_time = asyncio.get_event_loop().time()

@@ -13,6 +13,7 @@ from config import RemoteServiceConfig
 import numpy as np
 from datetime import datetime, timezone
 from pathlib import Path
+from aiohttp import ClientTimeout
 from .event_loop_manager import run_async_safe, get_shared_http_session
 from .vm_diagnostics import diagnose_vm_connection
 
@@ -292,10 +293,12 @@ class RemoteVMVectorStore:
                 # 🔍 ЛОГ 1: Перед отправкой
                 _log(logger.info, f"📤 Отправка на VM: {len(payload.get('documents', []))} документов, endpoint={self.index_endpoint}")
                 
+                # Явный timeout для защиты от зависаний (дополнительно к session timeout)
                 async with session.post(
                     self.index_endpoint,
                     json=payload,
-                    headers={'Content-Type': 'application/json'}
+                    headers={'Content-Type': 'application/json'},
+                    timeout=ClientTimeout(total=1800, sock_read=1800)  # 30 минут для индексации
                 ) as response:
                     
                     # 🔍 ЛОГ 2: HTTP статус
