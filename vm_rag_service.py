@@ -377,10 +377,14 @@ async def search_documents(request: SearchRequest):
 @app.post("/index", response_model=IndexResponse)
 async def index_documents(request: IndexRequest, background_tasks: BackgroundTasks):
     """Индексация документов с защитой от OOM"""
+    logger.info(f"🔵 НАЧАЛО endpoint /index: получено {len(request.documents) if hasattr(request, 'documents') else 0} документов")
+    
     if 'indexer_service' not in services:
+        logger.error("❌ IndexerService не инициализирован!")
         raise HTTPException(status_code=503, detail="Indexer service не инициализирован")
     
     try:
+        logger.info("🔵 Шаг 1: Проверка памяти...")
         # КРИТИЧНО: Проверяем память перед индексацией
         memory_info = memory_check_middleware()
         logger.info(f"🧠 Память перед индексацией: {memory_info.get('percent_used', 0):.1f}%")
@@ -393,6 +397,7 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
         
         start_time = asyncio.get_event_loop().time()
         
+        logger.info("🔵 Шаг 2: Диагностика входных данных...")
         # 🔍 ДИАГНОСТИКА 1: Что получил VM endpoint
         diag_logger.info(f"📥 VM: Получено {len(request.documents)} документов")
         if request.documents:
@@ -402,7 +407,8 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
             if isinstance(first_doc_raw, dict):
                 diag_logger.info(f"📥 VM: Ключи документа = {list(first_doc_raw.keys())}")
                 diag_logger.info(f"📥 VM: doc.get('text') = '{first_doc_raw.get('text', 'KEY_NOT_FOUND')[:100]}'")
-            
+        
+        logger.info("🔵 Шаг 3: Подготовка points...")
         # Подготавливаем документы для индексации
         points = []
         for doc in request.documents:
@@ -418,12 +424,15 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
             }
             points.append(point)
         
+        logger.info(f"🔵 Шаг 4: Points подготовлены: {len(points)} точек")
+        
         # 🔍 ДИАГНОСТИКА 2: Что передаём в IndexerService
         if points:
             first_point = points[0]
             diag_logger.info(f"📤 VM: Первый point после обработки = {first_point}")
             diag_logger.info(f"📤 VM: point['text'] = '{first_point.get('text', 'EMPTY')[:100]}'")
         
+        logger.info("🔵 Шаг 5: Вызов IndexerService.index_documents()...")
         # Выполняем индексацию
         indexed_count = await services['indexer_service'].index_documents(
             documents=points,
@@ -431,20 +440,30 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
             recreate_collection=request.recreate
         )
         
-        processing_time = asyncio.get_event_loop().time() - start_time
+        logger.info(f"🔵 Шаг 6: IndexerService завершён, indexed_count={indexed_count}")
         
+        processing_time = asyncio.get_event_loop().time() - start_time
+        logger.info(f"🔵 Шаг 7: processing_time={processing_time:.3f}s")
+        
+        logger.info("🔵 Шаг 8: Получение collection_info...")
         # Получаем информацию о коллекции
         collection_info = {}
         if 'vector_store' in services:
             vs_health = await services['vector_store'].health_check()
             collection_info = vs_health.get('collection_info', {})
         
-        return IndexResponse(
+        logger.info(f"🔵 Шаг 9: collection_info получен: {collection_info}")
+        
+        logger.info("🔵 Шаг 10: Создание IndexResponse...")
+        response = IndexResponse(
             indexed_count=indexed_count,
             status="success",
             processing_time=processing_time,
             collection_info=collection_info
         )
+        
+        logger.info(f"🔵 Шаг 11: ВОЗВРАЩАЕМ response: indexed_count={indexed_count}, status=success")
+        return response
         
     except Exception as e:
         logger.error(f"Ошибка индексации: {e}")
