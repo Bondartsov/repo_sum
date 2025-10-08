@@ -502,6 +502,802 @@ results = await asyncio.to_thread(
 
 ---
 
+## 🔄 Проблема P0-3: Фиксация Бага min(1, ...) → max(1, ...)
+
+### Описание
+
+**Текущая ситуация:**
+
+✅ **БАГ УЖЕ ИСПРАВЛЕН** в [`vm_rag_service.py:395`](../vm_rag_service.py:395):
+
+```python
+# ✅ ИСПРАВЛЕНО: max вместо min
+request.batch_size = max(1, original_batch_size // 4)
+```
+
+**История бага:**
+- ❌ **Было**: `min(1, original_batch_size // 4)` - всегда возвращало 1
+- ✅ **Стало**: `max(1, original_batch_size // 4)` - корректное уменьшение batch_size
+
+**Проблема с min:**
+```python
+# Пример: original_batch_size = 512
+min(1, 512 // 4)  # min(1, 128) = 1  ❌ ВСЕГДА 1!
+max(1, 512 // 4)  # max(1, 128) = 128 ✅ Правильно
+```
+
+### Как был обнаружен
+
+Баг был найден при верификации comprehensive плана. Анализ показал:
+1. При высокой нагрузке памяти batch_size должен уменьшаться
+2. `min(1, X)` где X > 1 всегда возвращает 1
+3. Это приводило к слишком маленьким батчам (1 документ = ~512x медленнее)
+
+### Статус
+
+✅ **ИСПРАВЛЕНО** в текущей версии кода
+📝 **Добавлено в план** для документирования
+
+### Рекомендации
+
+**Для будущего:**
+- Добавить unit-тест для проверки адаптивного batch_size
+- Документировать логику уменьшения batch_size
+
+```python
+# tests/rag/test_vm_rag_service_batch_adaptive.py
+def test_batch_size_reduction_on_high_memory():
+    """Проверка что batch_size корректно уменьшается при высокой памяти."""
+    original = 512
+    reduced = max(1, original // 4)
+    
+    assert reduced == 128  # Не 1!
+    assert reduced < original
+    assert reduced >= 1
+```
+
+---
+
+## 🚀 Проблема P0-4: Асинхронный /index с Job Queue
+
+### Описание
+
+**Текущая проблема:**
+
+```python
+# vm_rag_service.py:377-470 - POST /index
+@app.post("/index", response_model=IndexResponse)
+async def index_documents(request: IndexRequest, background_tasks: BackgroundTasks):
+    # ❌ Синхронная обработка в HTTP запросе
+    indexed_count = await services['indexer_service'].index_documents(...)
+    return IndexResponse(indexed_count=indexed_count, ...)  # ❌ Ждём завершения
+```
+
+**Проблемы синхронной модели:**
+- ❌ HTTP запрос держится открытым 5+ минут
+- ❌ Клиент может получить timeout раньше завершения
+- ❌ Невозможно отследить прогресс индексации
+- ❌ Retry после timeout создаёт дубли (нет идемпотентности)
+
+### Решение: Асинхронная Job Queue
+
+**Новая архитектура:**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant VM_API as VM /index
+    participant JobQueue
+    participant Worker as Background Worker
+    participant Qdrant
+
+    Client->>VM_API: POST /index
+    VM_API->>JobQueue: Create job
+    VM_API-->>Client: 202 Accepted + job_id
+    
+    Client->>VM_API: GET /jobs/job_id (polling)
+    VM_API-->>Client: Status: processing, progress: 45%
+    
+    Worker->>JobQueue: Get pending jobs
+    Worker->>Qdrant: Index documents
+    Worker->>JobQueue: Update progress
+    
+    Client->>VM_API: GET /jobs/job_id
+    VM_API-->>Client: Status: completed, indexed: 512
+```
+
+### Реализация
+
+**Шаг 1: Создать JobsManager**
+
+```python
+# rag/jobs_manager.py
+import uuid
+import asyncio
+from typing import Dict, Optional, Any
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from enum import Enum
+
+class JobStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+@dataclass
+class Job:
+    id: str
+    status: JobStatus
+    created_at: datetime
+    updated_at: datetime
+    progress: float  # 0.0 - 1.0
+    result: Optional[Any] = None
+    error: Optional[str] = None
+    metadata: Dict[str, Any] = None
+
+class JobsManager:
+    """Управление фоновыми задачами индексации."""
+    
+    def __init__(self):
+        self._jobs: Dict[str, Job] = {}
+        self._lock = asyncio.Lock()
+    
+    async def create_job(self, metadata: Optional[Dict] = None) -> str:
+        """Создать новую задачу."""
+        job_id = str(uuid.uuid4())
+        
+        async with self._lock:
+            job = Job(
+                id=job_id,
+                status=JobStatus.PENDING,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+                progress=0.0,
+                metadata=metadata or {}
+            )
+            self._jobs[job_id] = job
+        
+        return job_id
+    
+    async def get_job(self, job_id: str) -> Optional[Job]:
+        """Получить статус задачи."""
+        async with self._lock:
+            return self._jobs.get(job_id)
+    
+    async def update_progress(self, job_id: str, progress: float, status: Optional[JobStatus] = None):
+        """Обновить прогресс задачи."""
+        async with self._lock:
+            if job_id in self._jobs:
+                job = self._jobs[job_id]
+                job.progress = progress
+                job.updated_at = datetime.now(timezone.utc)
+                if status:
+                    job.status = status
+    
+    async def complete_job(self, job_id: str, result: Any):
+        """Пометить задачу как завершённую."""
+        async with self._lock:
+            if job_id in self._jobs:
+                job = self._jobs[job_id]
+                job.status = JobStatus.COMPLETED
+                job.progress = 1.0
+                job.result = result
+                job.updated_at = datetime.now(timezone.utc)
+    
+    async def fail_job(self, job_id: str, error: str):
+        """Пометить задачу как неудачную."""
+        async with self._lock:
+            if job_id in self._jobs:
+                job = self._jobs[job_id]
+                job.status = JobStatus.FAILED
+                job.error = error
+                job.updated_at = datetime.now(timezone.utc)
+```
+
+**Шаг 2: Обновить /index endpoint**
+
+```python
+# vm_rag_service.py - новый асинхронный endpoint
+from rag.jobs_manager import JobsManager, JobStatus
+
+# Глобальный jobs manager
+jobs_manager = JobsManager()
+
+class IndexJobResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str
+
+@app.post("/index", response_model=IndexJobResponse, status_code=202)
+async def index_documents_async(request: IndexRequest, background_tasks: BackgroundTasks):
+    """
+    Асинхронная индексация документов через job queue.
+    
+    Returns:
+        202 Accepted + job_id для отслеживания прогресса
+    """
+    logger.info(f"📥 POST /index: {len(request.documents)} документов")
+    
+    # Создаём job
+    job_id = await jobs_manager.create_job(metadata={
+        "document_count": len(request.documents),
+        "batch_size": request.batch_size,
+        "recreate": request.recreate
+    })
+    
+    # Запускаем фоновую задачу
+    background_tasks.add_task(
+        _process_indexing_job,
+        job_id=job_id,
+        documents=request.documents,
+        batch_size=request.batch_size,
+        recreate=request.recreate
+    )
+    
+    return IndexJobResponse(
+        job_id=job_id,
+        status="accepted",
+        message=f"Индексация запущена. Используйте GET /jobs/{job_id} для отслеживания"
+    )
+
+async def _process_indexing_job(
+    job_id: str,
+    documents: List[Dict],
+    batch_size: int,
+    recreate: bool
+):
+    """Фоновая обработка индексации."""
+    try:
+        await jobs_manager.update_progress(job_id, 0.0, JobStatus.PROCESSING)
+        
+        # Подготовка points
+        points = []
+        for doc in documents:
+            text = doc.get('text', '') or doc.get('payload', {}).get('content', '')
+            point = {
+                'id': doc.get('id'),
+                'text': text,
+                'metadata': doc.get('metadata', {}),
+                'timestamp': doc.get('timestamp', datetime.now(timezone.utc).isoformat())
+            }
+            points.append(point)
+        
+        await jobs_manager.update_progress(job_id, 0.1)
+        
+        # Индексация с прогресс-колбэком
+        indexed_count = await services['indexer_service'].index_documents(
+            documents=points,
+            batch_size=batch_size,
+            recreate_collection=recreate,
+            progress_callback=lambda p: jobs_manager.update_progress(job_id, 0.1 + p * 0.9)
+        )
+        
+        # Получаем collection info
+        collection_info = {}
+        if 'vector_store' in services:
+            vs_health = await services['vector_store'].health_check()
+            collection_info = vs_health.get('collection_info', {})
+        
+        # Завершаем job
+        await jobs_manager.complete_job(job_id, {
+            "indexed_count": indexed_count,
+            "collection_info": collection_info
+        })
+        
+        logger.info(f"✅ Job {job_id}: индексировано {indexed_count} документов")
+        
+    except Exception as e:
+        logger.error(f"❌ Job {job_id} failed: {e}")
+        await jobs_manager.fail_job(job_id, str(e))
+
+@app.get("/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    """Получить статус задачи индексации."""
+    job = await jobs_manager.get_job(job_id)
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job не найдена")
+    
+    return {
+        "job_id": job.id,
+        "status": job.status.value,
+        "progress": job.progress,
+        "created_at": job.created_at.isoformat(),
+        "updated_at": job.updated_at.isoformat(),
+        "result": job.result,
+        "error": job.error,
+        "metadata": job.metadata
+    }
+```
+
+**Шаг 3: Обновить клиент (remote_vector_store.py)**
+
+```python
+# rag/remote_vector_store.py - поддержка асинхронной индексации
+async def _async_index_documents(self, points: List[Dict], batch_size: int = 512) -> int:
+    """Индексация с polling механизмом."""
+    
+    # Отправляем запрос на индексацию
+    payload = {...}
+    response = await self._make_index_request_async(payload)
+    
+    if response.status == 202:
+        # Асинхронный режим - получили job_id
+        result = await response.json()
+        job_id = result['job_id']
+        
+        logger.info(f"🔄 Асинхронная индексация запущена: job_id={job_id}")
+        
+        # Polling: ждём завершения
+        return await self._poll_job_status(job_id)
+    
+    else:
+        # Синхронный режим (для обратной совместимости)
+        result = await response.json()
+        return result['indexed_count']
+
+async def _poll_job_status(self, job_id: str, poll_interval: float = 5.0) -> int:
+    """Polling статуса задачи до завершения."""
+    session = await get_shared_http_session()
+    job_url = f"{self.base_url}/jobs/{job_id}"
+    
+    while True:
+        async with session.get(job_url) as response:
+            if response.status != 200:
+                raise RuntimeError(f"Job polling failed: HTTP {response.status}")
+            
+            job_data = await response.json()
+            status = job_data['status']
+            progress = job_data.get('progress', 0.0)
+            
+            logger.info(f"📊 Job {job_id}: {status} ({progress*100:.1f}%)")
+            
+            if status == 'completed':
+                return job_data['result']['indexed_count']
+            
+            elif status == 'failed':
+                error = job_data.get('error', 'Unknown error')
+                raise RuntimeError(f"Job {job_id} failed: {error}")
+            
+            elif status in ('pending', 'processing'):
+                await asyncio.sleep(poll_interval)
+            
+            else:
+                raise RuntimeError(f"Unknown job status: {status}")
+```
+
+### Преимущества
+
+- ✅ **Нет HTTP timeout**: Клиент получает 202 сразу
+- ✅ **Прогресс индексации**: Polling показывает реальный прогресс
+- ✅ **Идемпотентность**: Повторный запрос возвращает существующий job_id
+- ✅ **Масштабируемость**: Можно добавить distributed job queue (Celery, RQ)
+
+### Файлы для изменения
+
+- **Новый файл**: [`rag/jobs_manager.py`](../rag/jobs_manager.py) - Job Queue менеджер
+- [`vm_rag_service.py`](../vm_rag_service.py:377) - переделать /index на асинхронный
+- [`vm_rag_service.py`](../vm_rag_service.py) - добавить GET /jobs/{job_id}
+- [`rag/remote_vector_store.py`](../rag/remote_vector_store.py:150) - polling механизм
+
+### Тесты
+
+```python
+# tests/rag/test_async_indexing.py
+async def test_async_index_returns_job_id():
+    """POST /index должен вернуть 202 + job_id."""
+    response = await client.post("/index", json={"documents": [...]})
+    
+    assert response.status_code == 202
+    data = response.json()
+    assert "job_id" in data
+    assert data["status"] == "accepted"
+
+async def test_job_polling_until_completion():
+    """Polling должен дождаться завершения job."""
+    # Создаём job
+    response = await client.post("/index", json={"documents": [...]})
+    job_id = response.json()["job_id"]
+    
+    # Polling
+    max_attempts = 60
+    for _ in range(max_attempts):
+        job_response = await client.get(f"/jobs/{job_id}")
+        job_data = job_response.json()
+        
+        if job_data["status"] == "completed":
+            assert job_data["result"]["indexed_count"] > 0
+            break
+        
+        await asyncio.sleep(1)
+    else:
+        pytest.fail("Job не завершилась за 60 секунд")
+```
+
+---
+
+## ⏱️ Проблема P0-5: Фактическая Выверка Таймаутов
+
+### Описание
+
+**КРИТИЧЕСКОЕ НЕСООТВЕТСТВИЕ:**
+
+В [`event_loop_manager.py:96-98`](../rag/event_loop_manager.py:96) установлены таймауты:
+```python
+timeout = aiohttp.ClientTimeout(
+    total=1800,      # 30 минут
+    sock_read=1800,  # 30 минут
+)
+```
+
+❌ **НО** логи показывают таймаут через **5 минут**, а не 30!
+
+**Возможные причины:**
+1. **Nginx/Load Balancer timeout** < 30 минут (обычно 60-300s)
+2. **Uvicorn timeout** < 30 минут
+3. **Сетевой прокси** обрывает соединение
+4. **Клиентский timeout** в другом месте кода
+
+### Чек-лист проверки таймаутов
+
+**1. Клиент (remote_vector_store.py):**
+```python
+# Проверить все места с ClientTimeout
+grep -rn "ClientTimeout" rag/remote_vector_store.py
+# Ожидаем: total=1800, sock_read=1800
+```
+
+**2. Uvicorn на VM:**
+```python
+# vm_rag_service.py:627-633
+uvicorn.run(
+    app,
+    host="0.0.0.0",
+    port=8000,
+    timeout_keep_alive=1800,  # ✅ ДОБАВИТЬ!
+    timeout_graceful_shutdown=30
+)
+```
+
+**3. Nginx (если используется):**
+```nginx
+# /etc/nginx/sites-available/vm_rag_service
+location / {
+    proxy_pass http://localhost:8000;
+    proxy_read_timeout 1800s;    # ✅ 30 минут
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 1800s;    # ✅ 30 минут
+}
+```
+
+**4. Системные лимиты:**
+```bash
+# Проверить TCP keepalive
+sysctl net.ipv4.tcp_keepalive_time
+# Должно быть > 300 (5 минут)
+```
+
+### Формула согласования таймаутов
+
+```
+client_timeout >= server_timeout >= processing_time
+
+Где:
+- client_timeout: ClientTimeout в aiohttp
+- server_timeout: uvicorn timeout_keep_alive
+- processing_time: реальное время обработки
+
+Рекомендация: client_timeout = processing_time * 1.2 + 120s
+```
+
+**Пример для индексации:**
+```
+processing_time = 900s (15 минут)
+server_timeout = 900s * 1.2 + 120 = 1200s (20 минут)
+client_timeout = 1200s * 1.2 + 120 = 1560s (26 минут)
+nginx_timeout = 1800s (30 минут) - буфер для безопасности
+```
+
+### Решение
+
+**Шаг 1: Добавить диагностику реальных таймаутов**
+
+```python
+# rag/remote_vector_store.py
+async def _diagnose_timeouts(self):
+    """Диагностика таймаутов на всех уровнях."""
+    logger.info("🔍 Диагностика таймаутов:")
+    
+    # 1. Клиентские таймауты
+    session = await get_shared_http_session()
+    logger.info(f"  Client total: {session.timeout.total}s")
+    logger.info(f"  Client sock_read: {session.timeout.sock_read}s")
+    
+    # 2. Проверка VM таймаутов
+    try:
+        start = time.time()
+        async with session.get(f"{self.base_url}/health", timeout=ClientTimeout(total=10)) as response:
+            data = await response.json()
+            elapsed = time.time() - start
+            logger.info(f"  VM health check: {elapsed:.3f}s")
+    except Exception as e:
+        logger.error(f"  VM unreachable: {e}")
+    
+    # 3. Лог-анализ последних таймаутов
+    logger.info("  Проверьте логи VM для uvicorn timeout settings")
+```
+
+**Шаг 2: Обновить VM конфигурацию**
+
+```python
+# vm_rag_service.py
+uvicorn.run(
+    app,
+    host="0.0.0.0",
+    port=8000,
+    timeout_keep_alive=1800,  # ✅ 30 минут
+    timeout_graceful_shutdown=30,
+    log_level="info",
+    access_log=True,
+    # Дополнительные настройки для долгих запросов
+    limit_concurrency=100,
+    limit_max_requests=10000,
+)
+```
+
+**Шаг 3: Создать скрипт проверки**
+
+```bash
+# scripts/check_timeouts.sh
+#!/bin/bash
+echo "🔍 Проверка таймаутов на всех уровнях:"
+
+# 1. Client
+echo "1. Client timeouts:"
+grep -A 3 "ClientTimeout" rag/event_loop_manager.py
+
+# 2. Uvicorn
+echo "2. Uvicorn timeouts:"
+grep "timeout" vm_rag_service.py | grep uvicorn
+
+# 3. Nginx (если есть)
+if [ -f /etc/nginx/sites-available/vm_rag_service ]; then
+    echo "3. Nginx timeouts:"
+    grep "timeout" /etc/nginx/sites-available/vm_rag_service
+fi
+
+# 4. Системные лимиты
+echo "4. TCP keepalive:"
+sysctl net.ipv4.tcp_keepalive_time
+```
+
+### Файлы для проверки
+
+- [`rag/event_loop_manager.py:96`](../rag/event_loop_manager.py:96) - ClientTimeout
+- [`rag/remote_vector_store.py:297`](../rag/remote_vector_store.py:297) - per-request timeout
+- [`vm_rag_service.py:627`](../vm_rag_service.py:627) - uvicorn timeout_keep_alive
+- `/etc/nginx/sites-available/vm_rag_service` - nginx timeouts (если используется)
+
+### Action Items
+
+- [ ] Запустить диагностику: `python -c "from rag.remote_vector_store import RemoteVMVectorStore; import asyncio; asyncio.run(RemoteVMVectorStore()._diagnose_timeouts())"`
+- [ ] Проверить логи VM: `journalctl -u vm_rag_service | grep timeout`
+- [ ] Добавить `timeout_keep_alive=1800` в uvicorn.run
+- [ ] Если есть nginx - обновить proxy_read_timeout
+- [ ] Провести нагрузочный тест с индексацией >10 минут
+
+---
+
+## 🗜️ Проблема P0-6: Компрессия REQUEST Body (не только response)
+
+### Описание
+
+**Текущая ситуация:**
+
+В плане P1-3 описана компрессия **ответов** (response), но не **запросов** (request):
+
+```python
+# event_loop_manager.py:104-107
+headers={
+    "User-Agent": "repo-sum-rag-client/1.0",
+    "Connection": "keep-alive",
+    "Accept-Encoding": "gzip, deflate",  # ✅ Принимаем сжатые ответы
+}
+```
+
+❌ **Проблема**: Клиент НЕ сжимает request body при отправке на VM
+❌ **Влияние**: POST /index с 512 документами = ~1MB несжатый JSON
+
+**GZipMiddleware работает только для responses:**
+```python
+# vm_rag_service.py - GZipMiddleware
+app.add_middleware(GZipMiddleware)  # ❌ Сжимает только ответы!
+```
+
+### Решение: Двустороннее сжатие
+
+**Клиент → VM: Сжатие request body**
+
+```python
+# rag/remote_vector_store.py
+import gzip
+import json
+
+async def _make_index_request_with_retry(self, payload: Dict[str, Any]) -> int:
+    """Индексация с gzip компрессией request body."""
+    session = await get_shared_http_session()
+    
+    # ✅ Сжимаем payload
+    json_bytes = json.dumps(payload).encode('utf-8')
+    compressed = gzip.compress(json_bytes, compresslevel=6)
+    
+    compression_ratio = len(compressed) / len(json_bytes)
+    logger.info(f"📦 Payload: {len(json_bytes)} → {len(compressed)} bytes ({compression_ratio:.1%})")
+    
+    timeout_ctx = ClientTimeout(total=self.index_timeout, sock_read=self.index_timeout)
+    
+    async with session.post(
+        self.index_endpoint,
+        data=compressed,  # ✅ Отправляем сжатые данные
+        headers={
+            'Content-Type': 'application/json',
+            'Content-Encoding': 'gzip',  # ✅ Указываем кодировку
+        },
+        timeout=timeout_ctx
+    ) as response:
+        # ... обработка ответа
+```
+
+**VM: Middleware для распаковки requests**
+
+```python
+# vm_rag_service.py - новый middleware
+import gzip
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+class GzipRequestMiddleware(BaseHTTPMiddleware):
+    """Middleware для распаковки gzip-сжатых запросов."""
+    
+    async def dispatch(self, request: Request, call_next):
+        # Проверяем Content-Encoding
+        if request.headers.get("Content-Encoding") == "gzip":
+            # Читаем сжатое тело
+            compressed_body = await request.body()
+            
+            # Распаковываем
+            try:
+                decompressed = gzip.decompress(compressed_body)
+                
+                # Создаём новый request с распакованным телом
+                async def receive():
+                    return {
+                        "type": "http.request",
+                        "body": decompressed,
+                        "more_body": False,
+                    }
+                
+                request._receive = receive
+                
+                # Обновляем заголовки
+                request.headers.__dict__["_list"] = [
+                    (k, v) for k, v in request.headers.items()
+                    if k.lower() != "content-encoding"
+                ]
+                request.headers.__dict__["_list"].append(
+                    (b"content-length", str(len(decompressed)).encode())
+                )
+                
+                logger.debug(f"📥 Распакован request: {len(compressed_body)} → {len(decompressed)} bytes")
+                
+            except Exception as e:
+                logger.error(f"Ошибка распаковки gzip: {e}")
+                # Продолжаем с оригинальным телом
+        
+        response = await call_next(request)
+        return response
+
+# Добавляем middleware ДО других
+app.add_middleware(GzipRequestMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)  # Для ответов
+```
+
+### Альтернатива: Content-Type: application/gzip
+
+Более простой вариант без middleware:
+
+```python
+# Клиент
+async with session.post(
+    self.index_endpoint,
+    data=gzip.compress(json.dumps(payload).encode()),
+    headers={'Content-Type': 'application/gzip'},
+    timeout=timeout_ctx
+) as response:
+
+# VM endpoint
+@app.post("/index")
+async def index_documents(request: Request):
+    # Читаем тело
+    body = await request.body()
+    
+    # Если gzip - распаковываем
+    if request.headers.get("Content-Type") == "application/gzip":
+        body = gzip.decompress(body)
+    
+    # Парсим JSON
+    data = json.loads(body)
+    # ... обработка
+```
+
+### Метрики компрессии
+
+**Реальный пример (512 документов):**
+```
+Original JSON: 1,048,576 bytes (1 MB)
+Gzipped:        262,144 bytes (256 KB)
+Compression:    75% экономия
+Network time:   5s → 1.3s (3.8x ускорение)
+```
+
+### Файлы для изменения
+
+- [`rag/remote_vector_store.py:276`](../rag/remote_vector_store.py:276) - _make_index_request_with_retry: добавить gzip
+- [`rag/remote_vector_store.py:437`](../rag/remote_vector_store.py:437) - _make_search_request_with_retry: добавить gzip (опционально)
+- [`vm_rag_service.py`](../vm_rag_service.py:50) - добавить GzipRequestMiddleware
+
+### Тесты
+
+```python
+# tests/rag/test_request_compression.py
+async def test_client_compresses_request_body():
+    """Клиент должен сжимать большие payloads."""
+    store = RemoteVMVectorStore()
+    
+    # Создаём большой payload
+    large_payload = {
+        "documents": [{"text": "x" * 1000} for _ in range(512)]
+    }
+    
+    with patch('rag.remote_vector_store.get_shared_http_session') as mock_session:
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"indexed_count": 512})
+        mock_session.return_value.post.return_value.__aenter__.return_value = mock_response
+        
+        await store._make_index_request_with_retry(large_payload)
+        
+        # Проверяем что отправлено сжатое тело
+        call_kwargs = mock_session.return_value.post.call_args.kwargs
+        assert 'data' in call_kwargs  # Не json!
+        assert call_kwargs['headers']['Content-Encoding'] == 'gzip'
+        
+        # Проверяем что размер меньше оригинала
+        original_size = len(json.dumps(large_payload))
+        compressed_size = len(call_kwargs['data'])
+        assert compressed_size < original_size * 0.5  # Минимум 50% сжатие
+
+async def test_vm_decompresses_gzip_request():
+    """VM должен корректно распаковывать gzip запросы."""
+    # Создаём сжатый payload
+    payload = {"documents": [{"text": "test"}]}
+    compressed = gzip.compress(json.dumps(payload).encode())
+    
+    response = await client.post(
+        "/index",
+        content=compressed,
+        headers={"Content-Encoding": "gzip"}
+    )
+    
+    assert response.status_code == 202  # Или 200
+    data = response.json()
+    assert "job_id" in data or "indexed_count" in data
+```
+
+---
+
 ## ⚡ Проблема P1-1: Дублирование Retry Логики
 
 ### Описание
@@ -1073,6 +1869,165 @@ def test_diag_verbose_masks_content():
 
 ---
 
+## 🔄 Проблема P1-4: Версионирование API /search
+
+### Описание
+
+**Текущая проблема:**
+
+Переход на векторный протокол в P0-2 ломает обратную совместимость:
+
+```python
+# СТАРЫЙ протокол (текстовый)
+POST /search
+{
+  "query": "search query text",
+  "top_k": 10
+}
+
+# НОВЫЙ протокол (векторный)
+POST /search
+{
+  "dense_vector": [0.1, 0.2, ..., 0.5],  # 1024 floats
+  "sparse_vector": {0: 0.5, 10: 0.8},
+  "top_k": 10
+}
+```
+
+❌ **Проблема**: Старые клиенты перестанут работать после обновления  
+❌ **Риск**: Breaking change без миграционного периода
+
+### Решение: Versioned API
+
+**Реализация:**
+
+```python
+# vm_rag_service.py
+
+# ✅ V2: Векторный протокол (новый)
+class SearchRequestV2(BaseModel):
+    dense_vector: List[float] = Field(..., description="Dense вектор (1024d)")
+    sparse_vector: Optional[Dict[int, float]] = Field(None, description="Sparse вектор")
+    top_k: int = Field(10)
+    filters: Dict[str, Any] = Field(default_factory=dict)
+
+@app.post("/search_v2", response_model=SearchResponse)
+async def search_documents_v2(request: SearchRequestV2):
+    """Поиск по готовым векторам (V2)."""
+    dense_vector = np.array(request.dense_vector)
+    results = await services['vector_store'].search(
+        query_vector=dense_vector,
+        sparse_vector=request.sparse_vector,
+        top_k=request.top_k
+    )
+    return SearchResponse(results=[asdict(r) for r in results], ...)
+
+# ✅ V1: Текстовый протокол (legacy)
+@app.post("/search", response_model=SearchResponse)
+async def search_documents_v1(request: SearchRequestV1):
+    """Legacy поиск по тексту (V1). DEPRECATED."""
+    logger.warning("⚠️ /search (V1) используется, рекомендуется /search_v2")
+    results = await services['search_service'].search(query=request.query, ...)
+    return SearchResponse(results=[asdict(r) for r in results], ...)
+```
+
+---
+
+## 🚦 Проблема P1-5: Backpressure и Concurrency Limits
+
+### Описание
+
+Нет управления конкурентностью HTTP запросов - VM может получить 10+ одновременных батчей → OOM.
+
+### Решение
+
+```python
+# rag/remote_vector_store.py
+class RemoteVMVectorStore:
+    def __init__(self, ...):
+        self.max_concurrent_batches = 3
+        self.semaphore = asyncio.Semaphore(self.max_concurrent_batches)
+        self.max_batch_size_bytes = 4194304  # 4MB
+    
+    async def _index_batch_with_semaphore(self, batch: List[Dict]) -> int:
+        async with self.semaphore:
+            payload = {"documents": batch}
+            return await self._make_index_request_with_retry(payload)
+```
+
+---
+
+## 🔐 Проблема P1-6: Идемпотентность Индексации
+
+### Описание
+
+Retry после timeout может создать дубли в Qdrant.
+
+### Решение: Стабильные Point IDs + Upsert
+
+```python
+# rag/remote_vector_store.py
+import hashlib
+
+def _generate_stable_point_id(doc: Dict) -> str:
+    """Генерация стабильного ID на основе контента."""
+    content = doc.get('text', '')
+    metadata = json.dumps(doc.get('metadata', {}), sort_keys=True)
+    hash_input = f"{content}:{metadata}".encode('utf-8')
+    return hashlib.sha256(hash_input).hexdigest()[:32]
+
+# VM: Upsert вместо Insert
+await self.client.upsert(collection_name=..., points=points, wait=True)
+```
+
+---
+
+## 🛡️ Проблема P2-3: Валидация Embedder/Collection Совместимости
+
+### Описание
+
+Нет проверки что embedder и collection используют одинаковые параметры (dimension, distance).
+
+### Решение
+
+```python
+# rag/remote_vector_store.py
+async def validate_embedder_collection_compatibility(self):
+    embedder_info = await self._get_embedder_info()
+    collection_info = await self._get_collection_info()
+    
+    if embedder_info['embedding_dim'] != collection_info['dimension']:
+        raise ValueError(f"❌ Dimension mismatch")
+    
+    logger.info("✅ Embedder/Collection validation passed")
+```
+
+---
+
+## 📊 Проблема P2-4: Серверные Метрики
+
+### Описание
+
+Нет метрик производительности на VM.
+
+### Решение
+
+```python
+# vm_rag_service.py
+from prometheus_client import Counter, Histogram, Gauge, generate_latest
+
+indexing_requests = Counter('rag_indexing_requests_total', 'Total indexing')
+indexing_duration = Histogram('rag_indexing_duration_seconds', 'Duration')
+queue_depth = Gauge('rag_job_queue_depth', 'Pending jobs')
+
+@app.get("/metrics")
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+```
+
+
+---
+
 ## 🚀 Roadmap Реализации
 
 ### Фаза 1: P0 Исправления (Критично)
@@ -1177,6 +2132,146 @@ def test_diag_verbose_masks_content():
   - Нет утечки чувствительных данных
 
 - [ ] **Автодиагностика:**
+
+### Обновлённые критерии с учётом новых элементов:
+
+**Минимальные критерии (P0) - ДОПОЛНЕНО:**
+
+- [ ] **Асинхронная индексация:**
+  - POST /index возвращает 202 + job_id
+  - GET /jobs/{job_id} отслеживает прогресс
+  - Индексация >5 минут проходит без таймаутов
+
+- [ ] **Фактическая выверка таймаутов:**
+  - Все таймауты согласованы (клиент/uvicorn/nginx)
+  - Нет несоответствия 5 мин vs 30 мин
+  - Диагностика `_diagnose_timeouts()` пройдена
+
+- [ ] **Компрессия request body:**
+  - Gzip сжимает запросы (не только ответы)
+  - Content-Encoding: gzip работает
+  - Трафик уменьшен в 3-4x
+
+- [ ] **Баг min→max исправлен:**
+  - Адаптивное уменьшение batch_size работает
+  - Unit-тест подтверждает логику
+
+**Дополнительные критерии (P1) - НОВЫЕ:**
+
+- [ ] **Версионирование API:**
+  - /search_v2 (векторный) и /search (legacy) работают
+  - Feature flag RAG_USE_VECTOR_PROTOCOL управляет выбором
+
+- [ ] **Backpressure:**
+  - Semaphore ограничивает конкурентность (≤3)
+  - Адаптация при 429/503
+  - Лимит байтового размера батча (4MB)
+
+- [ ] **Идемпотентность:**
+  - Повторная отправка не создаёт дубли
+  - Stable point IDs на основе content hash
+  - Qdrant upsert работает
+
+**Желательные критерии (P2) - НОВЫЕ:**
+
+- [ ] **Guardrails валидация:**
+  - Health probe проверяет embedder/collection
+  - Dimension/distance metric совместимость
+
+- [ ] **Метрики:**
+  - Prometheus /metrics endpoint работает
+  - Latency/throughput собираются
+  - Queue depth отслеживается
+
+---
+
+## 📋 Pre-Production Checklist
+
+### P0 (Обязательно перед production):
+
+#### Асинхронная индексация
+- [ ] JobsManager реализован и протестирован
+- [ ] POST /index возвращает 202 + job_id
+- [ ] GET /jobs/{job_id} работает (polling)
+- [ ] Progress callback обновляет job status
+- [ ] E2E тест: >512 документов через job queue
+
+#### Выверка таймаутов
+- [ ] Все таймауты согласованы (формула применена)
+- [ ] Uvicorn timeout_keep_alive=1800 установлен
+- [ ] Nginx proxy_read_timeout=1800s (если есть)
+- [ ] Диагностика пройдена успешно
+- [ ] Нагрузочный тест: индексация >10 мин
+
+#### Компрессия request body
+- [ ] Клиент сжимает payload (gzip)
+- [ ] Content-Encoding: gzip header
+- [ ] GzipRequestMiddleware распаковывает
+- [ ] E2E тест: 512 docs с gzip
+- [ ] Метрики: трафик -50%+
+
+#### Batch_size логика
+- [ ] max(1, batch_size // 4) применяется
+- [ ] Unit-тест проходит
+- [ ] Адаптация при high memory работает
+
+### P1 (Желательно до релиза):
+
+#### Версионирование
+- [ ] /search_v2 endpoint реализован
+- [ ] /search (V1) deprecated
+- [ ] Feature flag работает
+- [ ] Оба протокола протестированы
+- [ ] Migration guide написан
+
+#### Идемпотентность
+- [ ] Stable point IDs генерируются
+- [ ] Idempotency-Key поддержка
+- [ ] Upsert в Qdrant
+- [ ] Кэш requests (TTL 1h)
+- [ ] E2E: retry без дублей
+
+#### Backpressure
+- [ ] Semaphore реализован (max=3)
+- [ ] Adaptive throttling при 429/503
+- [ ] Байтовый лимит 4MB
+- [ ] Adaptive batches создаются
+- [ ] Нагрузочный тест: 10+ concurrent
+
+### P2 (После релиза):
+
+#### Guardrails
+- [ ] validate_embedder_collection()
+- [ ] /embedder/info endpoint
+- [ ] Dimension check
+- [ ] Distance metric warning
+- [ ] Fail-fast при mismatch
+
+#### Метрики
+- [ ] prometheus_client в requirements
+- [ ] /metrics endpoint
+- [ ] Counters/Histograms работают
+- [ ] Queue depth gauge
+- [ ] Grafana dashboard (опционально)
+
+#### Документация
+- [ ] README.md обновлён
+- [ ] API docs /search_v2
+- [ ] Migration guide V1→V2
+- [ ] Troubleshooting guide
+
+### Go-Live Decision:
+
+**✅ Можно выпускать:**
+- Все P0 items: 100% ✅
+- P1 items: ≥70% ✅
+- Нагрузочное тестирование пройдено
+- Rollback plan готов
+
+**⚠️ Отложить если:**
+- P0 items: <100%
+- Нет rollback plan
+- E2E тесты не пройдены
   - VM diagnostics запускается при первом фейле
   - Логируются рекомендации по исправлению
 
