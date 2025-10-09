@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Перезапуск RAG сервиса на VM"""
+"""Перезапуск RAG сервиса на VM (без устаревших флагов FORCE_LOCAL_VECTOR_STORE/EMBEDDING_PROVIDER=local)"""
 import paramiko
 import os
 import time
@@ -42,13 +42,14 @@ try:
     
     print("✅ Сервис остановлен")
     
-    print("\n🚀 Запускаю RAG сервис с новыми переменными...")
-    # Запуск с экспортом переменных
+    print("\n🚀 Запускаю RAG сервис (без скрытых флагов, только .env/фабрика)...")
+    # Запуск без устаревших флагов, с загрузкой переменных из .env
+    # Фабрика [RAGFactory.create_vector_store()](rag/factory.py:146) сама выбирает локальную/удалённую реализацию.
     stdin, stdout, stderr = ssh.exec_command(
         'cd ~/repo_sum_rag/repo_sum && '
         'source venv/bin/activate && '
-        'export FORCE_LOCAL_VECTOR_STORE=true && '
-        'export EMBEDDING_PROVIDER=local && '
+        'unset FORCE_LOCAL_VECTOR_STORE || true && '
+        'set -a; [ -f .env ] && . ./.env; set +a; '
         'nohup python vm_rag_service.py > rag_service.log 2>&1 & '
         'echo $! > rag_service.pid && '
         'echo "STARTED"'
