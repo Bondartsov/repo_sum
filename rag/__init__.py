@@ -33,16 +33,9 @@ def create_indexer_service(config, silent_mode=False):
     """Создаёт indexer_service с автоматическим выбором компонентов"""
     return RAGFactory.create_indexer_service(config, silent_mode)
 
-# Прямые импорты для обратной совместимости и явного использования
-from .embedder import CPUEmbedder as LocalCPUEmbedder
-from .remote_embedder import RemoteVMEmbedder
-from .vector_store import QdrantVectorStore as LocalQdrantVectorStore
-from .remote_vector_store import RemoteVMVectorStore
-
-# Алиасы для обратной совместимости (устаревшие, используйте Factory)
-# DEPRECATED: Используйте RAGFactory.create_*() или явные Local/Remote импорты
-CPUEmbedder = RemoteVMEmbedder  # По умолчанию Remote для клиентов
-QdrantVectorStore = RemoteVMVectorStore  # По умолчанию Remote для клиентов
+# Экспорт реализуется через фабрику (RAGFactory) и convenience-функции.
+# Прямые классы и устаревшие алиасы не экспортируются здесь, чтобы исключить обход фабрики
+# и предотвратить рекурсию на VM.
 from .exceptions import (
     RagException,
     EmbeddingException,
@@ -53,26 +46,8 @@ from .exceptions import (
     OutOfMemoryException
 )
 
-# Dynamic provider selection via environment variables
-import os as _os
-_emb_provider = (_os.getenv('EMBEDDING_PROVIDER') or '').lower().strip()
-_vs_provider = (_os.getenv('VECTOR_STORE_PROVIDER') or '').lower().strip()
-
-try:
-    if _emb_provider != 'remote-vm':
-        from .embedder import CPUEmbedder as _LocalCPU  # type: ignore
-        CPUEmbedder = _LocalCPU  # type: ignore
-except Exception:
-    # keep remote embedder as default
-    pass
-
-try:
-    if _vs_provider != 'remote-vm':
-        from .vector_store import QdrantVectorStore as _LocalVS  # type: ignore
-        QdrantVectorStore = _LocalVS  # type: ignore
-except Exception:
-    # keep remote vector store as default
-    pass
+# Динамический выбор провайдера по переменным окружения отключён.
+# Используйте RAGFactory для создания корректных реализаций в текущем контексте.
 
 # Базовые классы
 VectorStore = None  # Базовый класс пока не реализован
@@ -98,35 +73,25 @@ except ImportError:
     IndexerService = None
 
 __all__ = [
-    # Factory Pattern (рекомендуется для нового кода)
+    # Factory API (рекомендуется для нового кода)
     'RAGFactory',
     'ExecutionContext',
     'detect_execution_context',
     'get_context_info',
-    
-    # Convenience функции
+
+    # Convenience функции (вызовы фабрики)
     'create_embedder',
     'create_vector_store',
     'create_search_service',
     'create_indexer_service',
-    
-    # Прямые импорты (для явного использования)
-    'LocalCPUEmbedder',
-    'RemoteVMEmbedder',
-    'LocalQdrantVectorStore',
-    'RemoteVMVectorStore',
-    
-    # Устаревшие алиасы (обратная совместимость)
-    'CPUEmbedder',  # DEPRECATED: Используйте RAGFactory или LocalCPUEmbedder
-    'QdrantVectorStore',  # DEPRECATED: Используйте RAGFactory или LocalQdrantVectorStore
-    
-    # Сервисы
+
+    # Сервисы (интерфейсы/доступные сущности пакета)
     'VectorStore',
     'QueryEngine',
     'CPUQueryEngine',
     'SearchService',
     'IndexerService',
-    
+
     # Исключения
     'RagException',
     'EmbeddingException',

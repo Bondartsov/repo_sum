@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 @pytest.fixture
 def query_engine(mock_cpu_embedder_offline):
     """Фикстура для создания CPUQueryEngine"""
-    from rag import QdrantVectorStore
+    from rag.vector_store import QdrantVectorStore as DirectQdrantVectorStore
     from rag.query_engine import CPUQueryEngine
     from config import get_config
     
@@ -35,11 +35,7 @@ def query_engine(mock_cpu_embedder_offline):
     embedder = mock_cpu_embedder_offline
     
     # Создаём заглушку для QdrantVectorStore
-    if QdrantVectorStore is None:
-        from rag.vector_store import QdrantVectorStore as DirectQdrantVectorStore
-        vector_store = DirectQdrantVectorStore.__new__(DirectQdrantVectorStore)
-    else:
-        vector_store = QdrantVectorStore.__new__(QdrantVectorStore)
+    vector_store = DirectQdrantVectorStore.__new__(DirectQdrantVectorStore)
         
     vector_store.host = config.rag.vector_store.host
     vector_store.port = config.rag.vector_store.port
@@ -60,7 +56,7 @@ def query_engine(mock_cpu_embedder_offline):
 def test_imports():
     """Тестирует импорты RAG компонентов"""
     # Тестируем импорт из пакета rag
-    from rag import CPUEmbedder, QdrantVectorStore, SearchService
+    from rag import SearchService, create_embedder, create_vector_store
     
     # Импортируем CPUQueryEngine напрямую из модуля
     from rag.query_engine import CPUQueryEngine
@@ -72,7 +68,8 @@ def test_imports():
     from rag.exceptions import QueryEngineException, VectorStoreException
     
     # Проверяем, что все импорты прошли успешно
-    assert CPUEmbedder is not None
+    assert create_embedder is not None
+    assert create_vector_store is not None
     assert SearchService is not None
     assert CPUQueryEngine is not None
     assert get_config is not None
@@ -80,7 +77,7 @@ def test_imports():
 
 def test_basic_initialization(mock_cpu_embedder_offline):
     """Тестирует базовую инициализацию CPUQueryEngine"""
-    from rag import QdrantVectorStore
+    from rag.vector_store import QdrantVectorStore as DirectQdrantVectorStore
     
     # Импортируем CPUQueryEngine напрямую из модуля
     from rag.query_engine import CPUQueryEngine
@@ -94,11 +91,7 @@ def test_basic_initialization(mock_cpu_embedder_offline):
     embedder = mock_cpu_embedder_offline
     
     # Создаём заглушку для QdrantVectorStore
-    if QdrantVectorStore is None:
-        from rag.vector_store import QdrantVectorStore as DirectQdrantVectorStore
-        vector_store = DirectQdrantVectorStore.__new__(DirectQdrantVectorStore)
-    else:
-        vector_store = QdrantVectorStore.__new__(QdrantVectorStore)
+    vector_store = DirectQdrantVectorStore.__new__(DirectQdrantVectorStore)
         
     vector_store.host = config.rag.vector_store.host
     vector_store.port = config.rag.vector_store.port

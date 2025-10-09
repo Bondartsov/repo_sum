@@ -60,7 +60,6 @@ def force_offline_env(monkeypatch):
     monkeypatch.setenv("PYTHONUTF8", "1")
     monkeypatch.setenv("OFFLINE_MODE", "1")
     monkeypatch.setenv("DISABLE_REAL_EMBEDDINGS", "1")  # ИСПРАВЛЕНИЕ #3: Заменён USE_MOCK_EMBEDDER
-    monkeypatch.setenv("USE_MOCK_VECTOR_STORE", "1")
     monkeypatch.setenv("EMBEDDING_PROVIDER", os.getenv("EMBEDDING_PROVIDER", "mock"))
     monkeypatch.setenv("VECTOR_STORE_PROVIDER", os.getenv("VECTOR_STORE_PROVIDER", "mock"))
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")

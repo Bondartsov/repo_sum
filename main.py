@@ -366,7 +366,7 @@ def cli(ctx, config, verbose, quiet, offline):
         if offline:
             os.environ.setdefault("OFFLINE_MODE", "1")
             os.environ.setdefault("USE_MOCK_EMBEDDER", "1")
-            os.environ.setdefault("USE_MOCK_VECTOR_STORE", "1")
+            # DEPRECATED: USE_MOCK_VECTOR_STORE убран. Выбор реализации VectorStore выполняется фабрикой RAGFactory.
             os.environ.setdefault("HF_HUB_OFFLINE", "1")
             os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
             os.environ.setdefault("PYTHONIOENCODING", os.environ.get("PYTHONIOENCODING", "utf-8"))

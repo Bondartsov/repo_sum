@@ -55,7 +55,6 @@ class TestRAGFactory:
     
     @pytest.mark.parametrize("mock_env", [
         pytest.param({}, id="no_env"),
-        pytest.param({'USE_MOCK_VECTOR_STORE': '1'}, id="mock_mode"),
     ])
     def test_create_vector_store_vm_context(self, mock_env):
         """Тест: Создание локального QdrantVectorStore в VM контексте"""

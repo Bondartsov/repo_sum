@@ -21,7 +21,6 @@ def test_e2e_cli_analyze_generates_docs_without_openai(monkeypatch, tmp_path):
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("OFFLINE_MODE", "1")
     env.setdefault("USE_MOCK_EMBEDDER", "1")
-    env.setdefault("USE_MOCK_VECTOR_STORE", "1")
     env.setdefault("EMBEDDING_PROVIDER", "mock")
     env.setdefault("VECTOR_STORE_PROVIDER", "mock")
     env.setdefault("HF_HUB_OFFLINE", "1")

@@ -74,26 +74,11 @@ class IndexerService:
         # ✅ ИСПРАВЛЕНИЕ РЕКУРСИИ: Используем RAGFactory для автоматического выбора
         # На VM: CPUEmbedder (локальный), на клиенте: RemoteVMEmbedder
         self.embedder = RAGFactory.create_embedder(config)
-        import os as _os
-        env_true = {'1', 'true', 'yes', 'on'}
-        use_mock_vs = str(_os.getenv('USE_MOCK_VECTOR_STORE', '')).lower() in env_true or str(_os.getenv('OFFLINE_MODE', '')).lower() in env_true
 
-        if use_mock_vs:
-            try:
-                from .memory_vector_store import InMemoryVectorStore
-                self.vector_store = InMemoryVectorStore(config.rag.vector_store, config.rag.remote_service)
-            except Exception as error:
-                logger.warning(f'Не удалось инициализировать InMemoryVectorStore: {error}')
-                self.vector_store = None
-        else:
-            self.vector_store = None
-
-        if self.vector_store is None:
-            # ✅ ИСПРАВЛЕНИЕ РЕКУРСИИ: Используем RAGFactory для автоматического выбора
-            # На VM: QdrantVectorStore (локальный), на клиенте: RemoteVMVectorStore
-            # Factory автоматически определяет контекст и выбирает правильную реализацию
-            self.vector_store = RAGFactory.create_vector_store(config)
-            logger.info(f"✅ Vector store создан через RAGFactory: {type(self.vector_store).__name__}")
+        # Убраны скрытые флаги USE_MOCK_VECTOR_STORE/OFFLINE_MODE из production-кода.
+        # Всегда используем фабрику для корректного выбора реализации в текущем контексте.
+        self.vector_store = RAGFactory.create_vector_store(config)
+        logger.info(f"✅ Vector store создан через RAGFactory: {type(self.vector_store).__name__}")
         
         # Статистика индексации
         self.stats = {

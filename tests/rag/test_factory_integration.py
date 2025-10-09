@@ -28,7 +28,6 @@ class TestFactoryIntegrationVMContext:
     
     @pytest.mark.parametrize("mock_env", [
         pytest.param({}, id="no_mock"),
-        pytest.param({'USE_MOCK_VECTOR_STORE': '0'}, id="mock_disabled"),
     ])
     def test_indexer_service_uses_local_components_on_vm(self, mock_env):
         """

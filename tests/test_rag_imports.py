@@ -41,7 +41,7 @@ def test_embedder_initialization():
     """Тестирование инициализации эмбеддера"""
     logger.info("=== Тестирование инициализации CPUEmbedder ===")
     
-    from rag import CPUEmbedder
+    from rag.embedder import CPUEmbedder
     from config import EmbeddingConfig, ParallelismConfig
     
     # Создаем конфигурации

@@ -6,7 +6,6 @@
 """
 
 import logging
-import os
 import time
 import asyncio
 import threading
@@ -70,36 +69,18 @@ class SearchService:
         self.console = Console(emoji=False) if not silent_mode else None
         self.silent_mode = silent_mode
         
-        # Инициализация компонентов
-        # ✅ ИСПРАВЛЕНИЕ РЕКУРСИИ: Используем RAGFactory для автоматического выбора
-        import os as _os
-        env_true = {'1', 'true', 'yes', 'on'}
-        use_mock_vs = str(_os.getenv('USE_MOCK_VECTOR_STORE', '')).lower() in env_true or str(_os.getenv('OFFLINE_MODE', '')).lower() in env_true
+        # Инициализация компонентов через фабрику (без скрытых ENV-флагов)
+        # На VM: локальные реализации; на клиенте: Remote* через Factory
+        from config import Config as FullConfig
+        full_config = config if isinstance(config, FullConfig) else FullConfig()
+        full_config.rag = self.config
 
-        if use_mock_vs:
-            try:
-                from .memory_vector_store import InMemoryVectorStore
-                self.vector_store = InMemoryVectorStore(self.config.vector_store, self.config.remote_service)
-                self.embedder = None  # Для mock режима embedder может быть не нужен
-            except Exception as error:
-                logger.warning(f'Не удалось инициализировать InMemoryVectorStore: {error}')
-                self.vector_store = None
-                self.embedder = None
-        else:
-            self.vector_store = None
-            self.embedder = None
-
-        # Если не в mock режиме, создаём компоненты через Factory
-        if self.vector_store is None:
-            # На VM: QdrantVectorStore (локальный), на клиенте: RemoteVMVectorStore
-            # Создаём полный Config объект для Factory
-            from config import Config as FullConfig
-            full_config = FullConfig() if not isinstance(config, FullConfig) else config
-            full_config.rag = self.config
-            
-            self.vector_store = RAGFactory.create_vector_store(full_config)
-            self.embedder = RAGFactory.create_embedder(full_config)
-            logger.info(f"✅ Компоненты созданы через RAGFactory: embedder={type(self.embedder).__name__}, vector_store={type(self.vector_store).__name__}")
+        self.vector_store = RAGFactory.create_vector_store(full_config)
+        self.embedder = RAGFactory.create_embedder(full_config)
+        logger.info(
+            f"✅ Компоненты созданы через RAGFactory: "
+            f"embedder={type(self.embedder).__name__}, vector_store={type(self.vector_store).__name__}"
+        )
         
         # Thread-safe кэш запросов с блокировками
         self._query_cache = {}

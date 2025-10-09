@@ -161,7 +161,6 @@ def test_t006_missing_required_openai_api_key(clean_env):
         clean_env_dict.setdefault('PYTHONUTF8', '1')
         clean_env_dict.setdefault('OFFLINE_MODE', '1')
         clean_env_dict.setdefault('USE_MOCK_EMBEDDER', '1')
-        clean_env_dict.setdefault('USE_MOCK_VECTOR_STORE', '1')
         clean_env_dict.setdefault('EMBEDDING_PROVIDER', 'mock')
         clean_env_dict.setdefault('VECTOR_STORE_PROVIDER', 'mock')
         clean_env_dict.setdefault('HF_HUB_OFFLINE', '1')
