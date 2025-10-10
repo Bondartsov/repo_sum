@@ -1,6 +1,5 @@
 # tests/test_readme.py
 # Smoke-тест для README.md
-import pytest
 import os
 
 def test_readme_exists_and_content():

@@ -4,7 +4,7 @@ Unit тесты для rag/factory.py - Factory Pattern для RAG компон�
 
 import os
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from rag.factory import RAGFactory
 from rag.context import ExecutionContext
 from config import get_config

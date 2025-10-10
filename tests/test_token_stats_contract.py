@@ -1,5 +1,4 @@
 # tests/test_token_stats_contract.py
-import os
 import pytest
 
 pytest.importorskip("openai")

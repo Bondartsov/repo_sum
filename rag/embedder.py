@@ -10,7 +10,7 @@ import sys
 import logging
 import time
 import gc
-from typing import List, Optional, Union, Tuple
+from typing import List, Optional
 import numpy as np
 import psutil
 

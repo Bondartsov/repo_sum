@@ -19,14 +19,14 @@ class AiohttpTransportClient(TransportClientProtocol):
     метод post_json для выполнения запросов с единым форматированием ошибок.
     """
 
-    async def post_json(self, url: str, payload: Dict[str, Any], timeout: float) -> Dict[str, Any]:
-        """Отправляет POST-запрос с JSON-телом и возвращает результат."""
+    async def post_json(self, url: str, payload: Dict[str, Any], timeout: float, headers: Dict[str, str] | None = None) -> Dict[str, Any]:
+        """Отправляет POST-запрос с JSON-телом, доп.заголовками и возвращает результат."""
         session = await get_shared_http_session()
         timeout_ctx = aiohttp.ClientTimeout(total=timeout)
-        async with session.post(url, json=payload, timeout=timeout_ctx) as response:
+        async with session.post(url, json=payload, timeout=timeout_ctx, headers=headers) as response:
             if response.status == 200:
                 return await response.json()
-
+    
             error_text = await response.text()
             raise aiohttp.ClientResponseError(
                 request_info=response.request_info,

@@ -32,28 +32,17 @@ Comprehensive Web UI тесты с VM RAG интеграцией.
 import pytest
 import asyncio
 import time
-import json
 import numpy as np
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from pathlib import Path
-from typing import List, Dict, Any, Optional
+from unittest.mock import Mock, patch
+from typing import List, Dict, Any
 from dataclasses import dataclass
 
 # Streamlit testing
-import streamlit as st
-from streamlit.testing.v1 import AppTest
 
 # Project imports
-from config import Config, RagConfig, EmbeddingConfig, VectorStoreConfig, QueryEngineConfig, ParallelismConfig, RemoteServiceConfig
-from rag.remote_embedder import RemoteVMEmbedder
-from rag.remote_vector_store import RemoteVMVectorStore
-from rag.search_service import SearchService
-from rag.indexer_service import IndexerService
-from rag.exceptions import EmbeddingException, VectorStoreException
+from config import RagConfig, EmbeddingConfig, VectorStoreConfig, QueryEngineConfig, ParallelismConfig
 
 # Test utilities
-from tests.mocks.mock_remote_embedder import MockRemoteEmbedder
-from tests.mocks.mock_vector_store import MockVectorStore
 
 
 @dataclass
@@ -466,7 +455,7 @@ class TestWebUIVMRAG:
                             metrics.max_response_time = qa_time
 
                             print("✅ Q&A интерфейс с VM RAG:")
-                            print(f"  - Backend функциональность: работает")
+                            print("  - Backend функциональность: работает")
                             print(f"  - Q&A: {qa_time:.3f}с")
                             print(f"  - Success rate: {metrics.success_rate:.1f}%")
 
@@ -613,7 +602,7 @@ class TestWebUIVMRAG:
             metrics.avg_response_time = health_time
             
             print("✅ VM backend connectivity:")
-            print(f"  - Health check: успешно")
+            print("  - Health check: успешно")
             print(f"  - Response time: {health_time:.3f}с")
             print(f"  - Model: {health_response['services']['embedder']['model']}")
             print(f"  - Success rate: {metrics.success_rate:.1f}%")
@@ -749,7 +738,7 @@ class TestWebUIVMRAG:
             
             print("✅ Fallback механизмы:")
             print(f"  - VM failed: {vm_failed}")
-            print(f"  - Fallback работает: да")
+            print("  - Fallback работает: да")
             print(f"  - Fallback time: {fallback_time:.3f}с")
             print(f"  - Success rate: {metrics.success_rate:.1f}%")
 
@@ -880,7 +869,7 @@ class TestWebUIVMRAG:
                     result = asyncio.run(mock_vm_rag_service.mock_search(query, top_k=5))
                     assert result is not None, f"Результат не должен быть None для '{query[:20]}...'"
                     metrics.successful_interactions += 1
-                except Exception as e:
+                except Exception:
                     # Некоторые edge cases могут вызывать ошибки - это ожидаемо
                     metrics.failed_interactions += 1
                 finally:

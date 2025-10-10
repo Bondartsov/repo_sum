@@ -1,6 +1,5 @@
 # tests/test_web_ui.py
 # Smoke-тест для web_ui.py (Streamlit-интерфейс)
-import pytest
 import importlib
 
 # Проверяем, что модуль web_ui импортируется без ошибок

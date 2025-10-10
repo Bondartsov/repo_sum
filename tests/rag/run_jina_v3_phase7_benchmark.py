@@ -12,7 +12,6 @@ PHASE 7: Jina v3 Benchmark Suite Runner - Централизованный за�
 """
 
 import sys
-import os
 import subprocess
 import json
 import time
@@ -20,7 +19,6 @@ import argparse
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-import tempfile
 
 # Добавляем путь к корневой директории
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -46,7 +44,7 @@ class Phase7BenchmarkRunner:
             'success_criteria': {}
         }
         
-        print(f"🚀 PHASE 7 Benchmark Suite - Jina v3 Migration Validation")
+        print("🚀 PHASE 7 Benchmark Suite - Jina v3 Migration Validation")
         print(f"📅 Время запуска: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"📁 Результаты: {self.output_dir.absolute()}")
         print("=" * 70)
@@ -498,7 +496,7 @@ class Phase7BenchmarkRunner:
 - **Детали:** {criterion['details']}
 """
         
-        content += f"""
+        content += """
 
 ## 🚀 Следующие шаги
 
@@ -506,7 +504,7 @@ class Phase7BenchmarkRunner:
         for step in summary.get('next_steps', []):
             content += f"- {step}\n"
         
-        content += f"""
+        content += """
 
 ## 💡 Рекомендации
 
@@ -597,13 +595,13 @@ def main():
         overall_status = runner.results.get('success_criteria', {}).get('overall_migration_success', {}).get('status')
         exit_code = 0 if overall_status == 'PASSED' else 1
         
-        print(f"\n🏁 PHASE 7 Benchmark Suite завершен")
+        print("\n🏁 PHASE 7 Benchmark Suite завершен")
         print(f"📊 Детальные результаты: {runner.output_dir.absolute()}")
         
         sys.exit(exit_code)
         
     except KeyboardInterrupt:
-        print(f"\n⏹️  Benchmark suite прерван пользователем")
+        print("\n⏹️  Benchmark suite прерван пользователем")
         runner.save_results()  # Сохраняем частичные результаты
         sys.exit(2)
     except Exception as e:

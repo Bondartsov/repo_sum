@@ -10,7 +10,6 @@
 """
 
 import sys
-import os
 import asyncio
 import logging
 from pathlib import Path
@@ -19,7 +18,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from config import get_config, reload_config
+from config import get_config
 from rag.vector_store import QdrantVectorStore
 from rag.embedder import CPUEmbedder
 
@@ -144,8 +143,8 @@ async def backup_existing_collection(vector_store: QdrantVectorStore):
                     
                     # Здесь можно добавить логику копирования коллекции
                     # Для простоты просто логируем
-                    logger.info(f"ℹ️  ПРИМЕЧАНИЕ: Ручной backup не реализован в данной версии")
-                    logger.info(f"ℹ️  Рекомендуется создать snapshot Qdrant вручную")
+                    logger.info("ℹ️  ПРИМЕЧАНИЕ: Ручной backup не реализован в данной версии")
+                    logger.info("ℹ️  Рекомендуется создать snapshot Qdrant вручную")
                     
                     backup_confirm = input("Продолжить без автоматического backup? (y/n): ").lower().strip()
                     if backup_confirm != 'y':
@@ -301,7 +300,7 @@ async def run_migration():
     logger.info("  2. Проверьте качество поиска: python main.py rag search 'your query'")
     logger.info("  3. Сравните результаты с предыдущей версией")
     logger.info("")
-    logger.info(f"📊 Лог миграции сохранен: migration_jina_v3.log")
+    logger.info("📊 Лог миграции сохранен: migration_jina_v3.log")
     
     return True
 

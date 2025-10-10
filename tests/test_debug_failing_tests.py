@@ -7,11 +7,9 @@
 
 import os
 import sys
-import json
 import subprocess
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 def debug_test_t006_missing_required_openai_api_key():
     """

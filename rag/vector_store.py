@@ -13,22 +13,19 @@ import logging
 import uuid
 import time
 import asyncio
-from typing import List, Dict, Optional, Any, Union, Tuple
+from typing import List, Dict, Optional, Any
 import numpy as np
-from dataclasses import asdict
 from datetime import datetime, timezone
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
-    Distance, VectorParams, CollectionInfo,
-    HnswConfigDiff, OptimizersConfigDiff,
+    Distance, VectorParams, HnswConfigDiff, OptimizersConfigDiff,
     ScalarQuantization, ProductQuantization, BinaryQuantization,
     PointStruct, SearchParams, Filter, FieldCondition, Range,
     UpdateStatus, CollectionStatus,
     MatchValue, GeoBoundingBox, GeoRadius,
-    VectorsConfig, Datatype, CompressionRatio
+    Datatype, CompressionRatio
 )
-from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
 from config import VectorStoreConfig
 from .exceptions import (
@@ -223,7 +220,7 @@ class QdrantVectorStore:
                             )
                         )
                         logger.debug("Используется новый API ScalarQuantization")
-                    except (ImportError, TypeError, Exception) as e:
+                    except (ImportError, TypeError, Exception):
                         # Fallback для более старых версий или других проблем
                         try:
                             quantization_config = ScalarQuantization(scalar=True)

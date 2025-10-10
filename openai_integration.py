@@ -26,7 +26,6 @@ from utils import (
     CodeChunk,
     GPTAnalysisRequest,
     GPTAnalysisResult,
-    OpenAIError,
     sanitize_text,
 )
 

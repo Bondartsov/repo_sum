@@ -1,5 +1,4 @@
 import pytest
-import torch
 from rag.sparse_encoder import SpladeModelWrapper, SparseEncoder
 
 @pytest.mark.unit

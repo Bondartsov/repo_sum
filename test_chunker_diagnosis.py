@@ -2,8 +2,6 @@
 """Диагностический тест для code_chunker.py"""
 
 import logging
-from pathlib import Path
-from datetime import datetime
 
 # Настройка логирования для диагностики
 logging.basicConfig(
@@ -14,7 +12,6 @@ logging.basicConfig(
 from file_scanner import FileScanner
 from parsers.base_parser import ParserRegistry
 from code_chunker import CodeChunker
-from config import get_config
 
 def test_single_file():
     """Тест на одном файле config.py"""
@@ -53,14 +50,14 @@ def test_single_file():
     
     try:
         parsed_file = parser.safe_parse(config_file)
-        print(f"✅ Файл успешно распарсен")
+        print("✅ Файл успешно распарсен")
         print(f"   Элементов: {len(parsed_file.elements)}")
     except Exception as e:
         print(f"❌ Ошибка парсинга: {e}")
         return
     
     # 3. Разбиваем на чанки - здесь должна быть ошибка
-    print(f"\n🔍 НАЧИНАЕМ CHUNK_PARSED_FILE...")
+    print("\n🔍 НАЧИНАЕМ CHUNK_PARSED_FILE...")
     print(f"   parsed_file.file_info: {type(parsed_file.file_info)}")
     print(f"   parsed_file.file_info.path: {type(parsed_file.file_info.path)}")
     

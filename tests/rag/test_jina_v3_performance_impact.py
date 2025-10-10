@@ -19,15 +19,11 @@ import psutil
 import gc
 import numpy as np
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional, Tuple
-from unittest.mock import Mock, patch, AsyncMock
-import tempfile
-from pathlib import Path
+from typing import List, Dict, Any
+from unittest.mock import Mock, patch
 
-from config import Config, RagConfig, EmbeddingConfig, VectorStoreConfig, QueryEngineConfig, ParallelismConfig
+from config import Config, RagConfig, EmbeddingConfig, ParallelismConfig
 from rag.embedder import CPUEmbedder
-from rag.vector_store import QdrantVectorStore
-from rag.indexer_service import IndexerService
 from rag.search_service import SearchService
 
 
@@ -529,7 +525,7 @@ class TestJinaV3PerformanceImpact:
             batch_sizes=batch_sizes
         )
         
-        print(f"\n=== Влияние размерности на латентность эмбеддинга ===")
+        print("\n=== Влияние размерности на латентность эмбеддинга ===")
         
         for comparison in comparisons:
             print(f"{comparison.operation}: {comparison.get_summary()}")
@@ -581,7 +577,7 @@ class TestJinaV3PerformanceImpact:
             test_queries=test_queries
         )
         
-        print(f"\n=== Влияние размерности на производительность поиска ===")
+        print("\n=== Влияние размерности на производительность поиска ===")
         print(f"Сравнение: {comparison.get_summary()}")
         
         # Проверяем результаты
@@ -643,7 +639,7 @@ class TestJinaV3PerformanceImpact:
         avg_memory_ratio = np.mean([r['ratio'] for r in memory_results])
         max_memory_ratio = max([r['ratio'] for r in memory_results])
         
-        print(f"\n=== Масштабирование памяти ===")
+        print("\n=== Масштабирование памяти ===")
         print(f"Средний коэффициент: {avg_memory_ratio:.1f}x")
         print(f"Максимальный коэффициент: {max_memory_ratio:.1f}x")
         
@@ -684,7 +680,7 @@ class TestJinaV3PerformanceImpact:
                 }
         
         # Тестируем Reference конкурентность
-        print(f"\n=== Тест конкурентной производительности ===")
+        print("\n=== Тест конкурентной производительности ===")
         
         reference_tasks = [concurrent_embedding_test(reference_embedder, i) for i in range(num_concurrent_tasks)]
         reference_results = await asyncio.gather(*reference_tasks, return_exceptions=True)
@@ -723,8 +719,8 @@ class TestJinaV3PerformanceImpact:
         print(f"Jina конкурентность: {jina_analysis}")
         
         # Проверяем что обе модели справляются с конкурентной нагрузкой
-        assert reference_analysis['successful_tasks'] >= 3, f"Reference: слишком много неудачных задач"
-        assert jina_analysis['successful_tasks'] >= 3, f"Jina: слишком много неудачных задач"
+        assert reference_analysis['successful_tasks'] >= 3, "Reference: слишком много неудачных задач"
+        assert jina_analysis['successful_tasks'] >= 3, "Jina: слишком много неудачных задач"
         
         # Сравниваем throughput
         if reference_analysis['throughput'] > 0 and jina_analysis['throughput'] > 0:
@@ -777,7 +773,7 @@ class TestJinaV3PerformanceImpact:
             except Exception as e:
                 print(f"Jina ошибка для батча {batch_size}: {e}")
         
-        print(f"\n=== Влияние размера батча на производительность ===")
+        print("\n=== Влияние размера батча на производительность ===")
         
         # Анализируем результаты
         for i, batch_size in enumerate([r['batch_size'] for r in results['reference']]):
@@ -854,7 +850,7 @@ class TestJinaV3PerformanceImpact:
         
         jina_avg_cpu = np.mean([c for c in cpu_samples_jina if c is not None])
         
-        print(f"\n=== Сравнение утилизации CPU ===")
+        print("\n=== Сравнение утилизации CPU ===")
         print(f"Reference: {reference_avg_cpu:.1f}% CPU, {reference_duration:.2f}s")
         print(f"Jina: {jina_avg_cpu:.1f}% CPU, {jina_duration:.2f}s")
         
@@ -932,7 +928,7 @@ class TestJinaV3PerformanceImpact:
         jina_p95_latency = np.percentile(jina_latencies, 95)
         jina_throughput = (len(test_batch) * len(jina_latencies)) / jina_total_time
         
-        print(f"\n=== Валидация SLO соответствия ===")
+        print("\n=== Валидация SLO соответствия ===")
         
         # Reference SLO проверка
         reference_slo_compliance = {

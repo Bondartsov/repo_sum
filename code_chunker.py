@@ -41,7 +41,7 @@ class CodeChunker:
         """
         Совместимость с тестами: разбивает код на чанки по FileInfo и строке кода.
         """
-        from utils import ParsedFile, CodeChunk, ParsedElement, count_lines_in_text, get_language_from_extension
+        from utils import ParsedFile, ParsedElement
         # Простейший парсер: находит функции по def и создает ParsedElement
         import re
         elements = []
@@ -526,7 +526,7 @@ class CodeChunker:
             
             # КРИТИЧНО: Используем logger вместо print() для VM-совместимости
             # print() может кидать "I/O operation on closed file" если stdout закрыт
-            self.logger.info(f"📊 Метрики чанков:")
+            self.logger.info("📊 Метрики чанков:")
             self.logger.info(f"   Всего чанков: {len(chunks)}")
             self.logger.info(f"   Средний размер: {avg_tokens:.0f} токенов")
             self.logger.info(f"   p50: {p50} токенов")

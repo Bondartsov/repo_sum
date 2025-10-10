@@ -1,8 +1,7 @@
 # tests/test_config.py
 # Тесты для модуля config.py
 import pytest
-import os
-from config import get_config, reload_config, Config
+from config import get_config, Config
 
 # Пример теста для get_config
 

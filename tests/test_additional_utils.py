@@ -13,7 +13,7 @@ T-014 - Utils: нормализация путей (Windows/UNC/POSIX)
 import pytest
 import tempfile
 import os
-from pathlib import Path, PurePath, PureWindowsPath, PurePosixPath
+from pathlib import Path
 from unittest.mock import patch, Mock
 import shutil
 
@@ -25,7 +25,6 @@ from utils import (
     FileParsingError
 )
 from file_scanner import FileScanner
-from config import get_config
 
 
 class TestPathNormalization:

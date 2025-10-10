@@ -162,7 +162,7 @@ class PyCacheManager:
         
         # Удаление папок
         if not quiet:
-            print(self._colorize(f"\n🗑️  Начинаю удаление...", Colors.YELLOW))
+            print(self._colorize("\n🗑️  Начинаю удаление...", Colors.YELLOW))
         
         removed_count = 0
         for i, dir_path in enumerate(pycache_dirs, 1):

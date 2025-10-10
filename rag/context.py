@@ -10,7 +10,6 @@ import os
 import socket
 import logging
 from enum import Enum
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +94,7 @@ def detect_execution_context() -> ExecutionContext:
         ]
         
         if any(os.path.exists(path) for path in vm_directories):
-            logger.info(f"🔍 Контекст: VM (обнаружены VM-специфичные директории)")
+            logger.info("🔍 Контекст: VM (обнаружены VM-специфичные директории)")
             return ExecutionContext.VM
     except Exception as e:
         logger.debug(f"Не удалось проверить VM директории: {e}")

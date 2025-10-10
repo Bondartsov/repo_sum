@@ -4,20 +4,17 @@
 Тесты T-015 и T-016 согласно техническому заданию.
 """
 
-import subprocess
-import sys
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import re
 
 import pytest
 
 from doc_generator import DocumentationGenerator, MarkdownGenerator
 from utils import (
-    FileInfo, ParsedFile, GPTAnalysisResult, 
-    create_error_gpt_result, ensure_directory_exists
+    FileInfo, ParsedFile, GPTAnalysisResult
 )
 
 
@@ -200,7 +197,7 @@ class TestAdditionalDocGen:
             h1_headers = re.findall(r'^#\s+(.+)$', content, re.MULTILINE)
             assert len(h1_headers) >= 1, f"Не найдены заголовки H1 в {report_file}"
 
-        print(f"T-015 PASSED: Коллизии заголовков Markdown корректно обработаны")
+        print("T-015 PASSED: Коллизии заголовков Markdown корректно обработаны")
         print(f"Всего заголовков: {len(all_headers)}")
         print(f"Дублирующихся: {len(duplicate_headers)}")
         print(f"Выходной каталог: {summary_dir}")
@@ -355,7 +352,7 @@ def very_long_function_name_that_exceeds_normal_line_length(parameter_one, param
             matches = re.findall(pattern, generated_content)
             assert len(matches) > 0, f"Не найдено форматирование: {name}"
 
-        print(f"T-016 PASSED: Длинные строки, таблицы и списки корректно сохранены")
+        print("T-016 PASSED: Длинные строки, таблицы и списки корректно сохранены")
         print(f"Длинных строк: {len(long_lines)}")
         print(f"Заголовков: {len(headers)}")
         print(f"Блоков кода: {len(code_blocks)}")

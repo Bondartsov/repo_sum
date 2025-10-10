@@ -82,7 +82,6 @@ async def test_bug3_search_service_await():
     print("\n🧪 Тест Баг 3: search() корректно await'ится без asyncio.to_thread")
     
     try:
-        from rag.search_service import SearchService
         from config import get_config
         
         config = get_config(require_api_key=False)

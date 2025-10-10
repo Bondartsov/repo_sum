@@ -81,6 +81,9 @@ class RemoteVMEmbedder(EmbedderProtocol):
         self.embeddings_endpoint = os.getenv("RAG_EMBEDDINGS_ENDPOINT", base_url + self.remote_config.embeddings_endpoint)
         self.service_host = host
         self.service_port = port
+        # Заголовки контракта API и версия эмбеддингов
+        self.api_contract = os.getenv("RAG_API_CONTRACT", "v1.0.0")
+        self.embedding_version = os.getenv("RAG_EMBEDDING_VERSION", "2025-10-A")
 
         # Параметры эмбеддера
         self.model_name = embedding_config.model_name if embedding_config else os.getenv("EMB_MODEL_ID", "jinaai/jina-embeddings-v3")
@@ -315,7 +318,7 @@ class RemoteVMEmbedder(EmbedderProtocol):
                 error_details=str(e)
             )
 
-        except asyncio.TimeoutError as e:
+        except asyncio.TimeoutError:
             # ИСПРАВЛЕНИЕ #1 + УЛУЧШЕНИЕ: Используем monotonic + локальный счетчик попыток
             elapsed_seconds = time.monotonic() - request_start_time
 
@@ -357,6 +360,11 @@ class RemoteVMEmbedder(EmbedderProtocol):
             self.embeddings_endpoint,
             payload,
             timeout=self.timeout_seconds,
+            headers={
+                "Content-Type": "application/json",
+                "X-API-Contract": self.api_contract,
+                "X-Embedding-Version": self.embedding_version,
+            },
         )
 
         if "embeddings" in result:
@@ -402,7 +410,15 @@ class RemoteVMEmbedder(EmbedderProtocol):
             }
 
             session = await get_shared_http_session()
-            async with session.post(self.embeddings_endpoint, json=test_payload) as response:
+            async with session.post(
+                self.embeddings_endpoint,
+                json=test_payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-API-Contract": self.api_contract,
+                    "X-Embedding-Version": self.embedding_version,
+                },
+            ) as response:
                 response_time_ms = (time.monotonic() - start_time) * 1000
 
                 if response.status == 200:

@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 # Загружаем переменные из .env файла
 try:
@@ -230,10 +230,10 @@ class RemoteServiceConfig:
     """Настройки удалённого RAG сервиса"""
     host: str = '10.61.11.54'
     port: int = 8000
-    embeddings_endpoint: str = '/embeddings'
-    search_endpoint: str = '/search'
-    index_endpoint: str = '/index'
-    health_endpoint: str = '/health'
+    embeddings_endpoint: str = '/v1/embeddings'
+    search_endpoint: str = '/v1/search_v2'
+    index_endpoint: str = '/v1/index'
+    health_endpoint: str = '/v1/health'
     timeout_seconds: int = 3600  # TIMEOUT FIX: 1 час (было 600s) - для больших батчей (512+ чанков)
     max_retries: int = 5  # HOTFIX: больше попыток (было 3)
     retry_delay: float = 10.0  # HOTFIX: больше задержка между попытками (было 2.0s)
@@ -270,10 +270,10 @@ class RagConfig:
         remote_service_data = data.get("remote_service", {}).copy()
         endpoints = remote_service_data.pop("endpoints", {})
         if endpoints:
-            remote_service_data.setdefault("embeddings_endpoint", endpoints.get("embeddings", "/embeddings"))
-            remote_service_data.setdefault("search_endpoint", endpoints.get("search", "/search"))
-            remote_service_data.setdefault("index_endpoint", endpoints.get("index", "/index"))
-            remote_service_data.setdefault("health_endpoint", endpoints.get("health", "/health"))
+            remote_service_data.setdefault("embeddings_endpoint", endpoints.get("embeddings", "/v1/embeddings"))
+            remote_service_data.setdefault("search_endpoint", endpoints.get("search", "/v1/search_v2"))
+            remote_service_data.setdefault("index_endpoint", endpoints.get("index", "/v1/index"))
+            remote_service_data.setdefault("health_endpoint", endpoints.get("health", "/v1/health"))
         if "port" in remote_service_data:
             remote_service_data["port"] = int(remote_service_data["port"])
         if "timeout_seconds" in remote_service_data:

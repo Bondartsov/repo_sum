@@ -15,10 +15,9 @@ import subprocess
 import platform
 import json
 import logging
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from contextlib import contextmanager
-import threading
 import signal
 import sys
 
@@ -617,6 +616,6 @@ if __name__ == "__main__":
         if ping_result.get('avg_response_time_ms') is not None:
             print(f"Ping: ✅ {ping_result['avg_response_time_ms']:.1f}ms avg")
         else:
-            print(f"Ping: ✅ Success (время недоступно)")
+            print("Ping: ✅ Success (время недоступно)")
     else:
         print(f"Ping: ❌ {ping_result['error']}")

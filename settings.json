@@ -69,12 +69,12 @@
       "host": "10.61.11.54",
       "port": 8000,
       "endpoints": {
-        "embeddings": "/embeddings",
-        "search": "/search",
-        "index": "/index",
-        "health": "/health"
+        "embeddings": "/v1/embeddings",
+        "search": "/v1/search_v2",
+        "index": "/v1/index",
+        "health": "/v1/health"
       },
-      "timeout_seconds": 600,
+      "timeout_seconds": 3600,
       "max_retries": 5,
       "retry_delay": 10.0
     },

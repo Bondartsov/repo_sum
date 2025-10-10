@@ -13,7 +13,6 @@ import asyncio
 import aiohttp
 from unittest.mock import MagicMock, Mock, patch, AsyncMock
 from rag.remote_vector_store import RemoteVMVectorStore
-from rag.exceptions import VectorStoreConnectionError
 from config import RemoteServiceConfig, VectorStoreConfig
 
 

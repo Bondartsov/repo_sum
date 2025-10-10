@@ -9,8 +9,6 @@ import pytest
 import pytest_asyncio
 import asyncio
 import time
-from unittest.mock import AsyncMock, Mock
-from typing import Callable
 
 from rag.circuit_breaker import (
     CircuitBreaker,

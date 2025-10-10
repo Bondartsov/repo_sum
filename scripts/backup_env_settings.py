@@ -141,7 +141,7 @@ def main():
         rollback_script = backup.create_rollback_script()
         print(f"✅ Created rollback script: {rollback_script}")
         
-        print(f"\n🎉 Backup completed successfully!")
+        print("\n🎉 Backup completed successfully!")
         print(f"📁 Backup location: {backup_dir}")
         print(f"🔄 Rollback command: bash {rollback_script}")
         

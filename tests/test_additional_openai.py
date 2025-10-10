@@ -8,7 +8,7 @@ T-018 - OpenAI: офлайн/нет соединения
 import pytest
 import asyncio
 import time
-from unittest.mock import patch, MagicMock, AsyncMock, call
+from unittest.mock import patch, MagicMock, call
 import httpx
 
 from openai import RateLimitError, APIConnectionError, APITimeoutError

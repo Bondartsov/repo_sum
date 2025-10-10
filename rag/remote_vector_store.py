@@ -71,8 +71,12 @@ class RemoteVMVectorStore:
         base_url = f"http://{host}:{port}"
         self.search_endpoint = os.getenv("RAG_SEARCH_ENDPOINT", base_url + self.remote_config.search_endpoint)
         self.index_endpoint = os.getenv("RAG_INDEX_ENDPOINT", base_url + self.remote_config.index_endpoint)
+        self.text_search_endpoint = os.getenv("RAG_TEXT_SEARCH_ENDPOINT", base_url + "/v1/search")
         self.service_host = host
         self.service_port = port
+        # Заголовки контракта API и версия эмбеддингов
+        self.api_contract = os.getenv("RAG_API_CONTRACT", "v1.0.0")
+        self.embedding_version = os.getenv("RAG_EMBEDDING_VERSION", "2025-10-A")
 
         self.timeout_seconds = int(os.getenv("RAG_TIMEOUT_SECONDS", str(self.remote_config.timeout_seconds)))
         self.max_retries = int(os.getenv("RAG_MAX_RETRIES", str(self.remote_config.max_retries)))
@@ -302,7 +306,11 @@ class RemoteVMVectorStore:
                 async with session.post(
                     self.index_endpoint,
                     json=payload,
-                    headers={'Content-Type': 'application/json'},
+                    headers={
+                        'Content-Type': 'application/json',
+                        'X-API-Contract': self.api_contract,
+                        'X-Embedding-Version': self.embedding_version
+                    },
                     timeout=ClientTimeout(total=self.index_timeout, sock_read=self.index_timeout)
                 ) as response:
                     
@@ -460,10 +468,15 @@ class RemoteVMVectorStore:
                 session = await get_shared_http_session()
                 
                 timeout_ctx = ClientTimeout(total=self.search_timeout, sock_read=self.search_timeout)
+                endpoint = self.text_search_endpoint if 'query' in payload else self.search_endpoint
                 async with session.post(
-                    self.search_endpoint,
+                    endpoint,
                     json=payload,
-                    headers={'Content-Type': 'application/json'},
+                    headers={
+                        'Content-Type': 'application/json',
+                        'X-API-Contract': self.api_contract,
+                        'X-Embedding-Version': self.embedding_version
+                    },
                     timeout=timeout_ctx
                 ) as response:
                     
@@ -584,14 +597,14 @@ class RemoteVMVectorStore:
                     "troubleshooting_commands": [
                         f"curl http://{self.service_host}:{self.service_port}/health",
                         f"ping {self.service_host}",
-                        f"python vm_start.py start"
+                        "python vm_start.py start"
                     ],
                     "response_time_ms": response_time_ms
                 }
             
             self._connected = False
             
-        except asyncio.TimeoutError as e:
+        except asyncio.TimeoutError:
             response_time_ms = (time.time() - start_time) * 1000
             health_info["status"] = "error"
             health_info["error"] = f"TimeoutError: Request timeout after {response_time_ms:.0f}ms"

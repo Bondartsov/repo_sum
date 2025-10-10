@@ -9,21 +9,18 @@
 """
 
 import pytest
-import asyncio
 import tempfile
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any, List, Optional
-from unittest.mock import Mock, patch, AsyncMock
+from typing import Dict, Any
+from unittest.mock import Mock, patch
 
 import numpy as np
 
-from config import Config, RagConfig, EmbeddingConfig, VectorStoreConfig, QueryEngineConfig, ParallelismConfig
+from config import RagConfig, EmbeddingConfig, VectorStoreConfig, QueryEngineConfig, ParallelismConfig
 from rag.embedder import CPUEmbedder
 from rag.vector_store import QdrantVectorStore
-from rag.indexer_service import IndexerService
-from rag.search_service import SearchService
 from rag.query_engine import CPUQueryEngine
 
 

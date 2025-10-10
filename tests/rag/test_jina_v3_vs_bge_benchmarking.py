@@ -27,20 +27,12 @@ import gc
 import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Tuple, Optional
-from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock
-import tempfile
+from unittest.mock import Mock, patch
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from config import Config, RagConfig, EmbeddingConfig, VectorStoreConfig, QueryEngineConfig, ParallelismConfig
+from config import Config, RagConfig, EmbeddingConfig, ParallelismConfig
 from rag.embedder import CPUEmbedder
-from rag.vector_store import QdrantVectorStore
-from rag.indexer_service import IndexerService
 from rag.search_service import SearchService
-from rag.query_engine import CPUQueryEngine
-from rag.remote_embedder import RemoteVMEmbedder
-from rag.remote_vector_store import RemoteVMVectorStore
 
 
 @dataclass
@@ -888,7 +880,7 @@ class TestJinaV3VsBGEBenchmarking:
             test_texts=test_texts
         )
 
-        print(f"\n=== Сравнение качества эмбеддингов ===")
+        print("\n=== Сравнение качества эмбеддингов ===")
         print(f"BGE: {comparison.bge_metrics.to_dict()}")
         print(f"Jina: {comparison.jina_metrics.to_dict()}")
 
@@ -927,7 +919,7 @@ class TestJinaV3VsBGEBenchmarking:
             test_queries=test_queries
         )
 
-        print(f"\n=== Latency бенчмарк VM vs Local ===")
+        print("\n=== Latency бенчмарк VM vs Local ===")
         print(f"BGE Local: {comparison.bge_metrics.to_dict()}")
         print(f"Jina VM: {comparison.jina_metrics.to_dict()}")
 
@@ -948,7 +940,7 @@ class TestJinaV3VsBGEBenchmarking:
         benchmarker = ComprehensiveBenchmarker()
 
         # Тестируем BGE concurrent performance
-        print(f"\n=== Concurrent Users Test BGE ===")
+        print("\n=== Concurrent Users Test BGE ===")
         bge_concurrent = await benchmarker.benchmark_concurrent_users(
             search_service=bge_service,
             num_users=25,
@@ -958,7 +950,7 @@ class TestJinaV3VsBGEBenchmarking:
         print(f"BGE Concurrent: {bge_concurrent.to_dict()}")
 
         # Тестируем Jina concurrent performance
-        print(f"\n=== Concurrent Users Test Jina ===")
+        print("\n=== Concurrent Users Test Jina ===")
         jina_concurrent = await benchmarker.benchmark_concurrent_users(
             search_service=jina_service,
             num_users=25,
@@ -987,7 +979,7 @@ class TestJinaV3VsBGEBenchmarking:
         benchmarker = ComprehensiveBenchmarker()
 
         # Тестируем BGE memory usage
-        print(f"\n=== Memory & CPU Usage BGE ===")
+        print("\n=== Memory & CPU Usage BGE ===")
         bge_memory_results = await benchmarker.benchmark_memory_cpu_usage(
             embedder=bge_embedder,
             test_texts=test_texts,
@@ -998,7 +990,7 @@ class TestJinaV3VsBGEBenchmarking:
             print(f"BGE Batch {batch_size}: {metrics.to_dict()}")
 
         # Тестируем Jina memory usage
-        print(f"\n=== Memory & CPU Usage Jina ===")
+        print("\n=== Memory & CPU Usage Jina ===")
         jina_memory_results = await benchmarker.benchmark_memory_cpu_usage(
             embedder=jina_embedder,
             test_texts=test_texts,
@@ -1031,7 +1023,7 @@ class TestJinaV3VsBGEBenchmarking:
             test_queries=test_queries_with_expected
         )
 
-        print(f"\n=== Метрики качества поиска ===")
+        print("\n=== Метрики качества поиска ===")
         if comparison.quality_bge:
             print(f"BGE Quality: {comparison.quality_bge.to_dict()}")
 
@@ -1060,8 +1052,8 @@ class TestJinaV3VsBGEBenchmarking:
         benchmarker = ComprehensiveBenchmarker()
 
         # 1. Embedding Quality Comparison
-        print(f"\n1. СРАВНЕНИЕ КАЧЕСТВА ЭМБЕДДИНГОВ")
-        print(f"-" * 40)
+        print("\n1. СРАВНЕНИЕ КАЧЕСТВА ЭМБЕДДИНГОВ")
+        print("-" * 40)
 
         embedding_comparison = await benchmarker.benchmark_embedding_quality_comparison(
             bge_embedder=mock_embedders[0],
@@ -1077,8 +1069,8 @@ class TestJinaV3VsBGEBenchmarking:
         print(f"✅ Memory efficiency: {embedding_comparison.get_memory_efficiency():.2f} items/sec/MB")
 
         # 2. Latency Benchmarks
-        print(f"\n2. LATENCY БЕНЧМАРКИ")
-        print(f"-" * 40)
+        print("\n2. LATENCY БЕНЧМАРКИ")
+        print("-" * 40)
 
         latency_comparison = await benchmarker.benchmark_latency_vm_vs_local(
             local_search_service=mock_search_services[0],
@@ -1091,8 +1083,8 @@ class TestJinaV3VsBGEBenchmarking:
         print(f"✅ VM p95 latency: {latency_comparison.jina_metrics.latency_p95_ms:.1f}ms")
 
         # 3. Concurrent Users Test
-        print(f"\n3. ТЕСТИРОВАНИЕ CONCURRENT ПОЛЬЗОВАТЕЛЕЙ")
-        print(f"-" * 40)
+        print("\n3. ТЕСТИРОВАНИЕ CONCURRENT ПОЛЬЗОВАТЕЛЕЙ")
+        print("-" * 40)
 
         concurrent_bge = await benchmarker.benchmark_concurrent_users(
             search_service=mock_search_services[0],
@@ -1110,8 +1102,8 @@ class TestJinaV3VsBGEBenchmarking:
         print(f"✅ Jina throughput: {concurrent_jina.throughput_per_sec:.1f} req/sec")
 
         # 4. Search Accuracy
-        print(f"\n4. МЕТРИКИ КАЧЕСТВА ПОИСКА")
-        print(f"-" * 40)
+        print("\n4. МЕТРИКИ КАЧЕСТВА ПОИСКА")
+        print("-" * 40)
 
         accuracy_comparison = await benchmarker.benchmark_search_accuracy(
             bge_search_service=mock_search_services[0],
@@ -1138,8 +1130,8 @@ class TestJinaV3VsBGEBenchmarking:
         print(f"   • Latency improvement: {vm_latency_improvement:+.1f}%")
         print(f"   • Quality improvement: {quality_improvement:+.1f}%")
         print(f"   • VM p95 latency: {latency_comparison.jina_metrics.latency_p95_ms:.1f}ms")
-        print(f"   • Concurrent users support: 25+ ✅")
-        print(f"   • Memory usage: <500MB для 1000 docs ✅")
+        print("   • Concurrent users support: 25+ ✅")
+        print("   • Memory usage: <500MB для 1000 docs ✅")
 
         # Проверяем критерии успеха для mock окружения
         # В реальности Jina v3 должен показывать +40-60% improvement
@@ -1157,12 +1149,12 @@ class TestJinaV3VsBGEBenchmarking:
             print("   В реальности с настоящими моделями Jina v3 должен показывать +40-60% improvement")
             print("   Текущие результаты демонстрируют корректную работу benchmarking suite")
 
-        print(f"\n🎉 COMPREHENSIVE BENCHMARKING ЗАВЕРШЕН УСПЕШНО!")
-        print(f"✅ Jina v3 показывает +40-60% improvement vs BGE")
-        print(f"✅ Latency <200ms p95 для cached запросов")
-        print(f"✅ Поддержка 20+ concurrent пользователей")
-        print(f"✅ Memory usage <500MB для 1000 документов")
-        print(f"✅ Quality metrics превосходят BGE")
+        print("\n🎉 COMPREHENSIVE BENCHMARKING ЗАВЕРШЕН УСПЕШНО!")
+        print("✅ Jina v3 показывает +40-60% improvement vs BGE")
+        print("✅ Latency <200ms p95 для cached запросов")
+        print("✅ Поддержка 20+ concurrent пользователей")
+        print("✅ Memory usage <500MB для 1000 документов")
+        print("✅ Quality metrics превосходят BGE")
 
 
 if __name__ == "__main__":

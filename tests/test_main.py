@@ -1,7 +1,6 @@
 # tests/test_main.py
 # Тесты для main.py (CLI-интерфейс)
 import pytest
-import sys
 
 from tests.utils_cli import run_cli
 

@@ -1,6 +1,5 @@
 # tests/test_code_chunker.py
 # Тесты для модуля code_chunker.py
-import pytest
 from code_chunker import CodeChunker
 from utils import FileInfo
 

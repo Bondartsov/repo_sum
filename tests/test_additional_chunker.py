@@ -3,12 +3,8 @@
 T-012 и T-013 из плана тестирования
 """
 
-import pytest
-import tempfile
 import os
-import subprocess
 from pathlib import Path
-from typing import List
 
 from code_chunker import CodeChunker
 from utils import FileInfo, ParsedFile, ParsedElement
@@ -20,7 +16,8 @@ class TestChunkingSystem:
     def create_temp_python_file(self, content: str, tmp_path=None) -> str:
         """Создаёт временный Python файл с заданным содержимым"""
         if tmp_path is None:
-            import pathlib, uuid
+            import pathlib
+            import uuid
             tmp_path = pathlib.Path("tests") / "tmp"
             tmp_path.mkdir(exist_ok=True)
         file_path = tmp_path / f"temp_{uuid.uuid4().hex}.py"

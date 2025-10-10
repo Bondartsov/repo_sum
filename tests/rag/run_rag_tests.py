@@ -57,11 +57,11 @@ class RAGTestRunner:
                 print(f"Return code: {result.returncode}")
             
             if result.stdout:
-                print(f"\n📄 STDOUT:")
+                print("\n📄 STDOUT:")
                 print(result.stdout)
             
             if result.stderr:
-                print(f"\n⚠️ STDERR:")
+                print("\n⚠️ STDERR:")
                 print(result.stderr)
             
             test_result = {
@@ -190,7 +190,7 @@ class RAGTestRunner:
     def print_summary(self):
         """Выводит итоговую сводку по всем тестам"""
         print(f"\n{'='*80}")
-        print(f"📊 ИТОГОВАЯ СВОДКА ТЕСТИРОВАНИЯ RAG СИСТЕМЫ")
+        print("📊 ИТОГОВАЯ СВОДКА ТЕСТИРОВАНИЯ RAG СИСТЕМЫ")
         print(f"{'='*80}")
         
         total_tests = len(self.results)

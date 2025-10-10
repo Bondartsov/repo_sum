@@ -13,7 +13,6 @@ Circuit Breaker pattern для защиты от постоянных паден
 Дата: 1 октября 2025
 """
 
-import asyncio
 import time
 import logging
 from enum import Enum
@@ -285,8 +284,8 @@ class CircuitBreaker:
         if self.state == CircuitState.HALF_OPEN:
             # Failure в HALF_OPEN - сразу обратно в OPEN
             logger.warning(
-                f"Circuit breaker: переход HALF_OPEN -> OPEN "
-                f"(failure при восстановлении)"
+                "Circuit breaker: переход HALF_OPEN -> OPEN "
+                "(failure при восстановлении)"
             )
             
             self.state = CircuitState.OPEN

@@ -8,7 +8,7 @@
 import re
 import ipaddress
 from datetime import datetime, date
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 

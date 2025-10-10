@@ -1,6 +1,6 @@
 # Технический долг проекта
 
-**Дата последнего обновления:** 03 октября 2025
+**Дата последнего обновления:** 09 октября 2025
 **Статус:** В процессе рефакторинга (VM backend, тестирование, конфигурация, chunking)
 **Версия:** 0.5 → 0.6
 **Ответственный:** Claude
@@ -9,6 +9,26 @@
 
 ---
 
+### Обновления (09.10.2025)
+
+- Удалены устаревшие флаги окружения FORCE_LOCAL_VECTOR_STORE и USE_MOCK_VECTOR_STORE. Обновлены VM-скрипты запуска/настройки: [temp_add_env_var.py](temp_add_env_var.py:1), [temp_restart_service.py](temp_restart_service.py:1). Выбор реализаций теперь выполняется строго через фабрику [RAGFactory.create_vector_store()](rag/factory.py:146) в соответствии с контекстом (VM/Client).
+- Перенесены бэкап-артефакты в legacy для предотвращения случайного использования: legacy/backups и legacy/scripts_backups (см. коммит "chore(legacy): move prototypes and backups to legacy (Phase 1.1)").
+- Начата реализация Фазы 1 плана рефакторинга. В [rules/all_refactor.md](rules/all_refactor.md:9-27) отмечены выполненные пункты Фазы 1.2 (нормализация фабрики/конфигураций).
+
+- Версионирование API "/v1" утверждено и синхронизировано во всех слоях:
+  - Конфиг по умолчанию указывает на "/v1" эндпоинты: [RemoteServiceConfig](config.py:228).
+  - Настройки проекта содержат "/v1" маршруты: [settings.json: rag.remote_service.endpoints](settings.json:71).
+  - Переменные окружения для клиентов указывают на "/v1": [.env.example: RAG_*_ENDPOINT](.env.example:7).
+- Сервер VM поддерживает маршруты "/v1" и строгую 422-валидацию:
+  - Health/Embeddings/Search/Search_v2/Index: [vm_rag_service.health_check()](vm_rag_service.py:271), [vm_rag_service.get_embeddings()](vm_rag_service.py:314), [vm_rag_service.search_documents()](vm_rag_service.py:351), [vm_rag_service.index_documents()](vm_rag_service.py:458).
+  - Пустые text/query детектируются и отклоняются с единым форматом ошибок (422).
+- Клиентские Remote-клиенты адаптированы под контракт:
+  - Заголовки X-API-Contract/X-Embedding-Version: [RemoteVMVectorStore._make_index_request_with_retry()](rag/remote_vector_store.py:285), [RemoteVMVectorStore._make_search_request_with_retry()](rag/remote_vector_store.py:453), [RemoteVMEmbedder._make_single_request()](rag/remote_embedder.py:346).
+  - Векторный протокол поиска (dense_vector/sparse_vector) вместо placeholder: [RemoteVMVectorStore._async_search()](rag/remote_vector_store.py:352).
+- Документация API: добавлен OpenAPI-скелет с "/v1" маршрутами — [docs/api/openapi.yaml](docs/api/openapi.yaml:1).
+- Таймауты и защита от зависаний:
+  - Явные per-request ClientTimeout для индексации/поиска/health: [rag/remote_vector_store.py](rag/remote_vector_store.py:314), [rag/remote_vector_store.py](rag/remote_vector_store.py:470).
+  - Базовые retry/backoff и Circuit Breaker — в эмбеддере (будет унифицировано в Фазе 3).
 ## 🎯 Обзор текущего состояния
 
 **repo_sum** — RAG-as-a-Service для анализа кода с Jina v3 embeddings на удалённой VM (10.61.11.54:8000).
@@ -397,4 +417,4 @@ def chunk_parsed_file(...):
 
 ---
 
-**Последнее обновление:** 03 октября 2025, 17:25 MSK
+**Последнее обновление:** 09 октября 2025, 18:39 MSK

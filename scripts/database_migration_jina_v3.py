@@ -10,7 +10,7 @@ import json
 import time
 import argparse
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import logging
 from dataclasses import dataclass
 

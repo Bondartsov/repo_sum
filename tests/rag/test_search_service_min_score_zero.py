@@ -1,5 +1,4 @@
 # tests/rag/test_search_service_min_score_zero.py
-import os
 import pytest
 
 from config import get_config

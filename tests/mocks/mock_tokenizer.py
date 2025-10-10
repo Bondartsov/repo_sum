@@ -1,6 +1,6 @@
 import hashlib
 import torch
-from typing import List, Union, Dict, Any
+from typing import List, Union
 
 
 class _BatchEncoding(dict):

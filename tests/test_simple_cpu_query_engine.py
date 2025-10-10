@@ -3,7 +3,6 @@
 Упрощенный тест для CPUQueryEngine с прямыми импортами.
 """
 
-import asyncio
 import logging
 import pytest
 

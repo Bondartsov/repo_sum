@@ -16,9 +16,8 @@ import logging
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any, Union, Tuple
+from dataclasses import dataclass
+from typing import List, Dict, Optional, Any
 from collections import defaultdict
 
 import numpy as np
@@ -28,7 +27,7 @@ from config import QueryEngineConfig
 from .embedder import CPUEmbedder
 from .vector_store import QdrantVectorStore
 from .search_service import SearchService
-from .exceptions import QueryEngineException, VectorStoreException, TimeoutException
+from .exceptions import QueryEngineException
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +134,6 @@ class CPUQueryEngine:
         store_collection = getattr(store.config, 'collection_name', 'default') if hasattr(store, 'config') else 'default'
         
         # Создаём фиктивный Config для SearchService
-        from config import Config, RagConfig
         config_dict = {
             'rag': {
                 'embeddings': {

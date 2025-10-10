@@ -76,7 +76,7 @@ try:
             health = stdout.read().decode().strip()
             
             if health == 'OK':
-                print(f"\n✅ Сервис запущен и отвечает на health check!")
+                print("\n✅ Сервис запущен и отвечает на health check!")
                 break
             
             if (i + 1) % 10 == 0:

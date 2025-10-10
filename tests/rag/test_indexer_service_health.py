@@ -1,6 +1,4 @@
 import pytest
-import asyncio
-from types import SimpleNamespace
 
 from rag.indexer_service import IndexerService
 from config import Config

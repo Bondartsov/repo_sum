@@ -6,7 +6,6 @@
 import sys
 import traceback
 import numpy as np
-from dataclasses import asdict
 
 def test_basic_imports():
     """Тестирует основные импорты"""
@@ -19,7 +18,6 @@ def test_basic_imports():
     
     # Тестирование импорта exceptions
     print("  ➤ Импорт rag.exceptions...")
-    from rag.exceptions import VectorStoreException, VectorStoreConnectionError
     print("    ✅ rag.exceptions")
     
     # Тестирование импорта основного модуля
@@ -30,7 +28,6 @@ def test_basic_imports():
     # Тестирование Qdrant клиента (проверка доступности)
     print("  ➤ Импорт qdrant-client...")
     from qdrant_client import QdrantClient
-    from qdrant_client.models import Distance, VectorParams
     print("    ✅ qdrant_client")
     
     # Все импорты успешны - используем assert вместо return
@@ -152,7 +149,7 @@ def test_collection_config_generation():
         vector_store = QdrantVectorStore(config)
         collection_config = vector_store._create_collection_config()
         
-        print(f"    ✅ Конфигурация сгенерирована")
+        print("    ✅ Конфигурация сгенерирована")
         print(f"    ➤ Размер вектора: {collection_config['vectors_config'].size}")
         print(f"    ➤ Distance: {collection_config['vectors_config'].distance}")
         print(f"    ➤ On disk: {collection_config['vectors_config'].on_disk}")
@@ -200,7 +197,7 @@ def test_points_validation():
     
     validated_points = vector_store._validate_points(test_points)
     
-    print(f"    ✅ Валидация завершена")
+    print("    ✅ Валидация завершена")
     print(f"    ➤ Входных точек: {len(test_points)}")
     print(f"    ➤ Валидных точек: {len(validated_points)}")
     

@@ -15,7 +15,6 @@ import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 import logging
-import json
 
 # Настройка логирования для веб-интерфейса
 logger = logging.getLogger(__name__)
@@ -30,9 +29,7 @@ from doc_generator import DocumentationGenerator
 from utils import (
     setup_logging,
     FileInfo,
-    ParsedFile,
     GPTAnalysisRequest,
-    GPTAnalysisResult,
     ensure_directory_exists,
     create_error_parsed_file,
     create_error_gpt_result,
@@ -177,10 +174,10 @@ class WebRepositoryAnalyzer:
             logger.info("OpenAI API инициализирован успешно")
             return True
             
-        except ValueError as e:
+        except ValueError:
             logger.exception("Ошибка валидации API ключа")
             return False
-        except Exception as e:
+        except Exception:
             logger.exception("Ошибка инициализации с API ключом")
             return False
     
@@ -963,7 +960,7 @@ def main():
                         ))
                         
                         if indexing_result and indexing_result.get('success', False):
-                            st.success(f"🎯 Индексация завершена успешно!")
+                            st.success("🎯 Индексация завершена успешно!")
                             
                             # Отображаем статистику индексации
                             col1, col2, col3 = st.columns(3)

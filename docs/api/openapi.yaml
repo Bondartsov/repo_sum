@@ -1,0 +1,289 @@
+openapi: 3.0.3
+info:
+  title: repo_sum RAG-as-a-Service API
+  version: 1.0.0
+servers:
+  - url: http://10.61.11.54:8000
+paths:
+  /v1/health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /v1/embeddings:
+    post:
+      summary: Generate embeddings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbeddingRequest'
+      responses:
+        '200':
+          description: Embeddings generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/search:
+    post:
+      summary: Search (legacy text protocol)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequestV1'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/search_v2:
+    post:
+      summary: Search (vector protocol)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequestV2'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/index:
+    post:
+      summary: Index documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IndexRequest'
+      responses:
+        '200':
+          description: Indexing completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    EmbeddingRequest:
+      type: object
+      required: [texts]
+      properties:
+        texts:
+          type: array
+          items:
+            type: string
+        task:
+          type: string
+          default: retrieval.passage
+        truncate_dim:
+          type: integer
+        normalize:
+          type: boolean
+          default: true
+    EmbeddingResponse:
+      type: object
+      required: [embeddings, model_name, embedding_dim, processing_time]
+      properties:
+        embeddings:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+              format: float
+        model_name:
+          type: string
+        embedding_dim:
+          type: integer
+        processing_time:
+          type: number
+          format: float
+    SearchRequestV1:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+        top_k:
+          type: integer
+          default: 10
+        use_hybrid:
+          type: boolean
+          default: true
+        filters:
+          type: object
+        task:
+          type: string
+          default: retrieval.query
+    SearchRequestV2:
+      type: object
+      properties:
+        dense_vector:
+          type: array
+          items:
+            type: number
+            format: float
+        sparse_vector:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+        top_k:
+          type: integer
+          default: 10
+        use_hybrid:
+          type: boolean
+          default: true
+        filters:
+          type: object
+        task:
+          type: string
+          default: retrieval.query
+    IndexedDocument:
+      type: object
+      required: [id, text, metadata]
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+          minLength: 1
+        metadata:
+          type: object
+          properties:
+            file_path: { type: string }
+            line_start: { type: integer }
+            line_end: { type: integer }
+            language: { type: string }
+            repo: { type: string }
+            chunk_type: { type: string }
+        embedding_version:
+          type: string
+        content_sha256:
+          type: string
+          pattern: '^[A-Fa-f0-9]{64}$'
+    IndexRequest:
+      type: object
+      required: [documents]
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/IndexedDocument'
+        batch_size:
+          type: integer
+          default: 512
+        recreate:
+          type: boolean
+          default: false
+    SearchResponse:
+      type: object
+      required: [results, query_time, total_found, hybrid_used]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+        query_time:
+          type: number
+          format: float
+        total_found:
+          type: integer
+        hybrid_used:
+          type: boolean
+    IndexResponse:
+      type: object
+      required: [indexed_count, status, processing_time, collection_info]
+      properties:
+        indexed_count:
+          type: integer
+        status:
+          type: string
+        processing_time:
+          type: number
+          format: float
+        collection_info:
+          type: object
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            type: { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+            request_id: { type: string }
+            api_contract: { type: string }

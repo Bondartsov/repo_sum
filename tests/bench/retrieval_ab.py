@@ -1,4 +1,10 @@
-import argparse, os, json, pathlib, requests, time, sys, re
+import argparse
+import json
+import pathlib
+import requests
+import time
+import sys
+import re
 
 def iter_needles_from_synth(repo_root: pathlib.Path):
     # ищем маркеры NEEDLE_ в синтетических файлах

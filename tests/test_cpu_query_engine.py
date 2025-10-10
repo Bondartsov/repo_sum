@@ -10,8 +10,6 @@
 
 import asyncio
 import logging
-import sys
-from pathlib import Path
 import pytest
 
 # Настройка логирования
@@ -65,7 +63,6 @@ def test_imports():
     from config import get_config, QueryEngineConfig
     
     # Тестируем импорт исключений
-    from rag.exceptions import QueryEngineException, VectorStoreException
     
     # Проверяем, что все импорты прошли успешно
     assert create_embedder is not None

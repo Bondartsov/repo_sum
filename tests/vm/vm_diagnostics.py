@@ -219,7 +219,7 @@ class VMDiagnosticSuite:
             # Запускаем мониторинг
             self.health_monitor.start_monitoring(callback=monitoring_callback)
             
-            print(f"Мониторинг активен. Нажмите Ctrl+C для остановки...")
+            print("Мониторинг активен. Нажмите Ctrl+C для остановки...")
             time.sleep(duration_minutes * 60)
             
         except KeyboardInterrupt:
@@ -319,13 +319,13 @@ class VMDiagnosticSuite:
         print(f"Успешность: {success_rate:.1f}%")
         
         if summary["critical_issues"]:
-            print(f"\n🚨 Критические проблемы:")
+            print("\n🚨 Критические проблемы:")
             for issue in summary["critical_issues"]:
                 print(f"  • {issue}")
         
         # Общие рекомендации
         if failed > 0:
-            print(f"\n💡 Быстрые исправления:")
+            print("\n💡 Быстрые исправления:")
             if failed == total:
                 print("  • VM может быть недоступна - проверьте ping")
                 print("  • RAG сервис может быть остановлен")
@@ -364,7 +364,7 @@ class VMDiagnosticSuite:
         # Генерируем рекомендации
         fix_suggestions = self.generate_fix_suggestions(results)
         if fix_suggestions:
-            print(f"\n💡 Рекомендации по исправлению:")
+            print("\n💡 Рекомендации по исправлению:")
             for suggestion in fix_suggestions[:10]:  # Ограничиваем количество
                 print(f"  {suggestion}")
     

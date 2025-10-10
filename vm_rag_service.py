@@ -19,9 +19,9 @@ from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
+import uuid
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 import numpy as np
 import uvicorn
@@ -269,6 +269,7 @@ async def root():
     }
 
 @app.get("/health")
+@app.get("/v1/health")
 async def health_check():
     """Проверка состояния сервиса"""
     try:
@@ -311,6 +312,7 @@ async def health_check():
         )
 
 @app.post("/embeddings", response_model=EmbeddingResponse)
+@app.post("/v1/embeddings", response_model=EmbeddingResponse)
 async def get_embeddings(request: EmbeddingRequest):
     """Получение эмбеддингов от Jina v3"""
     if 'embedder' not in services:
@@ -347,6 +349,8 @@ async def get_embeddings(request: EmbeddingRequest):
         raise HTTPException(status_code=500, detail=f"Ошибка эмбеддинга: {str(e)}")
 
 @app.post("/search", response_model=SearchResponse)
+@app.post("/v1/search", response_model=SearchResponse)
+@app.post("/v1/search_v2", response_model=SearchResponse)
 async def search_documents(request: SearchRequest):
     """Гибридный поиск по документам (поддержка векторного и текстового протоколов)"""
     if 'search_service' not in services:
@@ -395,7 +399,21 @@ async def search_documents(request: SearchRequest):
         # Текстовый протокол (legacy fallback)
         elif request.query:
             logger.info("🟡 Текстовый протокол (legacy): генерируем эмбеддинги из текста")
-            
+            if not request.query.strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": {
+                            "type": "validation_error",
+                            "message": "text query must be non-empty",
+                            "details": [
+                                {"field": "query", "issue": "empty"}
+                            ],
+                            "request_id": str(uuid.uuid4()),
+                            "api_contract": "v1.0.0"
+                        }
+                    }
+                )
             # Выполняем поиск через SearchService (с генерацией эмбеддингов)
             results = await services['search_service'].search(
                 query=request.query,
@@ -406,8 +424,19 @@ async def search_documents(request: SearchRequest):
             )
         else:
             raise HTTPException(
-                status_code=400,
-                detail="Необходим либо dense_vector (векторный протокол), либо query (текстовый протокол)"
+                status_code=422,
+                detail={
+                    "error": {
+                        "type": "validation_error",
+                        "message": "either dense_vector or query is required",
+                        "details": [
+                            {"field": "dense_vector", "issue": "missing"},
+                            {"field": "query", "issue": "missing"}
+                        ],
+                        "request_id": str(uuid.uuid4()),
+                        "api_contract": "v1.0.0"
+                    }
+                }
             )
         
         query_time = asyncio.get_event_loop().time() - start_time
@@ -427,6 +456,7 @@ async def search_documents(request: SearchRequest):
         raise HTTPException(status_code=500, detail=f"Ошибка поиска: {str(e)}")
 
 @app.post("/index", response_model=IndexResponse)
+@app.post("/v1/index", response_model=IndexResponse)
 async def index_documents(request: IndexRequest, background_tasks: BackgroundTasks):
     """Индексация документов с защитой от OOM"""
     logger.info(f"🔵 НАЧАЛО endpoint /index: получено {len(request.documents) if hasattr(request, 'documents') else 0} документов")
@@ -463,11 +493,16 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
         logger.info("🔵 Шаг 3: Подготовка points...")
         # Подготавливаем документы для индексации
         points = []
+        invalid_docs = []
         for doc in request.documents:
             # ✅ ИСПРАВЛЕНИЕ: Извлекаем текст из правильного места
             # Сначала пробуем doc['text'], если нет - берём doc['payload']['content']
-            text = doc.get('text', '') or doc.get('payload', {}).get('content', '')
-            
+            text = (doc.get('text', '') or doc.get('payload', {}).get('content', '')).strip()
+            if not text:
+                invalid_docs.append({
+                    "id": doc.get('id') or doc.get('metadata', {}).get('file_path', 'unknown'),
+                    "reason": "empty_text"
+                })
             point = {
                 'id': doc.get('id'),
                 'text': text,
@@ -477,7 +512,20 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
             points.append(point)
         
         logger.info(f"🔵 Шаг 4: Points подготовлены: {len(points)} точек")
-        
+        # Валидация: отклоняем пустые тексты до индексации
+        if invalid_docs:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "type": "validation_error",
+                        "message": "text must be non-empty",
+                        "details": invalid_docs,
+                        "request_id": str(uuid.uuid4()),
+                        "api_contract": "v1.0.0"
+                    }
+                }
+            )
         # 🔍 ДИАГНОСТИКА 2: Что передаём в IndexerService
         if points:
             first_point = points[0]

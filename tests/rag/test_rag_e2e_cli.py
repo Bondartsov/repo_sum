@@ -12,20 +12,16 @@ End-to-End тесты CLI команд RAG системы.
 import pytest
 import os
 import tempfile
-import shutil
 import subprocess
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any, List
 from unittest.mock import patch, Mock
 
-import click
 from tests.utils_cli import run_cli
 from click.testing import CliRunner
 
 from main import cli
-from config import get_config, reload_config
 from rag.exceptions import VectorStoreConnectionError
 
 

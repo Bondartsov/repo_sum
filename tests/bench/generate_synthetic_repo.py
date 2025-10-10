@@ -1,4 +1,7 @@
-import argparse, os, random, string, pathlib, math
+import argparse
+import random
+import string
+import pathlib
 
 TEMPLATE_HEADER = '''
 

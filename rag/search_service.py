@@ -9,13 +9,11 @@ import logging
 import time
 import asyncio
 import threading
-from typing import List, Dict, Optional, Any, Union
-from datetime import datetime
+from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 
 import numpy as np
 from rich.console import Console
-from rich.table import Table
 from rich.syntax import Syntax
 from rich.panel import Panel
 

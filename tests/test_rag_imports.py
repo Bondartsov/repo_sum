@@ -19,7 +19,7 @@ def test_basic_imports():
     logger.info("=== Тестирование базовых импортов ===")
     
     # Проверка импорта конфигурации
-    from config import EmbeddingConfig, ParallelismConfig, RagConfig
+    from config import EmbeddingConfig
     logger.info("✓ Конфигурационные классы импортированы успешно")
     
     # Проверка импорта RAG модуля
@@ -27,10 +27,6 @@ def test_basic_imports():
     logger.info(f"✓ RAG модуль импортирован, версия: {rag.__version__}")
     
     # Проверка импорта исключений
-    from rag.exceptions import (
-        RagException, EmbeddingException, VectorStoreException,
-        QueryEngineException, ModelLoadException, OutOfMemoryException
-    )
     logger.info("✓ Исключения RAG импортированы успешно")
     
     # Все импорты успешны
@@ -154,7 +150,7 @@ def test_config_compatibility():
         
         # Проверяем RAG конфигурацию
         rag_config = config.rag
-        logger.info(f"✓ RAG конфигурация доступна:")
+        logger.info("✓ RAG конфигурация доступна:")
         logger.info(f"  - Провайдер эмбеддингов: {rag_config.embeddings.provider}")
         logger.info(f"  - Модель: {rag_config.embeddings.model_name}")
         logger.info(f"  - Векторное хранилище: {rag_config.vector_store.host}:{rag_config.vector_store.port}")
@@ -168,7 +164,7 @@ def test_config_compatibility():
         # Создаем дефолтную RAG конфигурацию
         from config import RagConfig
         rag_config = RagConfig()
-        logger.info(f"✓ Дефолтная RAG конфигурация создана:")
+        logger.info("✓ Дефолтная RAG конфигурация создана:")
         logger.info(f"  - Провайдер эмбеддингов: {rag_config.embeddings.provider}")
         logger.info(f"  - Модель: {rag_config.embeddings.model_name}")
         

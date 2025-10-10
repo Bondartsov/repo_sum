@@ -10,7 +10,6 @@ VM Firewall Configuration Tests - Тестирование настроек fire
 
 import pytest
 pytest.importorskip('paramiko')
-import subprocess
 import socket
 import time
 import paramiko
@@ -415,7 +414,7 @@ class VMFirewallTester:
                         all_results["summary"]["critical_issues"].append(result.error)
                 
                 if result.recommendations:
-                    print(f"    Recommendations:")
+                    print("    Recommendations:")
                     for rec in result.recommendations:
                         print(f"      • {rec}")
                     all_results["summary"]["recommendations"].extend(result.recommendations)
@@ -450,12 +449,12 @@ class VMFirewallTester:
         print(f"📊 Результаты firewall тестирования: {passed_tests}/{total_tests} прошло")
         
         if all_results["summary"]["critical_issues"]:
-            print(f"🚨 Критические проблемы:")
+            print("🚨 Критические проблемы:")
             for issue in set(all_results["summary"]["critical_issues"]):
                 print(f"  • {issue}")
         
         if all_results["summary"]["recommendations"]:
-            print(f"💡 Основные рекомендации:")
+            print("💡 Основные рекомендации:")
             unique_recs = list(set(all_results["summary"]["recommendations"]))[:5]
             for rec in unique_recs:
                 print(f"  • {rec}")
@@ -582,7 +581,7 @@ if __name__ == "__main__":
     
     # Показываем команды для исправления
     if results["summary"]["failed_tests"] > 0:
-        print(f"\n🔧 Команды для исправления проблем:")
+        print("\n🔧 Команды для исправления проблем:")
         fix_commands = get_firewall_quick_fix_commands()
         for cmd in fix_commands:
             print(cmd)

@@ -70,7 +70,7 @@ class ModelLoadException(EmbeddingException):
             model_name: Имя модели
             error_message: Сообщение об ошибке
         """
-        message = f"Не удалось загрузить модель эмбеддингов"
+        message = "Не удалось загрузить модель эмбеддингов"
         super().__init__(
             message=message,
             provider=provider,
@@ -188,7 +188,7 @@ class CollectionNotFoundException(VectorStoreException):
         Args:
             collection_name: Имя коллекции
         """
-        message = f"Коллекция не найдена"
+        message = "Коллекция не найдена"
         super().__init__(
             message=message,
             collection_name=collection_name,

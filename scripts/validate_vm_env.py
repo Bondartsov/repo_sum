@@ -14,7 +14,6 @@
 - EMBEDDING_DIMENSION == EMB_TRUNCATE_DIM (если указано)
 """
 
-import os
 from pathlib import Path
 
 def bool_ok(cond: bool) -> str:

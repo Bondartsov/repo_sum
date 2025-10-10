@@ -3,8 +3,7 @@
 """
 
 import ast
-import re
-from typing import List, Optional
+from typing import List
 
 from .base_parser import BaseParser
 from utils import FileInfo, ParsedFile, ParsedElement, ParsingError

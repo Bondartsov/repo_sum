@@ -1,5 +1,4 @@
 import pytest
-import os
 from openai_integration import OpenAIManager, OpenAIError
 from file_scanner import FileScanner
 from parsers.base_parser import ParserRegistry
@@ -58,7 +57,6 @@ def test_openai_manager_network_error(monkeypatch, tmp_path):
     """
     from utils import GPTAnalysisRequest
     import asyncio
-    from file_scanner import FileScanner
     from parsers.base_parser import ParserRegistry
     from code_chunker import CodeChunker
 

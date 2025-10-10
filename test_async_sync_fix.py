@@ -12,7 +12,6 @@
 import sys
 import os
 import warnings
-import tempfile
 import pytest
 
 # Добавляем путь к модулям
@@ -38,7 +37,6 @@ def test_event_loop_manager():
         print("✅ EventLoopManager stats работают")
         
         # Простой async test
-        import asyncio
         async def simple_test():
             return "test_result"
         

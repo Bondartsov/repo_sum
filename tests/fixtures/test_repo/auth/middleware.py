@@ -6,7 +6,7 @@ Middleware для аутентификации пользователей.
 
 import jwt
 import time
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from functools import wraps
 from flask import request, jsonify, current_app
 

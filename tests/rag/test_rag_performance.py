@@ -18,9 +18,8 @@ import os
 import psutil
 import threading
 import tempfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import Dict, Any, Tuple
 from unittest.mock import Mock, patch, AsyncMock
 from dataclasses import dataclass
 
@@ -417,7 +416,7 @@ class TestRAGPerformance:
         assert metrics_medium.duration > 0
         assert metrics_large.duration > 0
         
-        print(f"\n=== Производительность Embedder ===")
+        print("\n=== Производительность Embedder ===")
         print(f"Малый батч: {metrics_small.to_dict()}")
         print(f"Средний батч: {metrics_medium.to_dict()}")
         print(f"Большой батч: {metrics_large.to_dict()}")
@@ -487,7 +486,7 @@ class TestRAGPerformance:
             throughput_ratio = metrics_1000.throughput / metrics_100.throughput
             assert 0.1 <= throughput_ratio <= 100.0, f"Throughput изменился кардинально: {throughput_ratio}"
         
-        print(f"\n=== Производительность индексации VectorStore ===")
+        print("\n=== Производительность индексации VectorStore ===")
         print(f"100 docs: {metrics_100.to_dict()}")
         print(f"1000 docs: {metrics_1000.to_dict()}")
         print(f"Batch 2000 docs: {metrics_batch.to_dict()}")
@@ -577,7 +576,7 @@ class TestRAGPerformance:
                 throughput_ratio = concurrent_throughput / single_throughput
                 assert 0.01 <= throughput_ratio <= 100.0, f"Странное соотношение throughput: {throughput_ratio}"
             
-            print(f"\n=== Производительность поиска ===")
+            print("\n=== Производительность поиска ===")
             print(f"Среднее время одиночного поиска: {avg_single_search_time:.3f}s")
             print(f"Конкурентный поиск: {metrics_concurrent.to_dict()}")
             print(f"Поиск с фильтрами: {metrics_filters.to_dict()}")
@@ -696,7 +695,7 @@ class TestRAGPerformance:
                         # Для mock данных просто проверяем что cache hit не медленнее в 10 раз
                         assert cache_speedup > 0.1, f"Кэш слишком медленный: {cache_speedup}x"
                     
-                    print(f"\n=== Производительность QueryEngine ===")
+                    print("\n=== Производительность QueryEngine ===")
                     print(f"Базовый поиск: {metrics_basic.to_dict()}")
                     print(f"RRF+MMR поиск: {metrics_advanced.to_dict()}")
                     print(f"Конкурентный поиск: {metrics_concurrent_qe.to_dict()}")
@@ -802,7 +801,7 @@ class TestRAGPerformance:
                                 files_per_second = 50 / metrics_full_index.duration
                                 assert files_per_second > 5, f"Индексация слишком медленная: {files_per_second:.2f} файлов/с"
                                 
-                                print(f"\n=== Производительность полного пайплайна ===")
+                                print("\n=== Производительность полного пайплайна ===")
                                 print(f"Полная индексация: {metrics_full_index.to_dict()}")
                                 print(f"Health check: {metrics_health.to_dict()}")
                                 print(f"Получение статистики: {metrics_stats.to_dict()}")
@@ -859,7 +858,7 @@ class TestRAGPerformance:
                             language_filter="python" if user_id % 2 == 0 else None
                         )
                         results.extend(result)
-                    except Exception as e:
+                    except Exception:
                         errors += 1
                 
                 return len(results), errors
@@ -895,7 +894,7 @@ class TestRAGPerformance:
             queries_per_second = expected_total_queries / metrics_stress.duration if metrics_stress.duration > 0 else 0
             assert queries_per_second >= 0.5, f"Низкий throughput даже для mock: {queries_per_second:.2f} запросов/с"
             
-            print(f"\n=== Стресс-тест конкурентных пользователей ===")
+            print("\n=== Стресс-тест конкурентных пользователей ===")
             print(f"Пользователей: {num_concurrent_users}")
             print(f"Запросов на пользователя: {queries_per_user}")
             print(f"Общий throughput: {queries_per_second:.2f} запросов/с")
@@ -954,7 +953,7 @@ class TestRAGPerformance:
                 # Проверяем что память не выросла катастрофически (до 100 МБ допустимо для тестов)
                 assert final_increase < 100, f"Слишком большое финальное потребление памяти: {final_increase:.1f} МБ"
                 
-                print(f"\n=== Тест использования памяти ===")
+                print("\n=== Тест использования памяти ===")
                 print(f"Базовая память: {baseline_memory:.1f} МБ")
                 print(f"Максимальный рост: {max_memory_increase:.1f} МБ")
                 print(f"Финальный рост: {final_increase:.1f} МБ")

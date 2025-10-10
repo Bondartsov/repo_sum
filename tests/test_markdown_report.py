@@ -1,4 +1,3 @@
-import pytest
 from doc_generator import DocumentationGenerator
 from utils import ParsedFile, FileInfo
 

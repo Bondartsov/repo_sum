@@ -14,19 +14,13 @@ PHASE 7: Jina v3 Quality Benchmark - Регрессионное тестиров
 import pytest
 import asyncio
 import time
-import json
 import numpy as np
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Any, Tuple, Optional
-from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock
+from typing import List, Dict, Any
+from unittest.mock import Mock
 
-from config import Config, RagConfig, EmbeddingConfig, VectorStoreConfig, QueryEngineConfig, ParallelismConfig
-from rag.embedder import CPUEmbedder
-from rag.vector_store import QdrantVectorStore
-from rag.indexer_service import IndexerService
+from config import Config, RagConfig, EmbeddingConfig, VectorStoreConfig, QueryEngineConfig
 from rag.search_service import SearchService
-from rag.query_engine import CPUQueryEngine
 
 
 @dataclass
@@ -922,7 +916,7 @@ class TestJinaV3QualityBenchmark:
         assert 'total_queries' in summary
         assert summary['total_queries'] == 5
         
-        print(f"\n=== Итоговый отчет сравнения качества ===")
+        print("\n=== Итоговый отчет сравнения качества ===")
         print(f"Запросов с улучшением: {summary['queries_with_improvement']}/{summary['total_queries']}")
         
         # Выводим детальные улучшения
@@ -967,7 +961,7 @@ class TestJinaV3QualityBenchmark:
         avg_bge_time = np.mean(bge_times)
         avg_jina_time = np.mean(jina_times)
         
-        print(f"\n=== Сравнение производительности поиска ===")
+        print("\n=== Сравнение производительности поиска ===")
         print(f"BGE-small средн. время: {avg_bge_time:.1f} ms")
         print(f"Jina v3 средн. время: {avg_jina_time:.1f} ms")
         
@@ -1016,7 +1010,7 @@ class TestJinaV3QualityBenchmark:
         
         # Должна быть некоторая связь между ожидаемыми результатами и документами
         overlap = all_expected_results & document_identifiers
-        assert len(overlap) > 0, f"Нет пересечения между ожидаемыми результатами и документами"
+        assert len(overlap) > 0, "Нет пересечения между ожидаемыми результатами и документами"
         
         print(f"Benchmark dataset валидация прошла: {len(queries)} запросов, {len(documents)} документов")
     
@@ -1129,7 +1123,7 @@ class TestJinaV3QualityBenchmark:
         # Проверяем результаты по категориям
         assert len(category_results) >= 3, f"Ожидали минимум 3 категории, получили {len(category_results)}"
         
-        print(f"\n=== Итоговый анализ по категориям ===")
+        print("\n=== Итоговый анализ по категориям ===")
         for category, stats in category_results.items():
             print(f"{category}: NDCG {stats['avg_ndcg_improvement']:.1f}%, P@10 {stats['avg_precision_improvement']:.1f}%")
         

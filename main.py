@@ -14,8 +14,7 @@ from typing import List, Tuple
 
 import click
 from rich.console import Console
-from rich.progress import Progress, TaskID, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
-from rich.logging import RichHandler
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 from rich.table import Table
 
 from config import get_config, reload_config
@@ -429,7 +428,7 @@ def analyze(repo_path, output, no_progress, incremental):
         
         if result.get('success', True):
             console = Console(emoji=False)
-            console.print(f"[bold green]Анализ завершен успешно![/bold green]")
+            console.print("[bold green]Анализ завершен успешно![/bold green]")
             saved_dir = result.get('output_directory', output)
             console.print(f"Документация сохранена в: [cyan]{saved_dir}[/cyan]")
             if result.get('index_file'):
@@ -627,7 +626,7 @@ def index(repo_path, batch_size, recreate, no_progress):
                 table.add_row("С ошибками", str(result['failed_files']), style="red")
             
             console.print(table)
-            console.print(f"[bold green]✅ Индексация завершена успешно![/bold green]")
+            console.print("[bold green]✅ Индексация завершена успешно![/bold green]")
         else:
             console.print(f"[bold red]❌ Ошибка индексации: {result.get('error', 'Неизвестная ошибка')}[/bold red]")
             sys.exit(1)

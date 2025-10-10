@@ -3,7 +3,6 @@
 Диагностика VM для Фазы 2 - проверка swap, памяти и дисков
 """
 import paramiko
-import os
 from pathlib import Path
 
 # Загрузка учетных данных из .env

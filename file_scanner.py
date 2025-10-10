@@ -3,9 +3,8 @@
 """
 
 import logging
-import os
 from pathlib import Path
-from typing import Iterator, List, Optional, Set
+from typing import Iterator, Optional
 
 import chardet
 

@@ -372,7 +372,8 @@ def setup_logging(level: str = "INFO") -> None:
 
     # Консольный хендлер
     try:
-        import sys, io
+        import sys
+        import io
         stdout_buffer = getattr(sys.stdout, "buffer", None)
         if stdout_buffer is not None:
             utf8_stdout = io.TextIOWrapper(stdout_buffer, encoding="utf-8", errors="backslashreplace")

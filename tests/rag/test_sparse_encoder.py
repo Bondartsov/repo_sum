@@ -71,7 +71,6 @@ def test_property_based_encode_returns_valid_dicts(encoder, texts):
 
 
 def test_mock_mode_tokenizer(monkeypatch):
-    import os
     from tests.mocks.mock_tokenizer import MockTokenizer
 
     monkeypatch.setenv("MOCK_MODE", "1")
@@ -82,7 +81,6 @@ def test_mock_mode_tokenizer(monkeypatch):
     assert isinstance(encoder.model, nn.Module)
 import pytest
 
-from rag.sparse_encoder import SparseEncoder
 from tests.mocks.mock_tokenizer import MockTokenizer
 
 

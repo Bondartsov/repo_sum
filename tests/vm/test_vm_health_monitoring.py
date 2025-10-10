@@ -11,11 +11,9 @@ VM сервиса и автоматического обнаружения пр�
 import pytest
 import asyncio
 import aiohttp
-import requests
 import time
 import json
 import threading
-import queue
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, asdict
@@ -609,7 +607,7 @@ if __name__ == "__main__":
         
         # Показываем отчет
         report = monitor.get_monitoring_report()
-        print(f"\n📊 Отчет о мониторинге:")
+        print("\n📊 Отчет о мониторинге:")
         print(f"Всего проверок: {report['metrics']['total_checks']}")
         print(f"Успешность: {report['metrics']['success_rate']:.1f}%")
         print(f"Среднее время отклика: {report['metrics']['avg_response_time_ms']:.1f}ms")

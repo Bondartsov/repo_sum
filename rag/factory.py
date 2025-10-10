@@ -7,7 +7,7 @@ Factory для создания RAG компонентов с автоматич
 """
 
 import logging
-from typing import Optional, Any
+from typing import Optional
 from .context import ExecutionContext, detect_execution_context
 from config import Config
 

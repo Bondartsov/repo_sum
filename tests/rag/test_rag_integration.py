@@ -13,9 +13,7 @@ import pytest
 import asyncio
 import os
 import tempfile
-import shutil
 from pathlib import Path
-from typing import List, Dict, Any
 from unittest.mock import Mock, patch, AsyncMock
 
 import numpy as np
@@ -28,9 +26,7 @@ from rag.search_service import SearchService
 from rag.query_engine import CPUQueryEngine
 from rag.exceptions import (
     VectorStoreException, 
-    VectorStoreConnectionError,
-    QueryEngineException,
-    TimeoutException
+    VectorStoreConnectionError
 )
 
 

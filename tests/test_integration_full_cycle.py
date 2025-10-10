@@ -1,7 +1,5 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from pathlib import Path
-from config import get_config
 from file_scanner import FileScanner
 from parsers.base_parser import ParserRegistry
 from code_chunker import CodeChunker

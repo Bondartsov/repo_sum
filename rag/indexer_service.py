@@ -6,18 +6,17 @@
 """
 
 import asyncio
-import os
 import warnings
 import logging
 import time
 import uuid
 import psutil
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Any, AsyncGenerator
+from typing import List, Dict, Tuple, Any, AsyncGenerator
 from datetime import datetime
 import numpy as np
 
-from rich.progress import Progress, TaskID, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 from rich.console import Console
 from rich.table import Table
 
@@ -25,9 +24,9 @@ from config import Config
 from file_scanner import FileScanner
 from code_chunker import CodeChunker
 from parsers.base_parser import ParserRegistry
-from utils import FileInfo, ParsedFile, CodeChunk
+from utils import FileInfo, CodeChunk
 from .factory import RAGFactory
-from .exceptions import VectorStoreException, VectorStoreConnectionError
+from .exceptions import VectorStoreConnectionError
 
 logger = logging.getLogger(__name__)
 # Подавляем шумные SyntaxWarning (например, при парсинге файлов tests)
@@ -57,7 +56,7 @@ class IndexerService:
         # Console with emojis disabled to prevent Windows 'charmap' errors; 
         # in silent mode, route output to devnull.
         if silent_mode:
-            import io, sys, os
+            import os
             try:
                 devnull = open(os.devnull, 'w', encoding='utf-8')
             except Exception:
@@ -710,7 +709,7 @@ class IndexerService:
             for j, (_, doc) in enumerate(valid_docs):
                 point_id = str(doc.get('id') or uuid.uuid4())
                 metadata = dict(doc.get('metadata') or {})
-                from datetime import datetime, timezone
+                from datetime import timezone
                 ts = doc.get('timestamp') or datetime.now(timezone.utc).isoformat()
 
                 vec = embeddings[j]
@@ -758,7 +757,7 @@ class IndexerService:
         vector_store_stats = self.vector_store.get_stats()
         
         # Объединяем со статистикой индексации
-        from datetime import datetime, timezone
+        from datetime import timezone
         combined_stats = {
             'indexer': self.stats.copy(),
             'embedder': embedder_stats,
@@ -775,7 +774,7 @@ class IndexerService:
         Returns:
             Информация о состоянии системы
         """
-        from datetime import datetime, timezone
+        from datetime import timezone
         health_info = {
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'status': 'healthy',

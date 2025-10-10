@@ -8,11 +8,8 @@
 
 import os
 import sys
-import subprocess
 import logging
-import json
-from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, Tuple
 from dotenv import load_dotenv
 import paramiko
 
@@ -341,14 +338,14 @@ def main():
     success = manager.run_phase_1()
     
     if success:
-        print(f"\n🎯 Следующие шаги:")
-        print(f"   1. SSH к VM: ssh user@10.61.11.54")
+        print("\n🎯 Следующие шаги:")
+        print("   1. SSH к VM: ssh user@10.61.11.54")
         print(f"   2. Активировать venv: cd {manager.vm_project_path} && source venv/bin/activate")
-        print(f"   3. Запустить ЭТАП 2: python3 scripts/vm_setup_phase2.py")
+        print("   3. Запустить ЭТАП 2: python3 scripts/vm_setup_phase2.py")
         sys.exit(0)
     else:
-        print(f"\n❌ ЭТАП 1 завершился с ошибками.")
-        print(f"   Проверьте логи выше и устраните проблемы.")
+        print("\n❌ ЭТАП 1 завершился с ошибками.")
+        print("   Проверьте логи выше и устраните проблемы.")
         sys.exit(1)
 
 if __name__ == "__main__":

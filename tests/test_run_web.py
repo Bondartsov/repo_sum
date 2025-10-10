@@ -1,6 +1,5 @@
 # tests/test_run_web.py
 # Smoke-тест для run_web.py
-import pytest
 import importlib
 
 def test_run_web_import():

@@ -12,7 +12,7 @@ import asyncio
 import socket
 import time
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 import aiohttp
 
 logger = logging.getLogger(__name__)

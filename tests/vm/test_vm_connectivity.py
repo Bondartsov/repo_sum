@@ -16,8 +16,7 @@ import socket
 import time
 import subprocess
 import platform
-from typing import Dict, Any, Optional, Tuple
-from unittest.mock import patch, MagicMock
+from typing import Dict, Any
 import logging
 
 from tests.network_utils import is_network_available

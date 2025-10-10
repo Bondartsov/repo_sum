@@ -1,6 +1,5 @@
 # tests/test_doc_generator.py
 # Тесты для модуля doc_generator.py
-import pytest
 from doc_generator import DocumentationGenerator
 from utils import ParsedFile, FileInfo
 

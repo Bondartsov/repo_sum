@@ -10,7 +10,6 @@ Integration тесты для RetryPolicy + CircuitBreaker.
 import pytest
 import asyncio
 import time
-from unittest.mock import AsyncMock, Mock
 
 from rag.retry_policy import RetryPolicy, RetryConfig
 from rag.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitState, CircuitBreakerOpenException

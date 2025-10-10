@@ -926,7 +926,7 @@ except Exception as e:
                 if exit_status == 0 and response:
                     # Проверка содержимого ответа
                     if any(keyword in response.lower() for keyword in ["connected", "status", "ok", "healthy"]):
-                        print(f" ✅ УСПЕХ!")
+                        print(" ✅ УСПЕХ!")
                         print(f"   📊 Сервис готов (время загрузки: {elapsed} сек)")
                         
                         # Показать превью ответа
@@ -935,11 +935,11 @@ except Exception as e:
                 
                 # Endpoint ответил, но не корректно
                 if exit_status == 0:
-                    print(f" ⚠️ Ответ получен, но некорректный")
+                    print(" ⚠️ Ответ получен, но некорректный")
                     print(f"      Код: {exit_status}, Ответ: {response[:100]}")
                 else:
                     # Endpoint не доступен, но это может быть нормально (модель загружается)
-                    print(f" ⏳ Ещё загружается...")
+                    print(" ⏳ Ещё загружается...")
                     
             except Exception as e:
                 print(f" ⚠️ Ошибка: {str(e)[:50]}")
@@ -950,7 +950,7 @@ except Exception as e:
             else:
                 # Последняя попытка провалилась
                 print(f"\n   ❌ Health check не пройден после {max_attempts * interval} секунд")
-                print(f"   💡 Проверьте логи: ssh user@10.61.11.54 'tail -100 ~/repo_sum_rag/repo_sum/rag_service.log'")
+                print("   💡 Проверьте логи: ssh user@10.61.11.54 'tail -100 ~/repo_sum_rag/repo_sum/rag_service.log'")
                 return False
         
         return False

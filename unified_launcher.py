@@ -18,18 +18,15 @@ import sys
 import subprocess
 import time
 import argparse
-import json
-import threading
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 from rich.table import Table
 from rich.live import Live
-from rich.text import Text
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -221,7 +218,7 @@ class UnifiedLauncher:
             else:
                 # Процесс завершился - читаем ошибки
                 stdout, stderr = self.web_process.communicate(timeout=5)
-                console.print(f"[red]❌ Веб-приложение не запустилось[/red]")
+                console.print("[red]❌ Веб-приложение не запустилось[/red]")
                 if stderr:
                     console.print(f"[red]Ошибка: {stderr}[/red]")
                 return False

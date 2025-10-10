@@ -32,30 +32,20 @@ graceful degradation и performance benchmarks.
 import pytest
 import asyncio
 import os
-import tempfile
-import shutil
 import time
-import json
 import numpy as np
-from pathlib import Path
-from typing import List, Dict, Any, Optional
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
+from typing import List, Dict, Any
+from unittest.mock import Mock, patch
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 
 # Project imports
-from config import Config, RagConfig, EmbeddingConfig, VectorStoreConfig, QueryEngineConfig, ParallelismConfig, RemoteServiceConfig
+from config import RagConfig, EmbeddingConfig, VectorStoreConfig, QueryEngineConfig, ParallelismConfig, RemoteServiceConfig
 from rag.remote_embedder import RemoteVMEmbedder
-from rag.remote_vector_store import RemoteVMVectorStore
 from rag.search_service import SearchService
 from rag.indexer_service import IndexerService
 from rag.exceptions import EmbeddingException, VectorStoreException
-from rag.event_loop_manager import run_async_safe
 
 # Test utilities
-from tests.network_utils import is_network_available
-from tests.mocks.mock_remote_embedder import MockRemoteEmbedder
-from tests.mocks.mock_vector_store import MockVectorStore
 
 
 @dataclass
