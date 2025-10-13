@@ -245,6 +245,36 @@ class SparseConfig:
     method: str = field(default_factory=lambda: os.getenv("SPARSE_METHOD", "SPLADE"))
 
 @dataclass
+class RetryProfile:
+    """Профиль ретраев для конкретного эндпойнта"""
+    max_attempts: int = 3
+    base_delay: float = 1.0
+    max_delay: float = 8.0
+    exponential: bool = True  # jitter не используем на этом шаге
+
+
+@dataclass
+class TimeoutProfiles:
+    """Пер-эндпойнтовые профили таймаутов и ретраев для RAG-клиентов"""
+    # Таймауты
+    health_total_sec: float = 2.0
+    search_total_p95_sec: float = 10.0
+    index_base_sec: float = 60.0
+    index_per_batch_step_sec: float = 0.2
+    # Ретраи
+    retry_search: RetryProfile = field(
+        default_factory=lambda: RetryProfile(
+            max_attempts=3, base_delay=1.0, max_delay=8.0, exponential=True
+        )
+    )
+    retry_index: RetryProfile = field(
+        default_factory=lambda: RetryProfile(
+            max_attempts=5, base_delay=2.0, max_delay=60.0, exponential=True
+        )
+    )
+
+
+@dataclass
 class RagConfig:
     remote_service: RemoteServiceConfig = field(default_factory=RemoteServiceConfig)
     """Конфигурация RAG системы"""
@@ -253,11 +283,13 @@ class RagConfig:
     query_engine: QueryEngineConfig = field(default_factory=QueryEngineConfig)
     parallelism: ParallelismConfig = field(default_factory=ParallelismConfig)
     sparse: SparseConfig = field(default_factory=SparseConfig)
+    # Новое: пер-эндпойнтовые профили таймаутов и ретраев
+    timeout_profiles: TimeoutProfiles = field(default_factory=TimeoutProfiles)
 
 
     @classmethod
     def from_dict(cls, data: dict) -> "RagConfig":
-        """Создает экземпляр RagConfig из словаря"""
+        """Создает экземпляр RagConfig из словаря с поддержкой timeout_profiles и .env override"""
         embeddings_data = data.get("embeddings", {}).copy()
         embeddings_data.pop("vector_size", None)
 
@@ -285,13 +317,72 @@ class RagConfig:
 
         remote_service = RemoteServiceConfig(**remote_service_data) if remote_service_data else RemoteServiceConfig()
 
+        # === TimeoutProfiles: JSON + .env overrides с дефолтами ===
+        tp_src = data.get("timeout_profiles", {}) or {}
+        tp = TimeoutProfiles()
+
+        # JSON-override простых полей
+        simple_keys = ("health_total_sec", "search_total_p95_sec", "index_base_sec", "index_per_batch_step_sec")
+        for key in simple_keys:
+            if key in tp_src:
+                try:
+                    setattr(tp, key, float(tp_src[key]))
+                except Exception:
+                    logger.warning(f"Invalid value for timeout_profiles.{key}='{tp_src.get(key)}', using default")
+
+        # JSON-override retry профилей
+        rs = tp_src.get("retry_search", {}) or {}
+        if isinstance(rs, dict):
+            if "max_attempts" in rs:
+                try: tp.retry_search.max_attempts = int(rs["max_attempts"])
+                except Exception: logger.warning("Invalid retry_search.max_attempts in settings.json")
+            if "base_delay" in rs:
+                try: tp.retry_search.base_delay = float(rs["base_delay"])
+                except Exception: logger.warning("Invalid retry_search.base_delay in settings.json")
+            if "max_delay" in rs:
+                try: tp.retry_search.max_delay = float(rs["max_delay"])
+                except Exception: logger.warning("Invalid retry_search.max_delay in settings.json")
+            if "exponential" in rs:
+                try: tp.retry_search.exponential = bool(rs["exponential"])
+                except Exception: logger.warning("Invalid retry_search.exponential in settings.json")
+
+        ri = tp_src.get("retry_index", {}) or {}
+        if isinstance(ri, dict):
+            if "max_attempts" in ri:
+                try: tp.retry_index.max_attempts = int(ri["max_attempts"])
+                except Exception: logger.warning("Invalid retry_index.max_attempts in settings.json")
+            if "base_delay" in ri:
+                try: tp.retry_index.base_delay = float(ri["base_delay"])
+                except Exception: logger.warning("Invalid retry_index.base_delay in settings.json")
+            if "max_delay" in ri:
+                try: tp.retry_index.max_delay = float(ri["max_delay"])
+                except Exception: logger.warning("Invalid retry_index.max_delay in settings.json")
+            if "exponential" in ri:
+                try: tp.retry_index.exponential = bool(ri["exponential"])
+                except Exception: logger.warning("Invalid retry_index.exponential in settings.json")
+
+        # ENV overrides (при наличии)
+        tp.health_total_sec = safe_float("RAG_TIMEOUT_HEALTH", str(tp.health_total_sec))
+        tp.search_total_p95_sec = safe_float("RAG_TIMEOUT_SEARCH_P95", str(tp.search_total_p95_sec))
+        tp.index_base_sec = safe_float("RAG_TIMEOUT_INDEX_BASE", str(tp.index_base_sec))
+        tp.index_per_batch_step_sec = safe_float("RAG_TIMEOUT_INDEX_STEP", str(tp.index_per_batch_step_sec))
+
+        tp.retry_search.max_attempts = safe_int("RAG_RETRY_SEARCH_MAX_ATTEMPTS", str(tp.retry_search.max_attempts))
+        tp.retry_search.base_delay = safe_float("RAG_RETRY_SEARCH_BASE_DELAY", str(tp.retry_search.base_delay))
+        tp.retry_search.max_delay = safe_float("RAG_RETRY_SEARCH_MAX_DELAY", str(tp.retry_search.max_delay))
+
+        tp.retry_index.max_attempts = safe_int("RAG_RETRY_INDEX_MAX_ATTEMPTS", str(tp.retry_index.max_attempts))
+        tp.retry_index.base_delay = safe_float("RAG_RETRY_INDEX_BASE_DELAY", str(tp.retry_index.base_delay))
+        tp.retry_index.max_delay = safe_float("RAG_RETRY_INDEX_MAX_DELAY", str(tp.retry_index.max_delay))
+
         return cls(
             remote_service=remote_service,
             embeddings=EmbeddingConfig(**embeddings_data),
             vector_store=VectorStoreConfig(**vector_store_data),
             query_engine=QueryEngineConfig(**query_engine_data),
             sparse=SparseConfig(**data.get("sparse", {})),
-            parallelism=ParallelismConfig(**data.get("parallelism", {}))
+            parallelism=ParallelismConfig(**data.get("parallelism", {})),
+            timeout_profiles=tp
         )
 
 

@@ -58,6 +58,7 @@ aiohttp>=3.10.0                   # HTTP клиент для удаленных 
 fastapi>=0.115.0
 uvicorn>=0.30.0
 prometheus-client>=0.21.0
+python-json-logger>=2.0.7
 
 ############################
 # Тестирование

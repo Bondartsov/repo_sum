@@ -8,14 +8,19 @@ HTTP клиент для удалённого векторного хранил�
 import os
 import logging
 import time
+import asyncio
 from typing import List, Dict, Optional, Any
-from config import RemoteServiceConfig
+from config import RemoteServiceConfig, get_config
 import numpy as np
 from datetime import datetime, timezone
 from pathlib import Path
+import aiohttp
 from aiohttp import ClientTimeout
-from .event_loop_manager import run_async_safe, get_shared_http_session
+from .event_loop_manager import run_async_safe
+from .transport_client import AiohttpTransportClient
 from .vm_diagnostics import diagnose_vm_connection
+from .retry_policy import RetryPolicy, RetryConfig
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +60,7 @@ class RemoteVMVectorStore:
     - Health check удалённого сервиса
     """
     
-    def __init__(self, vector_store_config=None, remote_service_config: Optional[RemoteServiceConfig] = None):
+    def __init__(self, vector_store_config=None, remote_service_config: Optional[RemoteServiceConfig] = None, transport_client: Optional[AiohttpTransportClient] = None):
         """
         Инициализация удалённого векторного хранилища.
         
@@ -72,6 +77,7 @@ class RemoteVMVectorStore:
         self.search_endpoint = os.getenv("RAG_SEARCH_ENDPOINT", base_url + self.remote_config.search_endpoint)
         self.index_endpoint = os.getenv("RAG_INDEX_ENDPOINT", base_url + self.remote_config.index_endpoint)
         self.text_search_endpoint = os.getenv("RAG_TEXT_SEARCH_ENDPOINT", base_url + "/v1/search")
+        self.health_endpoint = os.getenv("RAG_HEALTH_ENDPOINT", f"http://{host}:{port}{self.remote_config.health_endpoint}")
         self.service_host = host
         self.service_port = port
         # Заголовки контракта API и версия эмбеддингов
@@ -86,6 +92,71 @@ class RemoteVMVectorStore:
         self.search_timeout = int(os.getenv("RAG_SEARCH_TIMEOUT", "300"))  # 5 минут для поиска
         self.index_timeout = int(os.getenv("RAG_INDEX_TIMEOUT", "1800"))  # 30 минут для индексации
         self.health_timeout = int(os.getenv("RAG_HEALTH_TIMEOUT", "60"))  # 1 минута для health check
+
+        # Инициализация транспортного клиента (если не передан)
+        default_headers = {
+            "X-API-Contract": self.api_contract,
+            "X-Embedding-Version": self.embedding_version,
+        }
+        self.transport_client = transport_client or AiohttpTransportClient(default_headers=default_headers)
+
+        # === TimeoutProfiles + RetryPolicy + CircuitBreaker (пер-эндпойнтово) ===
+        try:
+            cfg = get_config(require_api_key=False)
+            self.timeout_profiles = getattr(cfg.rag, "timeout_profiles", None)
+        except Exception:
+            self.timeout_profiles = None
+
+        # Настройка профилей ретраев для /search и /index
+        rp_search = (self.timeout_profiles.retry_search if self.timeout_profiles else None)
+        rp_index = (self.timeout_profiles.retry_index if self.timeout_profiles else None)
+
+        # Безопасные дефолты
+        search_max_attempts = int(rp_search.max_attempts) if rp_search else 3
+        search_base_delay = float(rp_search.base_delay) if rp_search else 1.0
+        search_max_delay  = float(rp_search.max_delay)  if rp_search else 8.0
+
+        index_max_attempts = int(rp_index.max_attempts) if rp_index else 5
+        index_base_delay = float(rp_index.base_delay) if rp_index else 2.0
+        index_max_delay  = float(rp_index.max_delay)  if rp_index else 60.0
+
+        # Политики повторов (совместимы с embedder)
+        self.retry_policy_search = RetryPolicy(RetryConfig(
+            max_attempts=search_max_attempts,
+            base_delay=search_base_delay,
+            max_delay=search_max_delay,
+            exponential_base=2.0,
+            timeout_seconds=float(self.timeout_seconds),
+            retryable_exceptions=(
+                asyncio.TimeoutError,
+                aiohttp.ClientError,
+                ConnectionError,
+                RuntimeError,
+                ValueError,
+            )
+        ))
+        self.retry_policy_index = RetryPolicy(RetryConfig(
+            max_attempts=index_max_attempts,
+            base_delay=index_base_delay,
+            max_delay=index_max_delay,
+            exponential_base=2.0,
+            timeout_seconds=float(self.timeout_seconds),
+            retryable_exceptions=(
+                asyncio.TimeoutError,
+                aiohttp.ClientError,
+                ConnectionError,
+                RuntimeError,
+                ValueError,
+            )
+        ))
+
+        # Circuit Breaker (консервативные дефолты)
+        self.circuit_breaker = CircuitBreaker(CircuitBreakerConfig(
+            failure_threshold=10,
+            success_threshold=2,
+            timeout_seconds=300.0,
+            half_open_max_calls=1
+        ))
 
         # Статистика
         self.stats = {
@@ -151,6 +222,35 @@ class RemoteVMVectorStore:
 
     check_health = health_check
 
+    def heartbeat(self) -> bool:
+        """
+        Быстрый синхронный ping сервиса (таймаут ≤ 2s). Возвращает True/False.
+        Fail-fast: любые исключения -> False.
+        """
+        return run_async_safe(
+            self._async_heartbeat(),
+            timeout=3  # немного больше локального бюджета, чтобы корректно собрать результат
+        )
+
+    async def _async_heartbeat(self) -> bool:
+        """
+        Асинхронный быстрый ping /health с коротким таймаутом (≤ 2s).
+        """
+        try:
+            # Рассчитываем бюджет таймаута: жесткий лимит 2.0s с учетом профиля
+            total = 2.0
+            tp = getattr(self, "timeout_profiles", None)
+            if tp is not None:
+                try:
+                    total = min(2.0, float(tp.health_total_sec))
+                except Exception:
+                    total = 2.0
+            timeout_ctx = ClientTimeout(total=total, sock_read=total)
+            result = await self.transport_client.get_json(self.health_endpoint, timeout=timeout_ctx)
+            status = str(result.get("status", "")).lower()
+            return status in ("connected", "healthy", "ok")
+        except Exception:
+            return False
     def get_collection_info(self) -> Dict[str, Any]:
         """Синхронное получение сведений о коллекции с правильным event loop management."""
         return run_async_safe(
@@ -198,19 +298,24 @@ class RemoteVMVectorStore:
         """Пересоздаёт коллекцию через удалённый сервис"""
         try:
             recreate_endpoint = f"http://{self.service_host}:{self.service_port}/collection/recreate"
-            
-            # Используем shared HTTP session
-            session = await get_shared_http_session()
-            
-            async with session.post(recreate_endpoint) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    _log(logger.info, f"Коллекция пересоздана: {result}")
-                    self._collection_exists = True
-                else:
-                    error_text = await response.text()
-                    _log(logger.error, f"Ошибка пересоздания коллекции: HTTP {response.status}: {error_text}")
-                        
+            # Таймаут на основе health_total_sec с учетом fallback
+            if getattr(self, "timeout_profiles", None):
+                health_total = min(float(self.health_timeout), float(self.timeout_profiles.health_total_sec))
+            else:
+                health_total = float(self.health_timeout)
+            timeout_ctx = ClientTimeout(total=health_total, sock_read=health_total)
+            try:
+                result = await self.transport_client.post_json(
+                    recreate_endpoint,
+                    payload={},
+                    timeout=timeout_ctx,
+                    headers=None,
+                )
+                _log(logger.info, f"Коллекция пересоздана: {result}")
+                self._collection_exists = True
+            except aiohttp.ClientResponseError as cre:
+                _log(logger.error, f"Ошибка пересоздания коллекции: HTTP {cre.status}: {cre.message}")
+                return
         except Exception as e:
             _log(logger.error, f"Ошибка пересоздания коллекции через VM: {e}")
             raise
@@ -231,13 +336,11 @@ class RemoteVMVectorStore:
         start_time = time.time()
         
         try:
-            # 🔍 ДИАГНОСТИКА 1: Входные данные
+            # 🔍 ДИАГНОСТИКА 1: Входные данные (safe-логирование без контента)
             diag_logger.info(f"📥 КЛИЕНТ: Получено {len(points)} points для индексации")
             if points:
                 first_point = points[0]
-                diag_logger.info(f"📥 КЛИЕНТ: Первый point = {first_point}")
                 diag_logger.info(f"📥 КЛИЕНТ: Ключи первого point = {list(first_point.keys())}")
-                diag_logger.info(f"📥 КЛИЕНТ: point['text'] = '{first_point.get('text', 'KEY_NOT_FOUND')[:100]}'")
                 
             # Подготовка данных для удалённого сервиса
             payload = {
@@ -256,11 +359,10 @@ class RemoteVMVectorStore:
                 "recreate": False
             }
             
-            # 🔍 ДИАГНОСТИКА 2: Подготовленный payload
+            # 🔍 ДИАГНОСТИКА 2: Подготовленный payload (safe-логирование без контента)
             if payload["documents"]:
                 first_doc = payload["documents"][0]
-                diag_logger.info(f"📤 КЛИЕНТ: Первый document после подготовки = {first_doc}")
-                diag_logger.info(f"📤 КЛИЕНТ: document['text'] = '{first_doc.get('text', 'EMPTY')[:100]}'")
+                diag_logger.info(f"📤 КЛИЕНТ: Ключи первого document после подготовки = {list(first_doc.keys())}")
             
             # HTTP запрос на индексацию
             indexed_count = await self._make_index_request_with_retry(payload)
@@ -284,70 +386,54 @@ class RemoteVMVectorStore:
     
     async def _make_index_request_with_retry(self, payload: Dict[str, Any]) -> int:
         """
-        Выполняет запрос на индексацию с retry логикой используя shared HTTP session.
-        
-        Args:
-            payload: Данные для индексации
-            
-        Returns:
-            Количество проиндексированных документов
+        Выполняет запрос на индексацию с RetryPolicy + CircuitBreaker и бюджетом таймаута.
+        total_timeout_sec = max(fallback_index_timeout, index_base + batch_size * step)
         """
-        import asyncio
-        
-        for attempt in range(self.max_retries):
-            try:
-                # Используем shared HTTP session с connection pooling
-                session = await get_shared_http_session()
-                
-                # 🔍 ЛОГ 1: Перед отправкой
-                _log(logger.info, f"📤 Отправка на VM: {len(payload.get('documents', []))} документов, endpoint={self.index_endpoint}")
-                
-                # Явный timeout для защиты от зависаний (дополнительно к session timeout)
-                async with session.post(
-                    self.index_endpoint,
-                    json=payload,
-                    headers={
-                        'Content-Type': 'application/json',
-                        'X-API-Contract': self.api_contract,
-                        'X-Embedding-Version': self.embedding_version
-                    },
-                    timeout=ClientTimeout(total=self.index_timeout, sock_read=self.index_timeout)
-                ) as response:
-                    
-                    # 🔍 ЛОГ 2: HTTP статус
-                    _log(logger.info, f"📥 Ответ VM: HTTP {response.status}, headers={dict(response.headers)}")
-                    
-                    if response.status == 200:
-                        result = await response.json()
-                        
-                        # 🔍 ЛОГ 3: Полный ответ
-                        _log(logger.info, f"📊 JSON ответ VM: {result}")
-                        
-                        # Ожидаем формат: {"indexed_count": 123, "status": "success"}
-                        if "indexed_count" in result:
-                            indexed_count = result["indexed_count"]
-                            # 🔍 ЛОГ 4: Извлеченное значение
-                            _log(logger.info, f"✅ Extracted indexed_count = {indexed_count}, type = {type(indexed_count).__name__}")
-                            return indexed_count
-                        else:
-                            # 🔍 ЛОГ 5: Неожиданный формат
-                            _log(logger.error, f"❌ Ключ 'indexed_count' отсутствует! Доступные ключи: {list(result.keys())}")
-                            raise ValueError(f"Неожиданный формат ответа индексации: {result.keys()}")
-                    
-                    else:
-                        error_text = await response.text()
-                        _log(logger.error, f"❌ HTTP {response.status}: {error_text}")
-                        raise RuntimeError(f"HTTP {response.status}: {error_text}")
-            
-            except Exception as e:
-                _log(logger.warning, f"Ошибка индексации (попытка {attempt + 1}): {e}")
-                self.stats['retry_count'] += 1
-                
-                if attempt < self.max_retries - 1:
-                    delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
-                    await asyncio.sleep(delay)
-                else:
-                    raise  # Последняя попытка - пробрасываем ошибку
+        # Размер батча для расчёта бюджета
+        documents = payload.get("documents") or []
+        try:
+            batch_size = len(documents)
+        except Exception:
+            batch_size = 0
+
+        # Таймаут-профили
+        tp = getattr(self, "timeout_profiles", None)
+        index_base = float(tp.index_base_sec) if tp else 60.0
+        index_step = float(tp.index_per_batch_step_sec) if tp else 0.2
+
+        # Fallback: старое значение index_timeout
+        index_timeout_fallback = float(getattr(self, "index_timeout", index_base))
+
+        total_timeout_sec = max(index_timeout_fallback, index_base + batch_size * index_step)
+        timeout_ctx = ClientTimeout(total=total_timeout_sec, sock_read=total_timeout_sec)
+
+        endpoint = self.index_endpoint
+
+        async def _single_attempt():
+            # Безопасное логирование без контента
+            _log(logger.info, f"📤 Индексация: batch_size={batch_size}, timeout={total_timeout_sec:.1f}s, endpoint={endpoint}")
+            return await self.transport_client.post_json(
+                endpoint,
+                payload=payload,
+                timeout=timeout_ctx,
+                headers=None,
+            )
+
+        async def _attempt_with_cb():
+            return await self.circuit_breaker.call(_single_attempt)
+
+        # Запускаем через RetryPolicy
+        result = await self.retry_policy_index.execute_with_retry(_attempt_with_cb)
+
+        _log(logger.info, f"📊 JSON ответ VM (index): keys={list(result.keys())}")
+
+        if "indexed_count" in result:
+            indexed_count = result["indexed_count"]
+            _log(logger.info, f"✅ indexed_count={indexed_count}")
+            return indexed_count
+
+        _log(logger.error, f"❌ Неожиданный формат ответа индексации: keys={list(result.keys())}")
+        raise ValueError(f"Неожиданный формат ответа индексации: {result.keys()}")
     
     async def _async_search(
         self,
@@ -452,56 +538,38 @@ class RemoteVMVectorStore:
     
     async def _make_search_request_with_retry(self, payload: Dict[str, Any]) -> List[Dict]:
         """
-        Выполняет запрос на поиск с retry логикой используя shared HTTP session.
-        
-        Args:
-            payload: Данные запроса
-            
-        Returns:
-            Список результатов поиска
+        Выполняет запрос на поиск через RetryPolicy + CircuitBreaker с пер-эндпойнтовым таймаутом.
+        total_timeout_sec = min(self.search_timeout, timeout_profiles.search_total_p95_sec)
         """
-        import asyncio
-        
-        for attempt in range(self.max_retries):
-            try:
-                # Используем shared HTTP session с connection pooling
-                session = await get_shared_http_session()
-                
-                timeout_ctx = ClientTimeout(total=self.search_timeout, sock_read=self.search_timeout)
-                endpoint = self.text_search_endpoint if 'query' in payload else self.search_endpoint
-                async with session.post(
-                    endpoint,
-                    json=payload,
-                    headers={
-                        'Content-Type': 'application/json',
-                        'X-API-Contract': self.api_contract,
-                        'X-Embedding-Version': self.embedding_version
-                    },
-                    timeout=timeout_ctx
-                ) as response:
-                    
-                    if response.status == 200:
-                        result = await response.json()
-                        
-                        # Ожидаем формат: {"results": [...], "query_time": 0.123}
-                        if "results" in result:
-                            return result["results"]
-                        else:
-                            raise ValueError(f"Неожиданный формат ответа поиска: {result.keys()}")
-                    
-                    else:
-                        error_text = await response.text()
-                        raise RuntimeError(f"HTTP {response.status}: {error_text}")
-            
-            except Exception as e:
-                _log(logger.warning, f"Ошибка поиска (попытка {attempt + 1}): {e}")
-                self.stats['retry_count'] += 1
-                
-                if attempt < self.max_retries - 1:
-                    delay = self.retry_delay * (2 ** attempt)
-                    await asyncio.sleep(delay)
-                else:
-                    raise  # Последняя попытка - пробрасываем ошибку
+        tp = getattr(self, "timeout_profiles", None)
+        if tp is not None and getattr(self, "search_timeout", None) is not None:
+            total_timeout_sec = min(float(self.search_timeout), float(tp.search_total_p95_sec))
+        elif tp is not None:
+            total_timeout_sec = float(tp.search_total_p95_sec)
+        else:
+            total_timeout_sec = float(self.search_timeout)
+
+        timeout_ctx = ClientTimeout(total=total_timeout_sec, sock_read=total_timeout_sec)
+        endpoint = self.text_search_endpoint if 'query' in payload else self.search_endpoint
+
+        async def _single_attempt():
+            _log(logger.debug, f"🔎 Поиск: timeout={total_timeout_sec:.1f}s, endpoint={endpoint}")
+            return await self.transport_client.post_json(
+                endpoint,
+                payload=payload,
+                timeout=timeout_ctx,
+                headers=None,
+            )
+
+        async def _attempt_with_cb():
+            return await self.circuit_breaker.call(_single_attempt)
+
+        result = await self.retry_policy_search.execute_with_retry(_attempt_with_cb)
+
+        if "results" in result:
+            return result["results"]
+
+        raise ValueError(f"Неожиданный формат ответа поиска: {result.keys()}")
     
     async def _async_health_check(self) -> Dict[str, Any]:
         """
@@ -522,60 +590,57 @@ class RemoteVMVectorStore:
                 }
             },
             "error": None,
-            "diagnostic": None,  # 1.3.1: Добавляем диагностическую информацию
+            "diagnostic": None,
         }
 
         start_time = time.time()
         
         try:
-            health_endpoint = f"http://{self.service_host}:{self.service_port}{self.remote_config.health_endpoint}"
-            session = await get_shared_http_session()
-            
-            timeout_ctx = ClientTimeout(total=self.health_timeout, sock_read=self.health_timeout)
-            async with session.get(health_endpoint, timeout=timeout_ctx) as response:
-                response_time_ms = (time.time() - start_time) * 1000
-                
-                if response.status == 200:
-                    result = await response.json()
-                    health_info["status"] = "connected"  # Единый стандарт: "connected" для успешного подключения
-                    health_info["components"]["vector_store"]["collection_status"] = result.get("collection_status", "unknown")
-                    health_info["components"]["vector_store"]["qdrant_status"] = result.get("qdrant_status", "unknown")
-                    health_info["components"]["vector_store"]["vector_count"] = result.get("vector_count", 0)
-                    health_info["components"]["vector_store"]["response_time_ms"] = response_time_ms
-                    health_info["components"]["vector_store"]["http_status"] = response.status
-                    self._connected = True
-                    self._collection_exists = health_info["components"]["vector_store"]["collection_status"] == "exists"
-                else:
-                    error_text = await response.text()
-                    health_info["status"] = "error"
-                    health_info["error"] = f"HTTP {response.status}: {error_text}"
-                    health_info["components"]["vector_store"]["http_status"] = response.status
-                    health_info["components"]["vector_store"]["response_time_ms"] = response_time_ms
-                    
-                    # Диагностическая информация для HTTP ошибок
-                    health_info["diagnostic"] = {
-                        "error_type": "http_error",
-                        "http_status": response.status,
-                        "recommendation": self._get_http_error_recommendation(response.status),
-                        "response_time_ms": response_time_ms
-                    }
-                    self._connected = False
-                    
+            # Таймаут на основе health_total_sec с учетом fallback
+            if getattr(self, "timeout_profiles", None):
+                health_total = min(float(self.health_timeout), float(self.timeout_profiles.health_total_sec))
+            else:
+                health_total = float(self.health_timeout)
+            timeout_ctx = ClientTimeout(total=health_total, sock_read=health_total)
+            result = await self.transport_client.get_json(self.health_endpoint, timeout=timeout_ctx)
+            response_time_ms = (time.time() - start_time) * 1000
+
+            health_info["status"] = "connected"
+            health_info["components"]["vector_store"]["collection_status"] = result.get("collection_status", "unknown")
+            health_info["components"]["vector_store"]["qdrant_status"] = result.get("qdrant_status", "unknown")
+            health_info["components"]["vector_store"]["vector_count"] = result.get("vector_count", 0)
+            health_info["components"]["vector_store"]["response_time_ms"] = response_time_ms
+            health_info["components"]["vector_store"]["http_status"] = 200
+            self._connected = True
+            self._collection_exists = health_info["components"]["vector_store"]["collection_status"] == "exists"
+        
+        except aiohttp.ClientResponseError as e:
+            response_time_ms = (time.time() - start_time) * 1000
+            health_info["status"] = "error"
+            health_info["error"] = f"HTTP {e.status}: {e.message}"
+            health_info["components"]["vector_store"]["http_status"] = e.status
+            health_info["components"]["vector_store"]["response_time_ms"] = response_time_ms
+
+            health_info["diagnostic"] = {
+                "error_type": "http_error",
+                "http_status": e.status,
+                "recommendation": self._get_http_error_recommendation(e.status),
+                "response_time_ms": response_time_ms
+            }
+            self._connected = False
+
         except aiohttp.ClientConnectorError as e:
             response_time_ms = (time.time() - start_time) * 1000
             health_info["status"] = "error"
             health_info["error"] = f"ClientConnectorError: {e}"
             
-            # 2.3.2: Используем vm_diagnostics для комплексной диагностики
             try:
                 diagnostics = await diagnose_vm_connection(self.service_host, self.service_port)
-                
                 health_info["diagnostic"] = {
                     "error_type": "connection_refused",
                     "vm_host": self.service_host,
                     "vm_port": self.service_port,
                     "response_time_ms": response_time_ms,
-                    # Добавляем детальные результаты диагностики
                     "host_reachable": diagnostics['host_reachable'],
                     "port_open": diagnostics['port_open'],
                     "http_responding": diagnostics['http_responding'],
@@ -583,7 +648,6 @@ class RemoteVMVectorStore:
                     "recommendations": diagnostics['recommendations']
                 }
             except Exception as diag_error:
-                # Fallback на базовую диагностику если vm_diagnostics не сработала
                 _log(logger.warning, f"Ошибка запуска vm_diagnostics: {diag_error}")
                 health_info["diagnostic"] = {
                     "error_type": "connection_refused",
@@ -601,18 +665,15 @@ class RemoteVMVectorStore:
                     ],
                     "response_time_ms": response_time_ms
                 }
-            
             self._connected = False
-            
+
         except asyncio.TimeoutError:
             response_time_ms = (time.time() - start_time) * 1000
             health_info["status"] = "error"
             health_info["error"] = f"TimeoutError: Request timeout after {response_time_ms:.0f}ms"
-            
-            # Диагностическая информация для timeout
             health_info["diagnostic"] = {
                 "error_type": "timeout",
-                "timeout_ms": 30000,  # Default timeout
+                "timeout_ms": 30000,
                 "elapsed_ms": response_time_ms,
                 "recommendation": (
                     f"VM сервис не отвечает в срок (timeout: {response_time_ms:.0f}ms). "
@@ -626,13 +687,11 @@ class RemoteVMVectorStore:
                 "response_time_ms": response_time_ms
             }
             self._connected = False
-            
+
         except ValueError as e:
             response_time_ms = (time.time() - start_time) * 1000
             health_info["status"] = "error"
             health_info["error"] = f"ValueError: {e}"
-            
-            # Диагностическая информация для invalid JSON
             health_info["diagnostic"] = {
                 "error_type": "invalid_response",
                 "recommendation": (
@@ -646,13 +705,11 @@ class RemoteVMVectorStore:
                 "response_time_ms": response_time_ms
             }
             self._connected = False
-            
+
         except Exception as e:
             response_time_ms = (time.time() - start_time) * 1000
             health_info["status"] = "error"
             health_info["error"] = f"{type(e).__name__}: {e}"
-            
-            # Общая диагностическая информация
             health_info["diagnostic"] = {
                 "error_type": "unknown",
                 "exception_type": type(e).__name__,
@@ -697,22 +754,20 @@ class RemoteVMVectorStore:
         """
         try:
             info_endpoint = f"http://{self.service_host}:{self.service_port}/collection/info"
-            
-            # Используем shared HTTP session
-            session = await get_shared_http_session()
-            
-            timeout_ctx = ClientTimeout(total=self.health_timeout, sock_read=self.health_timeout)
-            async with session.get(info_endpoint, timeout=timeout_ctx) as response:
-                
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    error_text = await response.text()
-                    return {
-                        'error': f"HTTP {response.status}: {error_text}",
-                        'status': 'error'
-                    }
+            # Таймаут на основе health_total_sec с учетом fallback
+            if getattr(self, "timeout_profiles", None):
+                health_total = min(float(self.health_timeout), float(self.timeout_profiles.health_total_sec))
+            else:
+                health_total = float(self.health_timeout)
+            timeout_ctx = ClientTimeout(total=health_total, sock_read=health_total)
+            result = await self.transport_client.get_json(info_endpoint, timeout=timeout_ctx)
+            return result
         
+        except aiohttp.ClientResponseError as e:
+            return {
+                'error': f"HTTP {e.status}: {e.message}",
+                'status': 'error'
+            }
         except Exception as e:
             return {
                 'error': str(e),

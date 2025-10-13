@@ -52,19 +52,19 @@
 - [ ] **Фаза 3 завершена**
 
 ### Этап 3.1. Единый HTTP-клиент (aiohttp)
-- [ ] Ввести общий `TransportClient` с пулом соединений, заголовками и единой retry-политикой.
-- [ ] Мигрировать `RemoteVectorStore` с `requests` → `aiohttp` (без `asyncio.to_thread`).
-- [ ] Перевести остальные удалённые клиенты на общий транспорт; удалить устаревшие обёртки.
+- [x] Ввести общий `TransportClient` с пулом соединений, заголовками и единой retry-политикой.
+- [x] Мигрировать `RemoteVectorStore` с `requests` → `aiohttp` (без `asyncio.to_thread`).
+- [x] Перевести остальные удалённые клиенты на общий транспорт; удалить устаревшие обёртки.
 
 ### Этап 3.2. Таймаут-профили и Circuit Breaker
-- [ ] Ввести `timeout_profiles`: `/health` ≤ 2s, `/search` ≤ 10s p95, `/index` — бюджет `base + batch_size*step`.
-- [ ] Развести retry/backoff для `/search` и `/index` (отдельные лимиты).
-- [ ] Включить Circuit Breaker (порог ошибок/таймаутов, окна восстановления).
+- [x] Ввести `timeout_profiles`: `/health` ≤ 2s, `/search` ≤ 10s p95, `/index` — бюджет `base + batch_size*step`.
+- [x] Развести retry/backoff для `/search` и `/index` (отдельные лимиты).
+- [x] Включить Circuit Breaker (порог ошибок/таймаутов, окна восстановления).
 
 ### Этап 3.3. Наблюдаемость и heartbeat
-- [ ] Структурные логи (JSON): trace-id, batch-id, counts, latency, причины отказов.
-- [ ] Экспорт метрик (Prometheus/Grafana): latency p50/p95/p99, `timeouts_total`, `retries_total`, `dropped_documents_total{reason}`.
-- [ ] Серверный `/health` + клиентский heartbeat-пинг (CLI/UI).
+- [x] Структурные логи (JSON): trace-id, batch-id, counts, latency, причины отказов.
+- [ ] Экспорт метрик (Prometheus/Grafana): latency p50/p95/p99, `timeouts_total`, `retries_total`, `dropped_documents_total{reason}` — частично: latency/timeouts_total/dropped_documents_total готовы; `retries_total` — TODO.
+- [x] Серверный `/health` + клиентский heartbeat-пинг (CLI/UI).
 
 ---
 

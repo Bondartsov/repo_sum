@@ -258,6 +258,154 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# === Observability: JSON logging + Prometheus metrics + ASGI middleware ===
+import time  # для высокоточного замера длительности
+from fastapi import Request, Response  # локальные импорты допустимы
+from pythonjsonlogger import jsonlogger
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+
+# Переключаем формат логгера на JSON (безопасный, без контента документов)
+try:
+    _root = logging.getLogger()
+    # очищаем старые хендлеры
+    for _h in list(_root.handlers):
+        _root.removeHandler(_h)
+    _json_handler = logging.StreamHandler()
+    _json_formatter = jsonlogger.JsonFormatter(
+        rename_fields={"asctime": "timestamp", "levelname": "level", "name": "logger"}
+    )
+    _json_handler.setFormatter(_json_formatter)
+    _root.addHandler(_json_handler)
+    _root.setLevel(logging.INFO)
+    # обновляем локальный логгер модуля
+    logger = logging.getLogger(__name__)
+except Exception as _e:
+    # fallback на basicConfig, чтобы не падать при отсутствии зависимости
+    logging.basicConfig(level=logging.INFO)
+    logger.warning(f"JSON logging setup failed, fallback to basic config: {_e}")
+
+# Prometheus метрики уровня модуля
+request_duration_seconds = Histogram(
+    'rag_request_duration_seconds',
+    'Endpoint duration seconds',
+    ['endpoint', 'status'],
+    buckets=[0.05,0.1,0.2,0.5,1,2,3,5,10,20,60,120]
+)
+requests_total = Counter(
+    'rag_requests_total',
+    'Requests total',
+    ['endpoint', 'status']
+)
+inprogress_requests = Gauge(
+    'rag_inprogress_requests',
+    'In-progress requests',
+    ['endpoint']
+)
+dropped_documents_total = Counter(
+    'rag_dropped_documents_total',
+    'Dropped documents total',
+    ['reason']
+)
+timeouts_total = Counter(
+    'rag_timeouts_total',
+    'Timeouts total',
+    ['endpoint']
+)
+# Опционально: метрика по потреблению памяти процесса
+memory_usage_bytes = Gauge(
+    'rag_memory_usage_bytes',
+    'Process memory usage bytes'
+)
+
+def _normalize_endpoint(path: str) -> str:
+    """Нормализация пути к каноническим эндпоинтам для метрик."""
+    if path in ('/health', '/v1/health'):
+        return '/v1/health'
+    if path in ('/embeddings', '/v1/embeddings'):
+        return '/v1/embeddings'
+    if path in ('/search', '/v1/search'):
+        return '/v1/search'
+    if path == '/v1/search_v2':
+        return '/v1/search_v2'
+    if path in ('/index', '/v1/index'):
+        return '/v1/index'
+    return 'other'
+
+@app.middleware("http")
+async def _observability_middleware(request: Request, call_next):
+    """ASGI middleware: метрики Prometheus + структурные JSON-логи с корреляцией."""
+    endpoint = _normalize_endpoint(request.url.path)
+    inprogress_requests.labels(endpoint).inc()
+    start = time.perf_counter()
+
+    # Корреляция
+    trace_id = request.headers.get('X-Trace-Id') or uuid.uuid4().hex
+    batch_id = request.headers.get('X-Batch-Id') if endpoint == '/v1/index' else None
+
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = getattr(response, "status_code", 200)
+        return response
+    except asyncio.TimeoutError:
+        # Учитываем таймауты
+        try:
+            timeouts_total.labels(endpoint).inc()
+        except Exception:
+            pass
+        status_code = 504
+        raise
+    except Exception:
+        status_code = 500
+        raise
+    finally:
+        elapsed = time.perf_counter() - start
+        # Метрики
+        try:
+            inprogress_requests.labels(endpoint).dec()
+        except Exception:
+            pass
+        try:
+            requests_total.labels(endpoint, str(status_code)).inc()
+            request_duration_seconds.labels(endpoint, str(status_code)).observe(elapsed)
+        except Exception:
+            pass
+        # Обновление gauge по памяти (опционально)
+        try:
+            memory_usage_bytes.set(psutil.Process(os.getpid()).memory_info().rss)
+        except Exception:
+            pass
+
+        # Безопасное структурное логирование без контента
+        extra = {
+            "endpoint": endpoint,
+            "trace_id": trace_id,
+            "elapsed_ms": int(elapsed * 1000),
+        }
+        if batch_id:
+            extra["batch_id"] = batch_id
+
+        # Если эндпоинт-обработчик положил агрегаты в request.state — добавим их в лог
+        counts = {}
+        st = getattr(request, "state", None)
+        if st:
+            if hasattr(st, "documents_count"):
+                counts["documents_count"] = getattr(st, "documents_count")
+            if hasattr(st, "results_count"):
+                counts["results_count"] = getattr(st, "results_count")
+        if counts:
+            extra["counts"] = counts
+
+        try:
+            logger.info("request_completed", extra=extra)
+        except Exception:
+            # Логирование не должно ломать обработку запроса
+            pass
+
+# Эндпоинт метрик Prometheus
+@app.get("/metrics")
+def prometheus_metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 @app.get("/")
 async def root():
     """Корневой эндпоинт"""
@@ -313,7 +461,7 @@ async def health_check():
 
 @app.post("/embeddings", response_model=EmbeddingResponse)
 @app.post("/v1/embeddings", response_model=EmbeddingResponse)
-async def get_embeddings(request: EmbeddingRequest):
+async def get_embeddings(request: EmbeddingRequest, http_request: Request):
     """Получение эмбеддингов от Jina v3"""
     if 'embedder' not in services:
         raise HTTPException(status_code=503, detail="Embedder не инициализирован")
@@ -321,6 +469,10 @@ async def get_embeddings(request: EmbeddingRequest):
     try:
         # Проверяем память перед тяжелой операцией
         memory_check_middleware()
+        try:
+            http_request.state.documents_count = len(request.texts or [])
+        except Exception:
+            pass
         
         start_time = asyncio.get_event_loop().time()
         
@@ -351,7 +503,7 @@ async def get_embeddings(request: EmbeddingRequest):
 @app.post("/search", response_model=SearchResponse)
 @app.post("/v1/search", response_model=SearchResponse)
 @app.post("/v1/search_v2", response_model=SearchResponse)
-async def search_documents(request: SearchRequest):
+async def search_documents(request: SearchRequest, http_request: Request):
     """Гибридный поиск по документам (поддержка векторного и текстового протоколов)"""
     if 'search_service' not in services:
         raise HTTPException(status_code=503, detail="Search service не инициализирован")
@@ -442,6 +594,10 @@ async def search_documents(request: SearchRequest):
         query_time = asyncio.get_event_loop().time() - start_time
         
         # Конвертируем SearchResult объекты в словари для Pydantic
+        try:
+            http_request.state.results_count = len(results)
+        except Exception:
+            pass
         results_dicts = [asdict(r) for r in results]
         
         return SearchResponse(
@@ -457,10 +613,14 @@ async def search_documents(request: SearchRequest):
 
 @app.post("/index", response_model=IndexResponse)
 @app.post("/v1/index", response_model=IndexResponse)
-async def index_documents(request: IndexRequest, background_tasks: BackgroundTasks):
+async def index_documents(request: IndexRequest, background_tasks: BackgroundTasks, http_request: Request):
     """Индексация документов с защитой от OOM"""
     logger.info(f"🔵 НАЧАЛО endpoint /index: получено {len(request.documents) if hasattr(request, 'documents') else 0} документов")
-    
+    try:
+        http_request.state.documents_count = len(request.documents or [])
+    except Exception:
+        pass
+
     if 'indexer_service' not in services:
         logger.error("❌ IndexerService не инициализирован!")
         raise HTTPException(status_code=503, detail="Indexer service не инициализирован")
@@ -481,14 +641,16 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
         
         logger.info("🔵 Шаг 2: Диагностика входных данных...")
         # 🔍 ДИАГНОСТИКА 1: Что получил VM endpoint
-        diag_logger.info(f"📥 VM: Получено {len(request.documents)} документов")
+        diag_logger.info(f"📥 VM: Получено документов: {len(request.documents)}")
         if request.documents:
             first_doc_raw = request.documents[0]
-            diag_logger.info(f"📥 VM: Первый document RAW = {first_doc_raw}")
             diag_logger.info(f"📥 VM: Тип документа = {type(first_doc_raw)}")
             if isinstance(first_doc_raw, dict):
-                diag_logger.info(f"📥 VM: Ключи документа = {list(first_doc_raw.keys())}")
-                diag_logger.info(f"📥 VM: doc.get('text') = '{first_doc_raw.get('text', 'KEY_NOT_FOUND')[:100]}'")
+                keys = list(first_doc_raw.keys())
+                has_text = 'text' in first_doc_raw
+                text_len = len((first_doc_raw.get('text') or ''))
+                diag_logger.info(f"📥 VM: Ключи документа = {keys}")
+                diag_logger.info(f"📥 VM: Поля: has_text={has_text}, text_len={text_len}")
         
         logger.info("🔵 Шаг 3: Подготовка points...")
         # Подготавливаем документы для индексации
@@ -514,6 +676,10 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
         logger.info(f"🔵 Шаг 4: Points подготовлены: {len(points)} точек")
         # Валидация: отклоняем пустые тексты до индексации
         if invalid_docs:
+            try:
+                dropped_documents_total.labels('empty_text').inc(len(invalid_docs))
+            except Exception:
+                pass
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -529,8 +695,9 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
         # 🔍 ДИАГНОСТИКА 2: Что передаём в IndexerService
         if points:
             first_point = points[0]
-            diag_logger.info(f"📤 VM: Первый point после обработки = {first_point}")
-            diag_logger.info(f"📤 VM: point['text'] = '{first_point.get('text', 'EMPTY')[:100]}'")
+            safe_meta_keys = list((first_point.get('metadata') or {}).keys())
+            text_len = len(first_point.get('text') or '')
+            diag_logger.info(f"📤 VM: Первый point после обработки - keys={list(first_point.keys())}, meta_keys={safe_meta_keys}, text_len={text_len}")
         
         logger.info("🔵 Шаг 5: Вызов IndexerService.index_documents()...")
         # Выполняем индексацию

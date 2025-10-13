@@ -107,6 +107,14 @@
       "cache_max_entries": 1000,
       "max_results": 10,
       "score_threshold": 0.0
+    },
+    "timeout_profiles": {
+      "health_total_sec": 2,
+      "search_total_p95_sec": 10,
+      "index_base_sec": 60,
+      "index_per_batch_step_sec": 0.2,
+      "retry_search": { "max_attempts": 3, "base_delay": 1.0, "max_delay": 8.0, "exponential": true },
+      "retry_index":  { "max_attempts": 5, "base_delay": 2.0, "max_delay": 60.0, "exponential": true }
     }
   }
 }
