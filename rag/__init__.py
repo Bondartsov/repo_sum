@@ -48,6 +48,8 @@ from .exceptions import (
 
 # Экспорт CPUEmbedder для совместимости с импортами вида 'from rag import CPUEmbedder'
 from .embedder import CPUEmbedder
+# Экспорт QdrantVectorStore для совместимости с импортами вида 'from rag import QdrantVectorStore'
+from .vector_store import QdrantVectorStore
 
 # Динамический выбор провайдера по переменным окружения отключён.
 # Используйте RAGFactory для создания корректных реализаций в текущем контексте.
@@ -90,6 +92,7 @@ __all__ = [
 
     # Сервисы (интерфейсы/доступные сущности пакета)
     'VectorStore',
+    'QdrantVectorStore',
     'QueryEngine',
     'CPUQueryEngine',
     'SearchService',
