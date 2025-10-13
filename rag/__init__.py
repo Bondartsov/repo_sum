@@ -46,6 +46,9 @@ from .exceptions import (
     OutOfMemoryException
 )
 
+# Экспорт CPUEmbedder для совместимости с импортами вида 'from rag import CPUEmbedder'
+from .embedder import CPUEmbedder
+
 # Динамический выбор провайдера по переменным окружения отключён.
 # Используйте RAGFactory для создания корректных реализаций в текущем контексте.
 
@@ -91,6 +94,7 @@ __all__ = [
     'CPUQueryEngine',
     'SearchService',
     'IndexerService',
+    'CPUEmbedder',
 
     # Исключения
     'RagException',

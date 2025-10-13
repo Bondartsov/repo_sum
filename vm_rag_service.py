@@ -271,7 +271,9 @@ try:
     for _h in list(_root.handlers):
         _root.removeHandler(_h)
     _json_handler = logging.StreamHandler()
+    # Явно указываем поля в формате JSON-логов и переименовываем стандартные
     _json_formatter = jsonlogger.JsonFormatter(
+        fmt="%(asctime)s %(levelname)s %(message)s %(endpoint)s %(trace_id)s %(batch_id)s %(elapsed_ms)s %(counts)s",
         rename_fields={"asctime": "timestamp", "levelname": "level", "name": "logger"}
     )
     _json_handler.setFormatter(_json_formatter)
@@ -334,7 +336,11 @@ def _normalize_endpoint(path: str) -> str:
 @app.middleware("http")
 async def _observability_middleware(request: Request, call_next):
     """ASGI middleware: метрики Prometheus + структурные JSON-логи с корреляцией."""
-    endpoint = _normalize_endpoint(request.url.path)
+    path = request.url.path
+    if path == "/metrics":
+        # Исключаем /metrics из инструментирования
+        return await call_next(request)
+    endpoint = _normalize_endpoint(path)
     inprogress_requests.labels(endpoint).inc()
     start = time.perf_counter()
 
@@ -348,9 +354,21 @@ async def _observability_middleware(request: Request, call_next):
         status_code = getattr(response, "status_code", 200)
         return response
     except asyncio.TimeoutError:
-        # Учитываем таймауты
+        # Учитываем таймауты и логируем предупреждение (безопасные поля)
         try:
             timeouts_total.labels(endpoint).inc()
+        except Exception:
+            pass
+        elapsed_to_now = time.perf_counter() - start
+        warn_extra = {
+            "endpoint": endpoint,
+            "trace_id": trace_id,
+            "elapsed_ms": int(elapsed_to_now * 1000),
+        }
+        if batch_id:
+            warn_extra["batch_id"] = batch_id
+        try:
+            logger.warning("request_timeout", extra=warn_extra)
         except Exception:
             pass
         status_code = 504
