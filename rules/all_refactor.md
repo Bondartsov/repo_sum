@@ -69,22 +69,22 @@
 ---
 
 ## Фаза 4. Устойчивость индексации и поиска (корневые инциденты)
-- [ ] **Фаза 4 завершена**
+- [x] **Фаза 4 завершена**
 
 ### Этап 4.1. Инварианты батчей и preflight
-- [ ] Клиент: `∀doc: text != ""`, лимиты tokens/bytes, `content_sha256` обязателен.
-- [ ] Сервер: строгий **422** с перечислением проблемных `id` и причин.
-- [ ] Метрика `empty_text_detected_total` (клиент) и `dropped_documents_total{reason}` (сервер).
+- [x] Клиент: `∀doc: text != ""`, лимиты tokens/bytes, `content_sha256` обязателен.
+- [x] Сервер: строгий **422** с перечислением проблемных `id` и причин.
+- [x] Метрика `empty_text_detected_total` (клиент) и `dropped_documents_total{reason}` (сервер).
 
 ### Этап 4.2. Идемпотентность `/index`
-- [ ] Ввести `batch_id` + `document_idempotency_key` (`content_sha256` + версия).
-- [ ] Сервер: «already indexed» — безопасный no-op, без дублей.
-- [ ] Клиент: повторная отправка только отбракованных `id` (re-delivery).
+- [x] Ввести `batch_id` + `document_idempotency_key` (`content_sha256` + версия).
+- [x] Сервер: «already indexed» — безопасный no-op, без дублей.
+- [x] Клиент: повторная отправка только отбракованных `id` (re-delivery).
 
 ### Этап 4.3. Поиск и защита от placeholder-векторов
-- [ ] Применить таймаут-профили к `/search`, `connect_timeout`/`sock_read_timeout` обязательны.
-- [ ] Валидировать вектора: размерность `d`, отсутствие NaN/Inf, запрет placeholder.
-- [ ] Smoke/perf тесты: пиковые `top_k`, контроль p50/p95/p99.
+- [x] Применить таймаут-профили к `/search`, `connect_timeout`/`sock_read_timeout` обязательны.
+- [x] Валидировать вектора: размерность `d`, отсутствие NaN/Inf, запрет placeholder.
+- [x] Smoke/perf тесты: пиковые `top_k`, контроль p50/p95/p99.
 
 ---
 

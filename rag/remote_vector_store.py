@@ -9,6 +9,9 @@ import os
 import logging
 import time
 import asyncio
+import hashlib
+import uuid
+import json
 from typing import List, Dict, Optional, Any
 from config import RemoteServiceConfig, get_config
 import numpy as np
@@ -47,6 +50,15 @@ def _safe_message(message: str) -> str:
 
 def _log(logger_method, message: str, *args, **kwargs):
     logger_method(_safe_message(message), *args, **kwargs)
+
+
+def _compute_content_sha256(text: str) -> str:
+    """Возвращает hex-строку SHA-256 для UTF-8 текста."""
+    if text is None:
+        text = ""
+    if not isinstance(text, str):
+        text = str(text)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 class RemoteVMVectorStore:
@@ -165,7 +177,9 @@ class RemoteVMVectorStore:
             'total_search_time': 0.0,
             'total_index_time': 0.0,
             'error_count': 0,
-            'retry_count': 0
+            'retry_count': 0,
+            'empty_text_detected_total': 0,
+            'client_dropped_too_large_total': 0,
         }
         
         self._connected = False
@@ -342,20 +356,61 @@ class RemoteVMVectorStore:
                 first_point = points[0]
                 diag_logger.info(f"📥 КЛИЕНТ: Ключи первого point = {list(first_point.keys())}")
                 
-            # Подготовка данных для удалённого сервиса
+            # Подготовка данных для удалённого сервиса (Client Preflight: фильтрация и обогащение)
+            doc_max_bytes_env = os.getenv("RAG_INDEX_DOC_MAX_BYTES", "262144")
+            try:
+                doc_max_bytes = int(doc_max_bytes_env)
+            except Exception:
+                doc_max_bytes = 262144  # 256 KiB fallback
+
+            empty_count = 0
+            too_large_count = 0
+            filtered_docs: List[Dict[str, Any]] = []
+
+            for i, point in enumerate(points):
+                # Извлекаем текст так же, как при старой сборке payload
+                text = point.get("text", "") or point.get("payload", {}).get("content", "")
+                if not isinstance(text, str):
+                    text = str(text)
+
+                if text.strip() == "":
+                    empty_count += 1
+                    self.stats['empty_text_detected_total'] = self.stats.get('empty_text_detected_total', 0) + 1
+                    continue
+
+                text_bytes_len = len(text.encode("utf-8"))
+                if text_bytes_len > doc_max_bytes:
+                    too_large_count += 1
+                    self.stats['client_dropped_too_large_total'] = self.stats.get('client_dropped_too_large_total', 0) + 1
+                    continue
+
+                content_sha256 = _compute_content_sha256(text)
+                embedding_version = self.embedding_version
+                document_idempotency_key = f"{content_sha256}:{embedding_version}"
+                doc = {
+                    "id": str(point.get("id", f"doc_{i}")),
+                    "text": text,
+                    "metadata": point.get("metadata", {}),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "content_sha256": content_sha256,
+                    "embedding_version": embedding_version,
+                    "document_idempotency_key": document_idempotency_key,
+                }
+                filtered_docs.append(doc)
+
+            accepted_count = len(filtered_docs)
+            diag_logger.info(
+                f"🧪 КЛИЕНТ preflight: received={len(points)}, accepted={accepted_count}, "
+                f"empty_dropped={empty_count}, too_large_dropped={too_large_count}, max_bytes={doc_max_bytes}"
+            )
+
+            if accepted_count == 0:
+                # Нечего индексировать после фильтрации
+                return 0
+
             payload = {
-                "documents": [
-                    {
-                        "id": str(point.get("id", f"doc_{i}")),
-                        # ✅ ИСПРАВЛЕНИЕ: Извлекаем текст из правильного места
-                        # Сначала пробуем point['text'], если нет - берём point['payload']['content']
-                        "text": point.get("text", "") or point.get("payload", {}).get("content", ""),
-                        "metadata": point.get("metadata", {}),
-                        "timestamp": datetime.now(timezone.utc).isoformat()
-                    }
-                    for i, point in enumerate(points)
-                ],
-                "batch_size": min(512, len(points)),  # Батчевая обработка на сервере
+                "documents": filtered_docs,
+                "batch_size": min(512, accepted_count),  # Батчевая обработка на сервере
                 "recreate": False
             }
             
@@ -365,7 +420,7 @@ class RemoteVMVectorStore:
                 diag_logger.info(f"📤 КЛИЕНТ: Ключи первого document после подготовки = {list(first_doc.keys())}")
             
             # HTTP запрос на индексацию
-            indexed_count = await self._make_index_request_with_retry(payload)
+            indexed_count = await self._index_with_redelivery(docs=payload["documents"], recreate=False)
             
             # Обновляем статистику
             elapsed_time = time.time() - start_time
@@ -408,15 +463,16 @@ class RemoteVMVectorStore:
         timeout_ctx = ClientTimeout(total=total_timeout_sec, sock_read=total_timeout_sec)
 
         endpoint = self.index_endpoint
+        batch_id = uuid.uuid4().hex
 
         async def _single_attempt():
             # Безопасное логирование без контента
-            _log(logger.info, f"📤 Индексация: batch_size={batch_size}, timeout={total_timeout_sec:.1f}s, endpoint={endpoint}")
+            _log(logger.info, f"📤 Индексация: batch_size={batch_size}, timeout={total_timeout_sec:.1f}s, endpoint={endpoint}, batch_id={batch_id}")
             return await self.transport_client.post_json(
                 endpoint,
                 payload=payload,
                 timeout=timeout_ctx,
-                headers=None,
+                headers={"X-Batch-Id": batch_id},
             )
 
         async def _attempt_with_cb():
@@ -435,6 +491,105 @@ class RemoteVMVectorStore:
         _log(logger.error, f"❌ Неожиданный формат ответа индексации: keys={list(result.keys())}")
         raise ValueError(f"Неожиданный формат ответа индексации: {result.keys()}")
     
+    async def _index_with_redelivery(self, docs: list[dict], recreate: bool, depth: int = 0, max_depth: int = 8) -> int:
+        """
+        Повторная доставка только отбракованных документов при ошибках батча.
+        docs — уже подготовленные элементы payload['documents'] (после preflight).
+        """
+        try:
+            total_docs = len(docs)
+        except Exception:
+            docs = list(docs) if docs is not None else []
+            total_docs = len(docs)
+
+        if total_docs == 0:
+            return 0
+
+        payload = {
+            "documents": docs,
+            "batch_size": min(512, total_docs),
+            "recreate": False,
+        }
+
+        try:
+            # Пытаемся индексировать весь поднабор
+            return await self._make_index_request_with_retry(payload)
+        except aiohttp.ClientResponseError as cre:
+            # Обработка 422 Validation Error с деталями по документам
+            if getattr(cre, "status", None) == 422:
+                rejected_ids: set[str] = set()
+                details_count = 0
+                parsed_ok = False
+                try:
+                    # Сообщение транспортного клиента: "HTTP 422: {json}"
+                    msg = cre.message or ""
+                    start = msg.find("{")
+                    json_text = msg[start:].strip() if start != -1 else msg
+                    data = json.loads(json_text) if json_text else {}
+                    error_obj = data.get("error", data)
+                    details = error_obj.get("details") or []
+                    details_count = len(details)
+                    for item in details:
+                        try:
+                            if isinstance(item, dict) and "id" in item:
+                                rejected_ids.add(str(item.get("id")))
+                        except Exception:
+                            continue
+                    parsed_ok = True
+                except Exception:
+                    parsed_ok = False
+
+                if parsed_ok:
+                    filtered_docs = [d for d in docs if str(d.get("id")) not in rejected_ids]
+                    # Агрегатная статистика/логирование
+                    self.stats["error_count"] = self.stats.get("error_count", 0) + 1
+                    try:
+                        diag_logger.warning(
+                            f"422 validation: attempted={total_docs}, rejected_ids={len(rejected_ids)}, remaining={len(filtered_docs)}, depth={depth}"
+                        )
+                    except Exception:
+                        pass
+
+                    if filtered_docs:
+                        return await self._index_with_redelivery(filtered_docs, recreate, depth + 1, max_depth)
+                    else:
+                        return 0
+                else:
+                    # Не удалось распарсить JSON-детали — безопасный fallback на бисекцию
+                    self.stats["error_count"] = self.stats.get("error_count", 0) + 1
+                    try:
+                        diag_logger.warning(
+                            f"422 parse_failed: attempted={total_docs}, depth={depth}; fallback=bisect"
+                        )
+                    except Exception:
+                        pass
+                    # Переходим к общей ветке (ниже) — бисекция
+
+            # Прочие HTTP ошибки обрабатываем как "прочие исключения" (ниже)
+
+        except Exception:
+            # Переходим к общей ветке — бисекция/дроп
+            pass
+
+        # Общая обработка для любых ошибок (таймаут/сеть/прочее или 422 без деталей)
+        if depth >= max_depth or total_docs <= 1:
+            # Дропаeм один документ (или небольшой хвост) — логи только агрегаты
+            try:
+                diag_logger.error(
+                    f"index drop: attempted={total_docs}, depth={depth}, max_depth={max_depth}"
+                )
+            except Exception:
+                pass
+            return 0
+
+        # Бисекция набора: индексируем подсписки независимо
+        mid = max(1, total_docs // 2)
+        left = docs[:mid]
+        right = docs[mid:]
+        left_count = await self._index_with_redelivery(left, recreate, depth + 1, max_depth)
+        right_count = await self._index_with_redelivery(right, recreate, depth + 1, max_depth)
+        return left_count + right_count
+
     async def _async_search(
         self,
         query_vector: np.ndarray,
@@ -549,7 +704,10 @@ class RemoteVMVectorStore:
         else:
             total_timeout_sec = float(self.search_timeout)
 
-        timeout_ctx = ClientTimeout(total=total_timeout_sec, sock_read=total_timeout_sec)
+        # Раздельные таймауты клиента: короткий connect и полный sock_read
+        connect_timeout_sec = min(1.0, max(0.05, total_timeout_sec * 0.2))
+        sock_read_timeout_sec = total_timeout_sec
+        timeout_ctx = ClientTimeout(total=total_timeout_sec, connect=connect_timeout_sec, sock_read=sock_read_timeout_sec)
         endpoint = self.text_search_endpoint if 'query' in payload else self.search_endpoint
 
         async def _single_attempt():
@@ -807,7 +965,9 @@ class RemoteVMVectorStore:
             'total_search_time': 0.0,
             'total_index_time': 0.0,
             'error_count': 0,
-            'retry_count': 0
+            'retry_count': 0,
+            'empty_text_detected_total': 0,
+            'client_dropped_too_large_total': 0,
         }
         _log(logger.info, "Статистика RemoteVMVectorStore сброшена")
     async def close(self) -> None:

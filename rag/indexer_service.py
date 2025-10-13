@@ -10,10 +10,11 @@ import warnings
 import logging
 import time
 import uuid
+import hashlib
 import psutil
 from pathlib import Path
 from typing import List, Dict, Tuple, Any, AsyncGenerator
-from datetime import datetime
+from datetime import datetime, timezone
 import numpy as np
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
@@ -32,6 +33,16 @@ logger = logging.getLogger(__name__)
 # Подавляем шумные SyntaxWarning (например, при парсинге файлов tests)
 warnings.filterwarnings('ignore', category=SyntaxWarning)
 
+def _sha256_hex(text: str) -> str:
+    """
+    Локальная утилита: SHA-256 от текста в hex (UTF-8).
+    """
+    if text is None:
+        text = ""
+    if not isinstance(text, str):
+        text = str(text)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+ 
 class IndexerService:
     """
     Сервис индексации репозиториев в RAG систему.
@@ -678,13 +689,80 @@ class IndexerService:
             if not valid_docs:
                 logger.warning(f"❌ Батч {batch_num}: все тексты пустые, пропускаем")
                 continue
+
+            # 4.2 Идемпотентность: подготовка ключей + дедупликация внутри батча
+            seen_keys: set = set()
+            prepped: List[Dict[str, Any]] = []
+            drop_inbatch = 0
+
+            for _, doc in valid_docs:
+                text = doc.get('text', '')
+                server_content_sha256 = _sha256_hex(text)
+
+                # Источник версии эмбеддингов: point -> metadata -> config -> "unknown"
+                meta_src = dict(doc.get('metadata') or {})
+                ev = doc.get('embedding_version') or meta_src.get('embedding_version') \
+                     or getattr(getattr(self.config, 'rag', None), 'embeddings', None).__dict__.get('version') if hasattr(getattr(self.config, 'rag', None), 'embeddings') else None
+                if not ev:
+                    ev = "unknown"
+
+                client_key = doc.get('document_idempotency_key')
+                document_idempotency_key = client_key if isinstance(client_key, str) and client_key \
+                                           else f"{server_content_sha256}:{ev}"
+
+                # Дедупликация внутри батча
+                if document_idempotency_key in seen_keys:
+                    drop_inbatch += 1
+                    continue
+                seen_keys.add(document_idempotency_key)
+
+                prepped.append({
+                    'id': doc.get('id'),
+                    'text': text,
+                    'metadata': meta_src,
+                    'timestamp': doc.get('timestamp', datetime.now(timezone.utc).isoformat()),
+                    'server_content_sha256': server_content_sha256,
+                    'embedding_version': ev,
+                    'idempotency_key': document_idempotency_key
+                })
+
+            # Проверка существования в коллекции (между батчами)
+            dropped_existing_count = 0
+            docs_to_index: List[Dict[str, Any]] = []
+            exists_fn = getattr(self.vector_store, 'exists_by_idempotency_key', None)
+
+            for p in prepped:
+                exists = False
+                try:
+                    if callable(exists_fn):
+                        if asyncio.iscoroutinefunction(exists_fn):
+                            exists = await exists_fn(p['idempotency_key'])
+                        else:
+                            exists = await asyncio.to_thread(exists_fn, p['idempotency_key'])
+                except Exception:
+                    # fail-open: при ошибке считаем, что нет дубликата
+                    exists = False
+
+                if exists:
+                    dropped_existing_count += 1
+                    continue
+                docs_to_index.append(p)
+
+            # Безопасные логи: только агрегаты
+            logger.info(
+                f"Дедупликация батча {batch_num}: in_batch_dropped={drop_inbatch}, "
+                f"existing_dropped={dropped_existing_count}, to_index={len(docs_to_index)}"
+            )
+
+            if not docs_to_index:
+                logger.info(f"Батч {batch_num}: после дедупликации нет новых документов, пропускаем генерацию эмбеддингов")
+                continue
             
-            texts = [doc.get('text', '') for _, doc in valid_docs]
+            texts = [d['text'] for d in docs_to_index]
             
-            # Диагностика текстов
+            # Диагностика текстов (safe: без контента)
             if texts:
-                first_text_preview = texts[0][:100] if len(texts[0]) > 100 else texts[0]
-                logger.info(f"📝 Извлечено {len(texts)} текстов. Первый: '{first_text_preview}...' (длина: {len(texts[0])})")
+                logger.info(f"📝 Извлечено {len(texts)} текстов. first_len={len(texts[0])}")
             else:
                 logger.warning(f"⚠️ Батч {batch_num}: список текстов пуст!")
 
@@ -706,7 +784,7 @@ class IndexerService:
                 continue
 
             points = []
-            for j, (_, doc) in enumerate(valid_docs):
+            for j, doc in enumerate(docs_to_index):
                 point_id = str(doc.get('id') or uuid.uuid4())
                 metadata = dict(doc.get('metadata') or {})
                 from datetime import timezone
@@ -723,6 +801,10 @@ class IndexerService:
                         'content': doc.get('text', ''),
                         'point_id': point_id,
                         'indexed_at': ts,
+                        # 4.2: сохраняем идемпотентность/версию/хеш
+                        'idempotency_key': doc.get('idempotency_key'),
+                        'content_sha256': doc.get('server_content_sha256'),
+                        'embedding_version': doc.get('embedding_version'),
                     }
                 })
 

@@ -545,6 +545,31 @@ class QdrantVectorStore:
                 operation="index_documents"
             )
     
+    def exists_by_idempotency_key(self, key: str) -> bool:
+        """
+        Проверяет существование документа по payload.idempotency_key == key.
+        Fail-open: при ошибке возвращает False и логирует предупреждение (без контента).
+        """
+        try:
+            if not key:
+                return False
+            search_filter = Filter(
+                must=[FieldCondition(key="idempotency_key", match=MatchValue(value=key))]
+            )
+            # Совместимый вызов: scroll с limit=1 (работает в разных версиях клиента)
+            res = self.active_client.scroll(
+                collection_name=self.config.collection_name,
+                scroll_filter=search_filter,
+                limit=1,
+                with_payload=False,
+                with_vectors=False
+            )
+            points = res[0] if isinstance(res, tuple) else res
+            return bool(points)
+        except Exception as e:
+            logger.warning(f"exists_by_idempotency_key: fail-open ({type(e).__name__}): {e}")
+            return False
+    
     async def update_document(self, pid: str, vector: np.ndarray, payload: Dict) -> bool:
         """
         Обновляет существующий документ.

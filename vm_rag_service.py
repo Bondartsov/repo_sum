@@ -515,10 +515,113 @@ async def search_documents(request: SearchRequest, http_request: Request):
         if request.dense_vector:
             logger.info("🔵 Векторный протокол: используем готовые векторы")
             
-            # Конвертируем list в numpy array
-            dense_vector = np.array(request.dense_vector, dtype=np.float32)
+            # Серверная валидация dense-вектора (Фаза 4.3)
+            # 1) Предварительная проверка типа/наличия (без логирования содержимого)
+            if not isinstance(request.dense_vector, (list, tuple, np.ndarray)):
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": {
+                            "type": "validation_error",
+                            "message": "invalid dense_vector",
+                            "details": [
+                                {"field": "dense_vector", "issue": "invalid_type"}
+                            ],
+                            "request_id": str(uuid.uuid4()),
+                            "api_contract": "v1.0.0"
+                        }
+                    }
+                )
             
-            # Прямой поиск в vector_store с готовыми векторами
+            # 2) Конвертация в np.array
+            try:
+                dense_vector = np.array(request.dense_vector, dtype=np.float32)
+            except Exception:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": {
+                            "type": "validation_error",
+                            "message": "invalid dense_vector",
+                            "details": [
+                                {"field": "dense_vector", "issue": "invalid_type"}
+                            ],
+                            "request_id": str(uuid.uuid4()),
+                            "api_contract": "v1.0.0"
+                        }
+                    }
+                )
+            
+            # 3) Определение ожидаемой размерности
+            expected_dim = None
+            try:
+                cfg = get_config()
+                # Предпочтительно из конфига (embedding_dim/truncate_dim), затем vector_size
+                expected_dim = (
+                    getattr(cfg.rag.embeddings, "embedding_dim", None)
+                    or getattr(cfg.rag.embeddings, "truncate_dim", None)
+                    or getattr(cfg.rag.vector_store, "vector_size", None)
+                )
+            except Exception:
+                expected_dim = None
+            
+            if not expected_dim:
+                try:
+                    emb = services.get("embedder")
+                    if emb is not None:
+                        stats = {}
+                        try:
+                            stats = emb.get_stats()
+                        except Exception:
+                            stats = {}
+                        expected_dim = (
+                            stats.get("dimension")
+                            or stats.get("embedding_dim")
+                            or getattr(emb, "embedding_dim", None)
+                        )
+                except Exception:
+                    expected_dim = None
+            
+            if not expected_dim:
+                expected_dim = 1024  # Fallback
+            
+            # 4) Пост-валидация размерности и числовой валидности
+            len_vec = dense_vector.shape[0] if dense_vector.ndim == 1 else dense_vector.size
+            has_nan = bool(np.isnan(dense_vector).any())
+            has_inf = bool(np.isinf(dense_vector).any())
+            
+            # Безопасные диагностические логи (только агрегаты)
+            try:
+                diag_logger.info(f"dense_vector_diag: dim={len_vec}, has_nan={has_nan}, has_inf={has_inf}")
+            except Exception:
+                pass
+            
+            issues = []
+            if int(len_vec) != int(expected_dim):
+                issues.append({
+                    "field": "dense_vector",
+                    "issue": "invalid_dim",
+                    "expected": int(expected_dim),
+                    "actual": int(len_vec)
+                })
+            if has_nan or has_inf:
+                issues.append({"field": "dense_vector", "issue": "nan_inf_detected"})
+            
+            if issues:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": {
+                            "type": "validation_error",
+                            "message": "invalid dense_vector",
+                            "details": issues,
+                            "request_id": str(uuid.uuid4()),
+                            "api_contract": "v1.0.0"
+                        }
+                    }
+                )
+            
+            # 5) Прямой поиск в vector_store с валидным вектором
             raw_results = await asyncio.to_thread(
                 services['vector_store'].search,
                 query_vector=dense_vector,
@@ -613,7 +716,7 @@ async def search_documents(request: SearchRequest, http_request: Request):
 
 @app.post("/index", response_model=IndexResponse)
 @app.post("/v1/index", response_model=IndexResponse)
-async def index_documents(request: IndexRequest, background_tasks: BackgroundTasks, http_request: Request):
+async def index_documents(request: IndexRequest, background_tasks: BackgroundTasks, http_request: Request, embedding_version: Optional[str] = Header(None, alias="X-Embedding-Version")):
     """Индексация документов с защитой от OOM"""
     logger.info(f"🔵 НАЧАЛО endpoint /index: получено {len(request.documents) if hasattr(request, 'documents') else 0} документов")
     try:
@@ -665,11 +768,20 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
                     "id": doc.get('id') or doc.get('metadata', {}).get('file_path', 'unknown'),
                     "reason": "empty_text"
                 })
+            # Прокидываем embedding_version из заголовка (приоритет) или документа
+            meta = dict(doc.get('metadata', {}) or {})
+            ev = embedding_version or doc.get('embedding_version') or meta.get('embedding_version')
+            if ev:
+                meta['embedding_version'] = ev
             point = {
                 'id': doc.get('id'),
                 'text': text,
-                'metadata': doc.get('metadata', {}),
-                'timestamp': doc.get('timestamp', datetime.now(timezone.utc).isoformat())
+                'metadata': meta,
+                'timestamp': doc.get('timestamp', datetime.now(timezone.utc).isoformat()),
+                # Пробрасываем ключ идемпотентности от клиента (если есть)
+                'document_idempotency_key': doc.get('document_idempotency_key'),
+                # Дублируем для удобства извлечения на уровне сервиса индексации
+                'embedding_version': ev
             }
             points.append(point)
         
