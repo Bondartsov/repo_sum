@@ -12,6 +12,8 @@ import time
 import uuid
 import hashlib
 import psutil
+import sys
+import inspect
 from pathlib import Path
 from typing import List, Dict, Tuple, Any, AsyncGenerator
 from datetime import datetime, timezone
@@ -102,8 +104,14 @@ class IndexerService:
             'indexing_time': 0.0,
             'errors': []
         }
+        # Опциональный обработчик прогресса индексации для UI (Streamlit и т.п.)
+        self.index_progress_handler = None
         
         logger.info("IndexerService инициализирован")
+        
+    def set_index_progress_handler(self, handler) -> None:
+        """Устанавливает обработчик прогресса индексации для UI (опционально)."""
+        self.index_progress_handler = handler
     
     async def initialize_vector_store(self, recreate: bool = False) -> None:
         """
@@ -616,7 +624,7 @@ class IndexerService:
                         }
                     })
                 
-                # Индексируем в Qdrant
+                # Индексируем в Qdrant/Remote VM
                 index_start = time.time()
                 
                 # ДИАГНОСТИКА: Проверяем тип vector_store и метода
@@ -624,18 +632,71 @@ class IndexerService:
                 index_fn = getattr(self.vector_store, 'index_documents')
                 logger.info(f"🔍 ДИАГНОСТИКА: asyncio.iscoroutinefunction(index_documents) = {asyncio.iscoroutinefunction(index_fn)}")
                 
-                # Проверяем тип функции и вызываем соответствующим образом
+                # Локальный колбэк прогресса (rate-limit ≤ 5 Гц) + форвардинг в UI handler
+                last_evt: Dict[str, Any] = {}
+                last_print: float = 0.0
+                def _progress_cb(evt: Dict[str, Any]):
+                    nonlocal last_evt, last_print
+                    try:
+                        last_evt = evt or {}
+                        now = time.time()
+                        if now - last_print < 0.2:  # ≤ 5 обновлений/сек
+                            return
+                        last_print = now
+                        percent = float(last_evt.get('percent', 0.0))
+                        eta_sec = float(last_evt.get('eta_sec', 0.0))
+                        accepted = int(last_evt.get('accepted', 0))
+                        rejected = int(last_evt.get('rejected', 0))
+                        dropped = int(last_evt.get('dropped', 0))
+                        total = int(last_evt.get('total', 0) or 0)
+                        msg = f"Index progress: {percent:.1f}% | ETA {eta_sec:.1f}s | accepted={accepted} rejected={rejected} dropped={dropped} total={total}"
+                        try:
+                            print(msg, end='\r', flush=True)
+                        except Exception:
+                            pass
+                        if getattr(self, 'index_progress_handler', None):
+                            try:
+                                self.index_progress_handler(last_evt)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                
+                # Проверяем поддержку progress_cb у метода
+                supports_cb = False
+                try:
+                    sig = inspect.signature(index_fn)
+                    supports_cb = 'progress_cb' in sig.parameters
+                except Exception:
+                    supports_cb = False
+                
+                # Вызываем с колбэком (если поддерживается) или без него
                 if asyncio.iscoroutinefunction(index_fn):
-                    # Локальный QdrantVectorStore - async функция
-                    logger.info("✅ Используем await для async функции")
-                    batch_indexed = await index_fn(points)
+                    if supports_cb:
+                        batch_indexed = await index_fn(points, progress_cb=_progress_cb)
+                    else:
+                        logger.info("ℹ️ index_documents не поддерживает progress_cb (async)")
+                        batch_indexed = await index_fn(points)
                 else:
-                    # Удалённый RemoteVectorStore - sync функция
-                    logger.info("✅ Используем asyncio.to_thread для sync функции")
-                    batch_indexed = await asyncio.to_thread(index_fn, points)
+                    if supports_cb:
+                        batch_indexed = await asyncio.to_thread(index_fn, points, _progress_cb)
+                    else:
+                        logger.info("ℹ️ index_documents не поддерживает progress_cb (sync)")
+                        batch_indexed = await asyncio.to_thread(index_fn, points)
                 
                 logger.info(f"✅ batch_indexed = {batch_indexed}, type = {type(batch_indexed).__name__}")
                 self.stats['indexing_time'] += time.time() - index_start
+                # Финальная строка о завершении батча (без содержания документов)
+                try:
+                    if last_evt:
+                        accepted = int(last_evt.get('accepted', 0))
+                        rejected = int(last_evt.get('rejected', 0))
+                        dropped = int(last_evt.get('dropped', 0))
+                        total = int(last_evt.get('total', 0) or 0)
+                        elapsed_batch = time.time() - index_start
+                        print(f"Index finished: 100.0% | elapsed={elapsed_batch:.1f}s | accepted={accepted} | rejected={rejected} | dropped={dropped} | total={total}      ", flush=True)
+                except Exception:
+                    pass
                 
                 indexed_count += batch_indexed
                 
@@ -813,13 +874,69 @@ class IndexerService:
                 index_fn = getattr(self.vector_store, 'index_documents')
                 logger.info(f"🔍 Тип функции index_documents: async={asyncio.iscoroutinefunction(index_fn)}")
                 
+                index_start = time.time()
+                # Локальный колбэк прогресса (rate-limit ≤ 5 Гц) + форвардинг в UI handler
+                last_evt: Dict[str, Any] = {}
+                last_print: float = 0.0
+                def _progress_cb(evt: Dict[str, Any]):
+                    nonlocal last_evt, last_print
+                    try:
+                        last_evt = evt or {}
+                        now = time.time()
+                        if now - last_print < 0.2:
+                            return
+                        last_print = now
+                        percent = float(last_evt.get('percent', 0.0))
+                        eta_sec = float(last_evt.get('eta_sec', 0.0))
+                        accepted = int(last_evt.get('accepted', 0))
+                        rejected = int(last_evt.get('rejected', 0))
+                        dropped = int(last_evt.get('dropped', 0))
+                        total_evt = int(last_evt.get('total', 0) or 0)
+                        msg = f"Index progress: {percent:.1f}% | ETA {eta_sec:.1f}s | accepted={accepted} rejected={rejected} dropped={dropped} total={total_evt}"
+                        try:
+                            print(msg, end='\r', flush=True)
+                        except Exception:
+                            pass
+                        if getattr(self, 'index_progress_handler', None):
+                            try:
+                                self.index_progress_handler(last_evt)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                
+                supports_cb = False
+                try:
+                    sig = inspect.signature(index_fn)
+                    supports_cb = 'progress_cb' in sig.parameters
+                except Exception:
+                    supports_cb = False
+                
                 if asyncio.iscoroutinefunction(index_fn):
-                    batch_indexed = await index_fn(points)
+                    if supports_cb:
+                        batch_indexed = await index_fn(points, progress_cb=_progress_cb)
+                    else:
+                        logger.info("ℹ️ index_documents не поддерживает progress_cb (async)")
+                        batch_indexed = await index_fn(points)
                 else:
-                    batch_indexed = await asyncio.to_thread(index_fn, points)
+                    if supports_cb:
+                        batch_indexed = await asyncio.to_thread(index_fn, points, _progress_cb)
+                    else:
+                        logger.info("ℹ️ index_documents не поддерживает progress_cb (sync)")
+                        batch_indexed = await asyncio.to_thread(index_fn, points)
                 
                 logger.info(f"✅ Батч {batch_num}: проиндексировано {batch_indexed} точек (type={type(batch_indexed).__name__})")
                 total_indexed += batch_indexed
+                # Финальная строка о завершении (агрегаты)
+                try:
+                    if last_evt:
+                        acc = int(last_evt.get('accepted', 0))
+                        rej = int(last_evt.get('rejected', 0))
+                        drp = int(last_evt.get('dropped', 0))
+                        tot = int(last_evt.get('total', 0) or 0)
+                        print(f"Index finished: 100.0% | elapsed={time.time() - index_start:.1f}s | accepted={acc} | rejected={rej} | dropped={drp} | total={tot}      ", flush=True)
+                except Exception:
+                    pass
             except Exception as e:
                 logger.error(f"❌ КРИТИЧЕСКАЯ ОШИБКА индексации батча {batch_num}: {e}", exc_info=True)
                 # НЕ пробрасываем ошибку, но фиксируем в логах

@@ -26,7 +26,7 @@ from doc_generator import DocumentationGenerator
 from utils import (
     setup_logging, FileInfo, ParsedFile, GPTAnalysisRequest, GPTAnalysisResult,
     ensure_directory_exists, create_error_parsed_file, create_error_gpt_result,
-    compute_file_hash, read_index, write_index
+    compute_file_hash, read_index, write_index, map_user_friendly_error
 )
 
 # RAG система - импорты перенесены внутрь функций для предотвращения зависания при --help
@@ -635,13 +635,56 @@ def index(repo_path, batch_size, recreate, no_progress):
         console.print("[yellow]⏹️ Индексация прервана пользователем[/yellow]")
         sys.exit(1)
     except VectorStoreConnectionError as e:
-        console.print(f"[bold red]❌ Ошибка подключения к Qdrant: {e}[/bold red]")
-        console.print("[dim]Проверьте, что Qdrant запущен и доступен[/dim]")
+        mapped = map_user_friendly_error(e)
+        console.print(f"[bold red]❌ [{mapped.get('title','Unknown error')}] {mapped.get('message','')} (code={mapped.get('code','n/a')})[/bold red]")
+        details = mapped.get('details') or []
+        if details:
+            console.print(f"[dim]Детали: {len(details)}[/dim]")
+            for d in details[:3]:
+                parts = []
+                field = d.get('field')
+                issue = d.get('issue') or d.get('reason')
+                ident = d.get('id')
+                if field:
+                    parts.append(f"field={field}")
+                if issue:
+                    parts.append(f"issue={issue}")
+                if ident:
+                    parts.append(f"id={ident}")
+                if parts:
+                    console.print("  • " + ", ".join(parts))
+        recs = mapped.get('recommendations') or []
+        if recs:
+            console.print("[dim]Рекомендации:[/dim]")
+            for r in recs[:3]:
+                console.print(f"  • {r}")
         sys.exit(1)
     except Exception as e:
         logger = logging.getLogger(__name__)
         logger.error(f"Критическая ошибка индексации: {e}", exc_info=True)
-        console.print(f"[bold red]❌ Критическая ошибка: {e}[/bold red]")
+        mapped = map_user_friendly_error(e)
+        console.print(f"[bold red]❌ [{mapped.get('title','Unknown error')}] {mapped.get('message','')} (code={mapped.get('code','n/a')})[/bold red]")
+        details = mapped.get('details') or []
+        if details:
+            console.print(f"[dim]Детали: {len(details)}[/dim]")
+            for d in details[:3]:
+                parts = []
+                field = d.get('field')
+                issue = d.get('issue') or d.get('reason')
+                ident = d.get('id')
+                if field:
+                    parts.append(f"field={field}")
+                if issue:
+                    parts.append(f"issue={issue}")
+                if ident:
+                    parts.append(f"id={ident}")
+                if parts:
+                    console.print("  • " + ", ".join(parts))
+        recs = mapped.get('recommendations') or []
+        if recs:
+            console.print("[dim]Рекомендации:[/dim]")
+            for r in recs[:3]:
+                console.print(f"  • {r}")
         sys.exit(1)
 
 
@@ -697,16 +740,81 @@ def search(query, top_k, lang, chunk_type, min_score, file_path, no_content, max
         console.print("[yellow]⏹️ Поиск прерван пользователем[/yellow]")
         sys.exit(1)
     except VectorStoreConnectionError as e:
-        console.print(f"[bold red]❌ Ошибка подключения к Qdrant: {e}[/bold red]")
-        console.print("[dim]Проверьте, что Qdrant запущен и коллекция проиндексирована[/dim]")
+        mapped = map_user_friendly_error(e)
+        console.print(f"[bold red]❌ [{mapped.get('title','Unknown error')}] {mapped.get('message','')} (code={mapped.get('code','n/a')})[/bold red]")
+        details = mapped.get('details') or []
+        if details:
+            console.print(f"[dim]Детали: {len(details)}[/dim]")
+            for d in details[:3]:
+                parts = []
+                field = d.get('field')
+                issue = d.get('issue') or d.get('reason')
+                ident = d.get('id')
+                if field:
+                    parts.append(f"field={field}")
+                if issue:
+                    parts.append(f"issue={issue}")
+                if ident:
+                    parts.append(f"id={ident}")
+                if parts:
+                    console.print("  • " + ", ".join(parts))
+        recs = mapped.get('recommendations') or []
+        if recs:
+            console.print("[dim]Рекомендации:[/dim]")
+            for r in recs[:3]:
+                console.print(f"  • {r}")
         sys.exit(1)
     except VectorStoreException as e:
-        console.print(f"[bold red]❌ Ошибка поиска: {e}[/bold red]")
+        mapped = map_user_friendly_error(e)
+        console.print(f"[bold red]❌ [{mapped.get('title','Unknown error')}] {mapped.get('message','')} (code={mapped.get('code','n/a')})[/bold red]")
+        details = mapped.get('details') or []
+        if details:
+            console.print(f"[dim]Детали: {len(details)}[/dim]")
+            for d in details[:3]:
+                parts = []
+                field = d.get('field')
+                issue = d.get('issue') or d.get('reason')
+                ident = d.get('id')
+                if field:
+                    parts.append(f"field={field}")
+                if issue:
+                    parts.append(f"issue={issue}")
+                if ident:
+                    parts.append(f"id={ident}")
+                if parts:
+                    console.print("  • " + ", ".join(parts))
+        recs = mapped.get('recommendations') or []
+        if recs:
+            console.print("[dim]Рекомендации:[/dim]")
+            for r in recs[:3]:
+                console.print(f"  • {r}")
         sys.exit(1)
     except Exception as e:
         logger = logging.getLogger(__name__)
         logger.error(f"Критическая ошибка поиска: {e}", exc_info=True)
-        console.print(f"[bold red]❌ Критическая ошибка: {e}[/bold red]")
+        mapped = map_user_friendly_error(e)
+        console.print(f"[bold red]❌ [{mapped.get('title','Unknown error')}] {mapped.get('message','')} (code={mapped.get('code','n/a')})[/bold red]")
+        details = mapped.get('details') or []
+        if details:
+            console.print(f"[dim]Детали: {len(details)}[/dim]")
+            for d in details[:3]:
+                parts = []
+                field = d.get('field')
+                issue = d.get('issue') or d.get('reason')
+                ident = d.get('id')
+                if field:
+                    parts.append(f"field={field}")
+                if issue:
+                    parts.append(f"issue={issue}")
+                if ident:
+                    parts.append(f"id={ident}")
+                if parts:
+                    console.print("  • " + ", ".join(parts))
+        recs = mapped.get('recommendations') or []
+        if recs:
+            console.print("[dim]Рекомендации:[/dim]")
+            for r in recs[:3]:
+                console.print(f"  • {r}")
         sys.exit(1)
 
 

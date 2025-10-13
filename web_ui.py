@@ -33,6 +33,7 @@ from utils import (
     ensure_directory_exists,
     create_error_parsed_file,
     create_error_gpt_result,
+    map_user_friendly_error,
 )
 
 # Импортируем RAG компоненты
@@ -774,7 +775,33 @@ def main():
                             try:
                                 status_text.text("Индексация в RAG систему...")
                                 progress_bar.progress(95)
-                                
+
+                                # Индикатор прогресса индексации RAG (обновляется через progress_cb)
+                                index_progress_text = st.empty()
+                                index_progress_bar = st.progress(0)
+                                def _ui_index_progress(evt: dict):
+                                    try:
+                                        percent = float(evt.get('percent', 0.0))
+                                        eta_sec = float(evt.get('eta_sec', 0.0))
+                                        accepted = int(evt.get('accepted', 0))
+                                        rejected = int(evt.get('rejected', 0))
+                                        dropped = int(evt.get('dropped', 0))
+                                        total_evt = int(evt.get('total', 0) or 0)
+                                        index_progress_text.text(
+                                            f"Index: {percent:.1f}% (ETA {eta_sec:.1f}s) | accepted={accepted} rejected={rejected} dropped={dropped} total={total_evt}"
+                                        )
+                                        try:
+                                            index_progress_bar.progress(min(100, int(percent)))
+                                        except Exception:
+                                            pass
+                                    except Exception:
+                                        pass
+                                # Устанавливаем обработчик прогресса (без утечки контента)
+                                try:
+                                    indexer_service.set_index_progress_handler(_ui_index_progress)
+                                except Exception:
+                                    pass
+
                                 # Запускаем индексацию репозитория
                                 indexing_result = run_async(indexer_service.index_repository(
                                     repo_path,
@@ -782,6 +809,12 @@ def main():
                                     recreate=False,
                                     show_progress=True
                                 ))
+
+                                # Сбрасываем обработчик прогресса
+                                try:
+                                    indexer_service.set_index_progress_handler(None)
+                                except Exception:
+                                    pass
                                 
                                 if indexing_result and indexing_result.get('success', False):
                                     st.success(f"🎯 RAG индексация завершена: {indexing_result.get('indexed_chunks', 0)} чанков")
@@ -791,10 +824,14 @@ def main():
                                     result['rag_indexing'] = {'success': False, 'error': 'Индексация не удалась'}
                                     
                             except Exception as rag_error:
-                                st.warning(f"⚠️ Ошибка RAG индексации: {rag_error}")
+                                mapped = map_user_friendly_error(rag_error)
+                                st.warning(f"{mapped.get('title','Unknown error')}: {mapped.get('message','')} (code={mapped.get('code','n/a')})")
+                                recs = mapped.get('recommendations') or []
+                                if recs:
+                                    st.info("Рекомендации: " + " | ".join(recs[:3]))
                                 logger.exception("Ошибка RAG индексации")
-                                result['rag_indexing'] = {'success': False, 'error': str(rag_error)}
-                        
+                                result['rag_indexing'] = {'success': False, 'error': mapped.get('message', 'unknown')}
+                            
                         st.session_state.analysis_result = result
                         st.session_state.analysis_completed = True
                         
@@ -805,7 +842,11 @@ def main():
                         st.rerun()
                         
                     except Exception as e:
-                        st.error(f"❌ Ошибка анализа: {e}")
+                        mapped = map_user_friendly_error(e)
+                        st.error(f"{mapped.get('title','Unknown error')}: {mapped.get('message','')} (code={mapped.get('code','n/a')})")
+                        recs = mapped.get('recommendations') or []
+                        if recs:
+                            st.info("Рекомендации: " + " | ".join(recs[:3]))
                         if temp_dir and Path(temp_dir).exists():
                             shutil.rmtree(temp_dir)
         
@@ -952,12 +993,42 @@ def main():
             else:
                 try:
                     with st.spinner("Индексация репозитория в RAG систему..."):
+                        # Визуальный прогресс индексации в UI
+                        idx_status = st.empty()
+                        idx_bar = st.progress(0)
+                        def _ui_index_progress2(evt: dict):
+                            try:
+                                percent = float(evt.get('percent', 0.0))
+                                eta_sec = float(evt.get('eta_sec', 0.0))
+                                accepted = int(evt.get('accepted', 0))
+                                rejected = int(evt.get('rejected', 0))
+                                dropped = int(evt.get('dropped', 0))
+                                total_evt = int(evt.get('total', 0) or 0)
+                                idx_status.text(
+                                    f"Index: {percent:.1f}% (ETA {eta_sec:.1f}s) | accepted={accepted} rejected={rejected} dropped={dropped} total={total_evt}"
+                                )
+                                try:
+                                    idx_bar.progress(min(100, int(percent)))
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
+                        try:
+                            indexer_service.set_index_progress_handler(_ui_index_progress2)
+                        except Exception:
+                            pass
+
                         indexing_result = run_async(indexer_service.index_repository(
                             index_repo_path,
                             batch_size=512,
                             recreate=recreate_index,
                             show_progress=True
                         ))
+
+                        try:
+                            indexer_service.set_index_progress_handler(None)
+                        except Exception:
+                            pass
                         
                         if indexing_result and indexing_result.get('success', False):
                             st.success("🎯 Индексация завершена успешно!")
@@ -978,7 +1049,11 @@ def main():
                             st.error(f"❌ Ошибка индексации: {error_msg}")
                             
                 except Exception as e:
-                    st.error(f"❌ Ошибка индексации: {e}")
+                    mapped = map_user_friendly_error(e)
+                    st.error(f"{mapped.get('title','Unknown error')}: {mapped.get('message','')} (code={mapped.get('code','n/a')})")
+                    recs = mapped.get('recommendations') or []
+                    if recs:
+                        st.info("Рекомендации: " + " | ".join(recs[:3]))
                     logger.exception("Ошибка standalone RAG индексации")
         
         st.divider()
@@ -1062,7 +1137,11 @@ def main():
                             st.info("🔍 Результаты не найдены. Попробуйте изменить запрос или параметры поиска.")
                             
                 except Exception as e:
-                    st.error(f"❌ Ошибка поиска: {e}")
+                    mapped = map_user_friendly_error(e)
+                    st.error(f"{mapped.get('title','Unknown error')}: {mapped.get('message','')} (code={mapped.get('code','n/a')})")
+                    recs = mapped.get('recommendations') or []
+                    if recs:
+                        st.info("Рекомендации: " + " | ".join(recs[:3]))
                     logger.exception("Ошибка выполнения семантического поиска")
                 # ИСПРАВЛЕНИЕ БАГА 2: Удалён дублированный код блока поиска (копипаст-ошибка)
                 # Основной блок поиска уже выполняется выше в строках 1023-1069
@@ -1201,7 +1280,11 @@ def main():
                                 st.warning("🔍 Не найдено релевантного кода для ответа на вопрос. Попробуйте переформулировать вопрос.")
                                 
                     except Exception as e:
-                        st.error(f"❌ Ошибка Q&A: {e}")
+                        mapped = map_user_friendly_error(e)
+                        st.error(f"{mapped.get('title','Unknown error')}: {mapped.get('message','')} (code={mapped.get('code','n/a')})")
+                        recs = mapped.get('recommendations') or []
+                        if recs:
+                            st.info("Рекомендации: " + " | ".join(recs[:3]))
                         logger.exception("Ошибка выполнения Q&A")
             
             # Кнопка очистки истории

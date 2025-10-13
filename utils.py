@@ -394,3 +394,189 @@ def setup_logging(level: str = "INFO") -> None:
 
     root_logger.addHandler(stream_handler)
     root_logger.addHandler(file_handler)
+
+
+def map_user_friendly_error(exc: Exception | dict) -> dict:
+    """
+    Преобразует исключения/ответы сервера в человеко‑читаемую структуру для UI/CLI.
+
+    Возвращает словарь:
+      {
+        "title": "Validation error" | "Timeout" | "Connection issue" | "Server error" | "Unknown error",
+        "message": "краткое описание",
+        "recommendations": ["шаг1", "шаг2", ...],
+        "code": 422|503|500|… (если известен),
+        "details": [{"field":"...","issue":"...","id":"..."}] (если есть и безопасно)
+      }
+
+    Безопасность: не включает текст документов/векторов; в details только поля/причины/id.
+    """
+    import json
+    import asyncio
+    import re
+    try:
+        import aiohttp  # type: ignore
+    except Exception:
+        aiohttp = None  # type: ignore
+
+    ALLOWED_DETAIL_KEYS = {"field", "issue", "id", "reason", "code"}
+
+    def _sanitize_details(raw):
+        out = []
+        try:
+            for item in raw or []:
+                if isinstance(item, dict):
+                    clean = {k: item.get(k) for k in ALLOWED_DETAIL_KEYS if k in item}
+                    if "id" in clean:
+                        try:
+                            clean["id"] = str(clean["id"])
+                        except Exception:
+                            clean["id"] = "<invalid>"
+                    # Удаляем потенциально чувствительные ключи, если они попадут в details
+                    for banned in ("text", "content", "document", "vector", "payload"):
+                        if banned in clean:
+                            clean.pop(banned, None)
+                    if clean:
+                        out.append(clean)
+        except Exception:
+            pass
+        return out
+
+    def _base(title, message, code=None, recs=None, details=None):
+        return {
+            "title": str(title) if title else "Unknown error",
+            "message": str(message) if message else "",
+            "recommendations": list(recs or []),
+            "code": int(code) if isinstance(code, int) else (code if isinstance(code, (int,)) else None),
+            "details": _sanitize_details(details) if details else [],
+        }
+
+    def _timeout():
+        return _base(
+            "Timeout",
+            "Превышено время ожидания ответа сервиса",
+            504,
+            [
+                "Проверьте загрузку VM/сети",
+                "Снизьте batch_size или повторите позже",
+                "Порог p95 для /search ≤ профиля",
+            ],
+        )
+
+    def _server(code=500):
+        return _base(
+            "Server error",
+            "Внутренняя ошибка сервера",
+            code,
+            [
+                "Проверьте серверные логи VM/Qdrant",
+                "Повторите попытку позже",
+            ],
+        )
+
+    def _conn():
+        return _base(
+            "Connection issue",
+            "Сервис недоступен/подключение не установлено",
+            503,
+            [
+                "Проверьте доступность хоста/порта",
+                "Убедитесь, что VM сервис запущен",
+            ],
+        )
+
+    def _validation(msg, details=None):
+        return _base(
+            "Validation error",
+            msg or "Ошибка валидации входных данных",
+            422,
+            [
+                "Проверьте заполненность text (не пустой)",
+                "Пересоберите батч без отбракованных id",
+                "См. логи/агрегаты по dropped_documents_total",
+            ],
+            details=details,
+        )
+
+    # 1) dict payload (например, сервер вернул {"error": {...}})
+    if isinstance(exc, dict):
+        data = exc
+        payload = data.get("error") if isinstance(data.get("error"), dict) else data
+        code = payload.get("code") or data.get("status")
+        err_type = (payload.get("type") or "").lower()
+        msg = payload.get("message") or data.get("message") or "Ошибка операции"
+        details = payload.get("details") or data.get("details") or []
+        if err_type == "validation_error" or code == 422:
+            return _validation(msg, details)
+        if isinstance(code, int):
+            if code == 504:
+                return _timeout()
+            if 500 <= code <= 599:
+                return _server(code)
+        return _base("Unknown error", msg, code, ["Проверьте логи и параметры запроса"])
+
+    # 2) Exception payload
+    e = exc  # type: ignore
+    name = type(e).__name__
+    text = str(e)
+
+    # Timeout типы
+    if isinstance(e, asyncio.TimeoutError) or name in {"TimeoutException", "VMTimeoutError"}:
+        return _timeout()
+
+    # HTTP ошибки (aiohttp.ClientResponseError)
+    if aiohttp and isinstance(e, getattr(aiohttp, "ClientResponseError", tuple())):
+        status = getattr(e, "status", None)
+        message = getattr(e, "message", None) or text
+        if status == 422:
+            # Пытаемся распарсить JSON из message ("HTTP 422: {json}")
+            details = []
+            parsed_msg = None
+            try:
+                idx = message.find("{")
+                jtxt = message[idx:] if idx != -1 else ""
+                data = json.loads(jtxt) if jtxt else {}
+                payload = data.get("error", data)
+                parsed_msg = payload.get("message")
+                details = payload.get("details") or []
+            except Exception:
+                pass
+            return _validation(parsed_msg or "Ошибка валидации входных данных", details)
+        if status == 504:
+            return _timeout()
+        if isinstance(status, int) and 500 <= status <= 599:
+            return _server(status)
+        # Прочие HTTP статусы (4xx etc.)
+        return _base("Unknown error", message, status, ["Проверьте логи и параметры запроса"])
+
+    # Ошибки соединения
+    if (aiohttp and isinstance(e, getattr(aiohttp, "ClientConnectorError", tuple()))) or \
+       name in {"VectorStoreConnectionError", "ConnectionException"} or \
+       "ClientConnectorError" in name or "ConnectionRefused" in text:
+        return _conn()
+
+    # Эвристика: встречается "HTTP 422" в тексте исключения
+    if "HTTP 422" in text or "status 422" in text:
+        details = []
+        parsed_msg = None
+        try:
+            idx = text.find("{")
+            jtxt = text[idx:] if idx != -1 else ""
+            data = json.loads(jtxt) if jtxt else {}
+            payload = data.get("error", data)
+            parsed_msg = payload.get("message")
+            details = payload.get("details") or []
+        except Exception:
+            pass
+        return _validation(parsed_msg or "Ошибка валидации входных данных", details)
+
+    # Эвристика: извлекаем HTTP 5xx код из строки
+    m = re.search(r"HTTP\s+(5\d{2})", text)
+    if m:
+        code = int(m.group(1))
+        if code == 504:
+            return _timeout()
+        return _server(code)
+
+    # По умолчанию
+    return _base("Unknown error", "Неизвестная ошибка", None, ["Проверьте логи и параметры запроса"])

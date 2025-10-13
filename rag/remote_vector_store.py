@@ -12,7 +12,7 @@ import asyncio
 import hashlib
 import uuid
 import json
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Callable
 from config import RemoteServiceConfig, get_config
 import numpy as np
 from datetime import datetime, timezone
@@ -193,10 +193,10 @@ class RemoteVMVectorStore:
             timeout=300  # HOTFIX: 5 минут (было 60s)
         )
 
-    def index_documents(self, points: List[Dict]) -> int:
+    def index_documents(self, points: List[Dict], progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None) -> int:
         """Синхронная индексация документов с правильным event loop management."""
         return run_async_safe(
-            self._async_index_documents(points),
+            self._async_index_documents(points, progress_cb=progress_cb),
             timeout=1800  # HOTFIX: 30 минут (было 300s) - индексация может быть очень долгой при swap
         )
 
@@ -334,7 +334,7 @@ class RemoteVMVectorStore:
             _log(logger.error, f"Ошибка пересоздания коллекции через VM: {e}")
             raise
     
-    async def _async_index_documents(self, points: List[Dict]) -> int:
+    async def _async_index_documents(self, points: List[Dict], progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None) -> int:
         """
         Индексирует документы через удалённый сервис.
         
@@ -398,19 +398,19 @@ class RemoteVMVectorStore:
                 }
                 filtered_docs.append(doc)
 
-            accepted_count = len(filtered_docs)
+            preflight_accepted_count = len(filtered_docs)
             diag_logger.info(
-                f"🧪 КЛИЕНТ preflight: received={len(points)}, accepted={accepted_count}, "
+                f"🧪 КЛИЕНТ preflight: received={len(points)}, accepted={preflight_accepted_count}, "
                 f"empty_dropped={empty_count}, too_large_dropped={too_large_count}, max_bytes={doc_max_bytes}"
             )
 
-            if accepted_count == 0:
+            if preflight_accepted_count == 0:
                 # Нечего индексировать после фильтрации
                 return 0
 
             payload = {
                 "documents": filtered_docs,
-                "batch_size": min(512, accepted_count),  # Батчевая обработка на сервере
+                "batch_size": min(512, preflight_accepted_count),  # Батчевая обработка на сервере
                 "recreate": False
             }
             
@@ -419,20 +419,26 @@ class RemoteVMVectorStore:
                 first_doc = payload["documents"][0]
                 diag_logger.info(f"📤 КЛИЕНТ: Ключи первого document после подготовки = {list(first_doc.keys())}")
             
-            # HTTP запрос на индексацию
-            indexed_count = await self._index_with_redelivery(docs=payload["documents"], recreate=False)
+            # HTTP запрос на индексацию с прогресс‑колбэком
+            total_docs = len(payload["documents"])
+            accepted_count = await self._index_with_redelivery(
+                docs=payload["documents"],
+                recreate=False,
+                total_docs=total_docs,
+                progress_cb=progress_cb
+            )
             
             # Обновляем статистику
             elapsed_time = time.time() - start_time
-            self.stats['total_indexed'] += indexed_count
+            self.stats['total_indexed'] += accepted_count
             self.stats['total_index_time'] += elapsed_time
             
-            _log(logger.info, 
-                f"Индексация через VM завершена: {indexed_count}/{len(points)} документов "
-                f"за {elapsed_time:.3f}s ({indexed_count/elapsed_time:.1f} док/с)"
+            _log(logger.info,
+                f"Индексация через VM завершена: {accepted_count}/{len(points)} документов "
+                f"за {elapsed_time:.3f}s ({accepted_count/elapsed_time:.1f} док/с)"
             )
             
-            return indexed_count
+            return accepted_count
             
         except Exception as e:
             self.stats['error_count'] += 1
@@ -491,29 +497,73 @@ class RemoteVMVectorStore:
         _log(logger.error, f"❌ Неожиданный формат ответа индексации: keys={list(result.keys())}")
         raise ValueError(f"Неожиданный формат ответа индексации: {result.keys()}")
     
-    async def _index_with_redelivery(self, docs: list[dict], recreate: bool, depth: int = 0, max_depth: int = 8) -> int:
+    async def _index_with_redelivery(
+        self,
+        docs: List[Dict],
+        recreate: bool,
+        depth: int = 0,
+        max_depth: int = 8,
+        total_docs: Optional[int] = None,
+        progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+        _acc: Optional[Dict[str, Any]] = None
+    ) -> int:
         """
         Повторная доставка только отбракованных документов при ошибках батча.
         docs — уже подготовленные элементы payload['documents'] (после preflight).
         """
+        # Нормализация входных данных
         try:
-            total_docs = len(docs)
+            total_in_attempt = len(docs)
         except Exception:
             docs = list(docs) if docs is not None else []
-            total_docs = len(docs)
+            total_in_attempt = len(docs)
 
-        if total_docs == 0:
+        if total_in_attempt == 0:
             return 0
+
+        # Инициализация аккумулятора агрегаций
+        if _acc is None:
+            _acc = {"accepted": 0, "rejected": 0, "dropped": 0, "start": time.time()}
+
+        attempt_size = total_in_attempt  # Для диагностики/расчетов, не логируем содержимое
 
         payload = {
             "documents": docs,
-            "batch_size": min(512, total_docs),
+            "batch_size": min(512, total_in_attempt),
             "recreate": False,
         }
 
         try:
             # Пытаемся индексировать весь поднабор
-            return await self._make_index_request_with_retry(payload)
+            indexed_count = await self._make_index_request_with_retry(payload)
+            accepted = indexed_count
+            _acc["accepted"] += accepted
+
+            if progress_cb is not None:
+                elapsed = time.time() - _acc["start"]
+                processed = _acc["accepted"] + _acc["rejected"] + _acc["dropped"]
+                avg_per_doc = elapsed / max(1, _acc["accepted"])
+                total = total_docs or processed
+                remaining = max(0, total - processed)
+                eta_sec = remaining * avg_per_doc
+                percent = min(100.0, 100.0 * processed / max(1, total))
+                try:
+                    progress_cb({
+                        "phase": "index",
+                        "accepted": _acc["accepted"],
+                        "rejected": _acc["rejected"],
+                        "dropped": _acc["dropped"],
+                        "total": total,
+                        "percent": percent,
+                        "eta_sec": eta_sec,
+                        "depth": depth
+                    })
+                except Exception:
+                    # Никогда не прерываем индексацию из-за ошибок пользовательского колбэка
+                    pass
+
+            return accepted
+
         except aiohttp.ClientResponseError as cre:
             # Обработка 422 Validation Error с деталями по документам
             if getattr(cre, "status", None) == 422:
@@ -541,17 +591,43 @@ class RemoteVMVectorStore:
 
                 if parsed_ok:
                     filtered_docs = [d for d in docs if str(d.get("id")) not in rejected_ids]
-                    # Агрегатная статистика/логирование
+                    rejected_ids_count = len(rejected_ids)
+
+                    # Агрегатная статистика/логирование (без контента)
                     self.stats["error_count"] = self.stats.get("error_count", 0) + 1
                     try:
                         diag_logger.warning(
-                            f"422 validation: attempted={total_docs}, rejected_ids={len(rejected_ids)}, remaining={len(filtered_docs)}, depth={depth}"
+                            f"422 validation: attempted={attempt_size}, rejected_ids={rejected_ids_count}, remaining={len(filtered_docs)}, depth={depth}"
                         )
                     except Exception:
                         pass
 
+                    _acc["rejected"] += rejected_ids_count
+
+                    if progress_cb is not None:
+                        elapsed = time.time() - _acc["start"]
+                        processed = _acc["accepted"] + _acc["rejected"] + _acc["dropped"]
+                        avg_per_doc = elapsed / max(1, _acc["accepted"])
+                        total = total_docs or processed
+                        remaining = max(0, total - processed)
+                        eta_sec = remaining * avg_per_doc
+                        percent = min(100.0, 100.0 * processed / max(1, total))
+                        try:
+                            progress_cb({
+                                "phase": "index",
+                                "accepted": _acc["accepted"],
+                                "rejected": _acc["rejected"],
+                                "dropped": _acc["dropped"],
+                                "total": total,
+                                "percent": percent,
+                                "eta_sec": eta_sec,
+                                "depth": depth
+                            })
+                        except Exception:
+                            pass
+
                     if filtered_docs:
-                        return await self._index_with_redelivery(filtered_docs, recreate, depth + 1, max_depth)
+                        return await self._index_with_redelivery(filtered_docs, recreate, depth + 1, max_depth, total_docs, progress_cb, _acc)
                     else:
                         return 0
                 else:
@@ -559,7 +635,7 @@ class RemoteVMVectorStore:
                     self.stats["error_count"] = self.stats.get("error_count", 0) + 1
                     try:
                         diag_logger.warning(
-                            f"422 parse_failed: attempted={total_docs}, depth={depth}; fallback=bisect"
+                            f"422 parse_failed: attempted={attempt_size}, depth={depth}; fallback=bisect"
                         )
                     except Exception:
                         pass
@@ -572,22 +648,47 @@ class RemoteVMVectorStore:
             pass
 
         # Общая обработка для любых ошибок (таймаут/сеть/прочее или 422 без деталей)
-        if depth >= max_depth or total_docs <= 1:
+        if depth >= max_depth or len(docs) <= 1:
             # Дропаeм один документ (или небольшой хвост) — логи только агрегаты
             try:
                 diag_logger.error(
-                    f"index drop: attempted={total_docs}, depth={depth}, max_depth={max_depth}"
+                    f"index drop: attempted={attempt_size}, depth={depth}, max_depth={max_depth}"
                 )
             except Exception:
                 pass
+
+            _acc["dropped"] += len(docs)
+
+            if progress_cb is not None:
+                elapsed = time.time() - _acc["start"]
+                processed = _acc["accepted"] + _acc["rejected"] + _acc["dropped"]
+                avg_per_doc = elapsed / max(1, _acc["accepted"])
+                total = total_docs or processed
+                remaining = max(0, total - processed)
+                eta_sec = remaining * avg_per_doc
+                percent = min(100.0, 100.0 * processed / max(1, total))
+                try:
+                    progress_cb({
+                        "phase": "index",
+                        "accepted": _acc["accepted"],
+                        "rejected": _acc["rejected"],
+                        "dropped": _acc["dropped"],
+                        "total": total,
+                        "percent": percent,
+                        "eta_sec": eta_sec,
+                        "depth": depth
+                    })
+                except Exception:
+                    pass
+
             return 0
 
         # Бисекция набора: индексируем подсписки независимо
-        mid = max(1, total_docs // 2)
+        mid = max(1, len(docs) // 2)
         left = docs[:mid]
         right = docs[mid:]
-        left_count = await self._index_with_redelivery(left, recreate, depth + 1, max_depth)
-        right_count = await self._index_with_redelivery(right, recreate, depth + 1, max_depth)
+        left_count = await self._index_with_redelivery(left, recreate, depth + 1, max_depth, total_docs, progress_cb, _acc)
+        right_count = await self._index_with_redelivery(right, recreate, depth + 1, max_depth, total_docs, progress_cb, _acc)
         return left_count + right_count
 
     async def _async_search(
