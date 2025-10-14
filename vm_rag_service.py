@@ -23,7 +23,7 @@ import uuid
 import hashlib
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel, Field, constr, conlist, conint, confloat
+from pydantic import BaseModel, Field, conlist, conint, confloat
 import pydantic as _p
 import numpy as np
 import uvicorn
@@ -39,6 +39,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.info(f"Pydantic version (runtime): {_p.__version__}")
 
+# Pydantic v1/v2 совместимость для строковых ограничений
+try:
+    from typing_extensions import Annotated
+except ImportError:
+    from typing import Annotated
+
+try:
+    from pydantic import StringConstraints as _StrC
+except ImportError:
+    _StrC = None
+
 # Настройка диагностического логгера (ПОСЛЕ logger!)
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
@@ -49,6 +60,20 @@ diag_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelnam
 diag_logger = logging.getLogger("diagnostics")
 diag_logger.addHandler(diag_handler)
 diag_logger.setLevel(logging.INFO)
+
+# Универсальный шов ConStr: v2 -> Annotated[str, StringConstraints], v1 -> pydantic.constr
+def ConStr(min_length: int = None, regex: str = None):
+    if _StrC is not None:
+        kwargs = {}
+        if min_length is not None:
+            kwargs['min_length'] = min_length
+        if regex is not None:
+            kwargs['pattern'] = regex
+        return Annotated[str, _StrC(**kwargs)]
+    else:
+        # v1: вернуть функциональный тип через pydantic.constr
+        from pydantic import constr as _v1_constr
+        return _v1_constr(min_length=min_length, regex=regex)
 
 # ✅ ИСПРАВЛЕНИЕ РЕКУРСИИ: Используем Factory Pattern
 try:
@@ -94,30 +119,30 @@ class SearchRequest(BaseModel):
     task: str = Field("retrieval.query", description="Задача для query эмбеддинга")
 
 class RejectedReason(BaseModel):
-    id: constr(min_length=1)
-    reason: constr(min_length=1)
+    id: ConStr(min_length=1)
+    reason: ConStr(min_length=1)
     details: Optional[Dict[str, Any]] = None
 
 class IndexedMetadata(BaseModel):
-    file_path: constr(min_length=1) = Field(..., description="Путь к файлу")
+    file_path: ConStr(min_length=1) = Field(..., description="Путь к файлу")
     line_start: conint(ge=0) = Field(..., description="Начальная строка (0 или больше)")
     line_end: conint(ge=0) = Field(..., description="Конечная строка (0 или больше)")
-    language: constr(min_length=1) = Field(..., description="Язык файла")
-    repo: constr(min_length=1) = Field(..., description="Репозиторий")
-    chunk_type: constr(min_length=1) = Field(..., description="Тип чанка")
+    language: ConStr(min_length=1) = Field(..., description="Язык файла")
+    repo: ConStr(min_length=1) = Field(..., description="Репозиторий")
+    chunk_type: ConStr(min_length=1) = Field(..., description="Тип чанка")
 
 class IndexedDocument(BaseModel):
-    id: constr(min_length=1) = Field(..., description="Уникальный идентификатор документа")
-    text: constr(min_length=1) = Field(..., description="Текст документа (не пустой)")
+    id: ConStr(min_length=1) = Field(..., description="Уникальный идентификатор документа")
+    text: ConStr(min_length=1) = Field(..., description="Текст документа (не пустой)")
     metadata: IndexedMetadata
-    embedding_version: constr(min_length=1) = Field(..., description="Версия эмбеддинга/схемы")
-    content_sha256: constr(regex=r'^[A-Fa-f0-9]{64}$') = Field(..., description="SHA256 контента (64 hex)")
+    embedding_version: ConStr(min_length=1) = Field(..., description="Версия эмбеддинга/схемы")
+    content_sha256: ConStr(regex=r'^[A-Fa-f0-9]{64}$') = Field(..., description="SHA256 контента (64 hex)")
     # Опционально поддерживаем ключ идемпотентности от клиента
     document_idempotency_key: Optional[str] = Field(None, description="Опциональный ключ идемпотентности от клиента")
 
 class IndexRequest(BaseModel):
-    api_contract: constr(min_length=1) = Field(..., description="Версия контракта API, ожидается 'v1.0.0'")
-    batch_id: Optional[constr(min_length=1)] = Field(None, description="Опциональный UUID-подобный идентификатор батча")
+    api_contract: ConStr(min_length=1) = Field(..., description="Версия контракта API, ожидается 'v1.0.0'")
+    batch_id: Optional[ConStr(min_length=1)] = Field(None, description="Опциональный UUID-подобный идентификатор батча")
     documents: conlist(IndexedDocument, min_items=1, max_items=128) = Field(..., description="Список документов (1..128)")
 
 class EmbeddingResponse(BaseModel):
@@ -139,11 +164,11 @@ class IndexResponse(BaseModel):
     elapsed_ms: int
 
 class ErrorObject(BaseModel):
-    type: constr(min_length=1)
-    message: constr(min_length=1)
+    type: ConStr(min_length=1)
+    message: ConStr(min_length=1)
     details: List[RejectedReason] = Field(default_factory=list)
-    request_id: constr(min_length=1)
-    api_contract: constr(min_length=1)
+    request_id: ConStr(min_length=1)
+    api_contract: ConStr(min_length=1)
 
 class IndexErrorResponse(BaseModel):
     error: ErrorObject
