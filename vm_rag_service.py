@@ -23,7 +23,8 @@ import uuid
 import hashlib
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel, Field, constr, conlist
+from pydantic import BaseModel, Field, constr, conlist, conint, confloat
+import pydantic as _p
 import numpy as np
 import uvicorn
 
@@ -36,6 +37,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+logger.info(f"Pydantic version (runtime): {_p.__version__}")
 
 # Настройка диагностического логгера (ПОСЛЕ logger!)
 log_dir = Path("logs")
@@ -97,21 +99,21 @@ class RejectedReason(BaseModel):
     details: Optional[Dict[str, Any]] = None
 
 class IndexedMetadata(BaseModel):
-    file_path: constr(min_length=1)
-    line_start: int
-    line_end: int
-    language: constr(min_length=1)
-    repo: constr(min_length=1)
-    chunk_type: constr(min_length=1)
+    file_path: constr(min_length=1) = Field(..., description="Путь к файлу")
+    line_start: conint(ge=0) = Field(..., description="Начальная строка (0 или больше)")
+    line_end: conint(ge=0) = Field(..., description="Конечная строка (0 или больше)")
+    language: constr(min_length=1) = Field(..., description="Язык файла")
+    repo: constr(min_length=1) = Field(..., description="Репозиторий")
+    chunk_type: constr(min_length=1) = Field(..., description="Тип чанка")
 
 class IndexedDocument(BaseModel):
-    id: constr(min_length=1)
-    text: constr(min_length=1, description="Текст документа (не пустой)")
+    id: constr(min_length=1) = Field(..., description="Уникальный идентификатор документа")
+    text: constr(min_length=1) = Field(..., description="Текст документа (не пустой)")
     metadata: IndexedMetadata
-    embedding_version: constr(min_length=1)
-    content_sha256: constr(regex=r'^[A-Fa-f0-9]{64}$')
+    embedding_version: constr(min_length=1) = Field(..., description="Версия эмбеддинга/схемы")
+    content_sha256: constr(regex=r'^[A-Fa-f0-9]{64}$') = Field(..., description="SHA256 контента (64 hex)")
     # Опционально поддерживаем ключ идемпотентности от клиента
-    document_idempotency_key: Optional[str] = None
+    document_idempotency_key: Optional[str] = Field(None, description="Опциональный ключ идемпотентности от клиента")
 
 class IndexRequest(BaseModel):
     api_contract: constr(min_length=1) = Field(..., description="Версия контракта API, ожидается 'v1.0.0'")
