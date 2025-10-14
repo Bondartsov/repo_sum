@@ -1,0 +1,10 @@
+# Project Architecture Rules (Non-Obvious Only)
+
+- Обязателен Factory Context на VM до инициализации FastAPI (иначе выберутся неверные реализации, напр. CPU вместо remote): [RAGFactory.set_context(ExecutionContext.VM)](vm_rag_service.py:98)
+- CLI: lazy‑импорты RAG — архитектурное требование (быстрый старт без тяжёлых зависимостей): [main.py](main.py:32-36)
+- Наблюдаемость как часть архитектуры: JSON‑логгер с безопасными полями + Prometheus (гистограммы, gauge памяти) и нормализация путей /v1/*: [vm_rag_service.py](vm_rag_service.py:328-395)
+- Защита памяти на уровне middleware: при >~92% RAM выполняется gc и возвращается HTTP 507 (Insufficient Storage) — предотвращает OOM: [vm_rag_service.py](vm_rag_service.py:179-208), [vm_rag_service.py](vm_rag_service.py:239-261)
+- Жёсткие API‑контракты: /v1/search_v2 — обязательный протокол (dense/sparse), проверка размерности (fallback=1024), запрет NaN/Inf; /v1/index — заголовок X‑API‑Contract v1.0.0, batch 1..128, опц. строгая sha256, dropped_documents_total: [vm_rag_service.py](vm_rag_service.py:831-846), [vm_rag_service.py](vm_rag_service.py:917-1004)
+- VM‑автоматизация: выбор ветки по GitHub API; .env на VM переопределяет хосты; health‑check с ретраями; фоновый сервис с PID и быстрой диагностикой: [vm_start.py](vm_start.py:219,295,352,675-689,895,959)
+- Unified launcher — единый «setup→start→monitor» с фильтрацией шума логов: [unified_launcher.py](unified_launcher.py:70,174,285)
+- Сервис на VM управляется через CLI start/status/stop; status включает HTTP health‑check: [vm_rag_service.py](vm_rag_service.py:1197,1295)

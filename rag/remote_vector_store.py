@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import uuid
 import json
+from uuid import uuid5, NAMESPACE_URL
 from typing import List, Dict, Optional, Any, Callable
 from config import RemoteServiceConfig, get_config
 import numpy as np
@@ -65,6 +66,15 @@ def _compute_content_sha256(text: str) -> str:
     if not isinstance(text, str):
         text = str(text)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _make_stable_point_id(meta: dict, embedding_version: str, content_sha256: str, fallback_str: str) -> str:
+    """
+    Генерирует детерминированный UUIDv5 для point.id на основе метаданных чанка.
+    Основано на (file_path, line_start, line_end, embedding_version, content_sha256).
+    """
+    key = f"{meta.get('file_path','')}|{meta.get('line_start','')}|{meta.get('line_end','')}|{embedding_version}|{content_sha256}"
+    return str(uuid5(NAMESPACE_URL, key))
 
 
 class RemoteVMVectorStore:
@@ -391,6 +401,7 @@ class RemoteVMVectorStore:
             empty_count = 0
             too_large_count = 0
             filtered_docs: List[Dict[str, Any]] = []
+            remap_logged = False
 
             for i, point in enumerate(points):
                 # Извлекаем текст так же, как при старой сборке payload
@@ -412,16 +423,36 @@ class RemoteVMVectorStore:
                 content_sha256 = _compute_content_sha256(text)
                 embedding_version = self.embedding_version
                 document_idempotency_key = f"{content_sha256}:{embedding_version}"
+
+                # Подмена id на детерминированный UUIDv5 и сохранение оригинального id в metadata
+                meta = point.get("metadata") or {}
+                if not isinstance(meta, dict):
+                    try:
+                        meta = dict(meta)
+                    except Exception:
+                        meta = {}
+                orig_id = str(point.get("id") or point.get("payload", {}).get("id") or f"doc_{i}")
+                new_id = _make_stable_point_id(meta, embedding_version, content_sha256, orig_id)
+                meta["original_id"] = orig_id
+
                 doc = {
-                    "id": str(point.get("id", f"doc_{i}")),
+                    "id": new_id,
                     "text": text,
-                    "metadata": point.get("metadata", {}),
+                    "metadata": meta,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "content_sha256": content_sha256,
                     "embedding_version": embedding_version,
                     "document_idempotency_key": document_idempotency_key,
                 }
                 filtered_docs.append(doc)
+
+                # Диагностика: логируем ремап id один раз на батч
+                if not remap_logged:
+                    try:
+                        diag_logger.info(f"id remap: first original_id={orig_id}, new_id={new_id}")
+                    except Exception:
+                        pass
+                    remap_logged = True
 
             preflight_accepted_count = len(filtered_docs)
             diag_logger.info(

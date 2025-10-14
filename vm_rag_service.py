@@ -14,7 +14,7 @@ import asyncio
 import logging
 import gc
 import psutil
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -50,6 +50,12 @@ try:
     from pydantic import StringConstraints as _StrC
 except ImportError:
     _StrC = None
+
+# Pydantic v2 ConfigDict alias (fallback для v1)
+try:
+    from pydantic import ConfigDict as _CfgDict
+except ImportError:
+    _CfgDict = None
 
 # Настройка диагностического логгера (ПОСЛЕ logger!)
 log_dir = Path("logs")
@@ -154,6 +160,11 @@ class IndexedMetadata(BaseModel):
     repo: ConStr(min_length=1) = Field(..., description="Репозиторий")
     chunk_type: ConStr(min_length=1) = Field(..., description="Тип чанка")
 
+    # Разрешаем лишние поля (совместимость pydantic v1/v2)
+    model_config = _CfgDict(extra='ignore') if _CfgDict is not None else None
+    class Config:
+        extra = 'ignore'
+
 class IndexedDocument(BaseModel):
     id: ConStr(min_length=1) = Field(..., description="Уникальный идентификатор документа")
     text: ConStr(min_length=1) = Field(..., description="Текст документа (не пустой)")
@@ -162,11 +173,22 @@ class IndexedDocument(BaseModel):
     content_sha256: ConStr(regex=r'^[A-Fa-f0-9]{64}$') = Field(..., description="SHA256 контента (64 hex)")
     # Опционально поддерживаем ключ идемпотентности от клиента
     document_idempotency_key: Optional[str] = Field(None, description="Опциональный ключ идемпотентности от клиента")
+    timestamp: Optional[Union[int, str]] = Field(None, description="Временная метка (epoch или ISO), опционально")
+
+    # Разрешаем лишние поля (совместимость pydantic v1/v2)
+    model_config = _CfgDict(extra='ignore') if _CfgDict is not None else None
+    class Config:
+        extra = 'ignore'
 
 class IndexRequest(BaseModel):
-    api_contract: ConStr(min_length=1) = Field(..., description="Версия контракта API, ожидается 'v1.0.0'")
+    api_contract: Optional[ConStr(min_length=1)] = Field(None, description="API contract version; если не передан в body — будет взят из заголовка")
     batch_id: Optional[ConStr(min_length=1)] = Field(None, description="Опциональный UUID-подобный идентификатор батча")
     documents: ConList(IndexedDocument, min_items=1, max_items=128) = Field(..., description="Список документов (1..128)")
+
+    # Разрешаем лишние поля (совместимость pydantic v1/v2)
+    model_config = _CfgDict(extra='ignore') if _CfgDict is not None else None
+    class Config:
+        extra = 'ignore'
 
 class EmbeddingResponse(BaseModel):
     embeddings: List[List[float]]
@@ -341,6 +363,43 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Централизованный перехват ошибок валидации тела запроса (Pydantic v1/v2)
+from fastapi.exceptions import RequestValidationError as _ReqValErr  # локальный импорт совместим с v1/v2
+
+@app.exception_handler(_ReqValErr)
+def validation_exception_handler(request, exc):
+    details = []
+    try:
+        for err in exc.errors():
+            details.append({
+                "field": ".".join(map(str, err.get("loc", []))),
+                "issue": err.get("type"),
+                "message": err.get("msg"),
+            })
+    except Exception:
+        pass
+
+    body = {
+        "error": {
+            "type": "validation_error",
+            "message": "request body validation failed",
+            "details": details,
+            "request_id": request.headers.get("X-Trace-Id") or "",
+            "api_contract": request.headers.get("X-API-Contract") or ""
+        }
+    }
+    try:
+        # Безопасный структурный лог (без содержимого тела)
+        logger.info("request_validation_failed", extra={
+            "endpoint": _normalize_endpoint(request.url.path) if hasattr(request, "url") else "/v1/index",
+            "trace_id": request.headers.get("X-Trace-Id") or "",
+            "elapsed_ms": 0,
+            "counts": {"validation_errors": len(details)}
+        })
+    except Exception:
+        pass
+    return JSONResponse(status_code=422, content=body)
 
 # === Observability: JSON logging + Prometheus metrics + ASGI middleware ===
 import time  # для высокоточного замера длительности
@@ -937,8 +996,23 @@ async def index_documents(
             }
         })
 
-    # Контракт API: заголовок имеет приоритет как источник истины
-    api_contract = (api_contract_header or request.api_contract or "").strip()
+    # Контракт API: заголовок имеет приоритет как источник истины, но тело tolerant к отсутствию
+    resolved_contract = request.api_contract or api_contract_header
+    if resolved_contract is None:
+        # 400: отсутствует контракт и в заголовке, и в body (см. Приложение A.5)
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "type": "invalid_request",
+                    "message": "Missing API contract; provide X-API-Contract header or api_contract in body",
+                    "details": [{"field": "api_contract", "issue": "missing"}],
+                    "request_id": http_request.headers.get("X-Trace-Id") or "",
+                    "api_contract": ""
+                }
+            }
+        )
+    api_contract = (resolved_contract or "").strip()
     if api_contract != "v1.0.0":
         return JSONResponse(
             status_code=400,
