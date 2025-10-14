@@ -24,6 +24,7 @@ import hashlib
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, conlist, conint, confloat
+from pydantic import conlist as _pyd_conlist
 import pydantic as _p
 import numpy as np
 import uvicorn
@@ -74,6 +75,28 @@ def ConStr(min_length: int = None, regex: str = None):
         # v1: вернуть функциональный тип через pydantic.constr
         from pydantic import constr as _v1_constr
         return _v1_constr(min_length=min_length, regex=regex)
+
+# Универсальный шов ConList: v2 -> conlist(..., min_length/max_length), v1 -> conlist(..., min_items/max_items)
+def ConList(item_type, min_items: int = None, max_items: int = None):
+    """
+    Адаптер для pydantic.conlist с совместимостью pydantic v1/v2.
+    Пробрасывает только непустые параметры, без None.
+    """
+    if _StrC is not None:
+        # pydantic v2: min_length / max_length
+        kwargs = {}
+        if min_items is not None:
+            kwargs['min_length'] = min_items
+        if max_items is not None:
+            kwargs['max_length'] = max_items
+        return _pyd_conlist(item_type, **kwargs)
+    # pydantic v1: min_items / max_items
+    kwargs = {}
+    if min_items is not None:
+        kwargs['min_items'] = min_items
+    if max_items is not None:
+        kwargs['max_items'] = max_items
+    return _pyd_conlist(item_type, **kwargs)
 
 # ✅ ИСПРАВЛЕНИЕ РЕКУРСИИ: Используем Factory Pattern
 try:
@@ -143,7 +166,7 @@ class IndexedDocument(BaseModel):
 class IndexRequest(BaseModel):
     api_contract: ConStr(min_length=1) = Field(..., description="Версия контракта API, ожидается 'v1.0.0'")
     batch_id: Optional[ConStr(min_length=1)] = Field(None, description="Опциональный UUID-подобный идентификатор батча")
-    documents: conlist(IndexedDocument, min_items=1, max_items=128) = Field(..., description="Список документов (1..128)")
+    documents: ConList(IndexedDocument, min_items=1, max_items=128) = Field(..., description="Список документов (1..128)")
 
 class EmbeddingResponse(BaseModel):
     embeddings: List[List[float]]
