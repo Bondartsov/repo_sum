@@ -57,6 +57,15 @@ try:
 except ImportError:
     _CfgDict = None
 
+# Базовый класс для централизованного extra='ignore' (совместимость v1/v2)
+if _CfgDict is not None:
+    class ExtraIgnoreModel(BaseModel):
+        model_config = _CfgDict(extra='ignore')
+else:
+    class ExtraIgnoreModel(BaseModel):
+        class Config:
+            extra = 'ignore'
+
 # Настройка диагностического логгера (ПОСЛЕ logger!)
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
@@ -152,7 +161,7 @@ class RejectedReason(BaseModel):
     reason: ConStr(min_length=1)
     details: Optional[Dict[str, Any]] = None
 
-class IndexedMetadata(BaseModel):
+class IndexedMetadata(ExtraIgnoreModel):
     file_path: ConStr(min_length=1) = Field(..., description="Путь к файлу")
     line_start: conint(ge=0) = Field(..., description="Начальная строка (0 или больше)")
     line_end: conint(ge=0) = Field(..., description="Конечная строка (0 или больше)")
@@ -160,12 +169,7 @@ class IndexedMetadata(BaseModel):
     repo: ConStr(min_length=1) = Field(..., description="Репозиторий")
     chunk_type: ConStr(min_length=1) = Field(..., description="Тип чанка")
 
-    # Разрешаем лишние поля (совместимость pydantic v1/v2)
-    model_config = _CfgDict(extra='ignore') if _CfgDict is not None else None
-    class Config:
-        extra = 'ignore'
-
-class IndexedDocument(BaseModel):
+class IndexedDocument(ExtraIgnoreModel):
     id: ConStr(min_length=1) = Field(..., description="Уникальный идентификатор документа")
     text: ConStr(min_length=1) = Field(..., description="Текст документа (не пустой)")
     metadata: IndexedMetadata
@@ -175,20 +179,10 @@ class IndexedDocument(BaseModel):
     document_idempotency_key: Optional[str] = Field(None, description="Опциональный ключ идемпотентности от клиента")
     timestamp: Optional[Union[int, str]] = Field(None, description="Временная метка (epoch или ISO), опционально")
 
-    # Разрешаем лишние поля (совместимость pydantic v1/v2)
-    model_config = _CfgDict(extra='ignore') if _CfgDict is not None else None
-    class Config:
-        extra = 'ignore'
-
-class IndexRequest(BaseModel):
+class IndexRequest(ExtraIgnoreModel):
     api_contract: Optional[ConStr(min_length=1)] = Field(None, description="API contract version; если не передан в body — будет взят из заголовка")
     batch_id: Optional[ConStr(min_length=1)] = Field(None, description="Опциональный UUID-подобный идентификатор батча")
     documents: ConList(IndexedDocument, min_items=1, max_items=128) = Field(..., description="Список документов (1..128)")
-
-    # Разрешаем лишние поля (совместимость pydantic v1/v2)
-    model_config = _CfgDict(extra='ignore') if _CfgDict is not None else None
-    class Config:
-        extra = 'ignore'
 
 class EmbeddingResponse(BaseModel):
     embeddings: List[List[float]]
