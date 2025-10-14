@@ -77,6 +77,40 @@ def _make_stable_point_id(meta: dict, embedding_version: str, content_sha256: st
     return str(uuid5(NAMESPACE_URL, key))
 
 
+def _normalize_metadata(meta: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Нормализует метаданные для соответствия серверному контракту.
+    
+    Преобразует синонимичные поля (start_line/end_line → line_start/line_end)
+    и гарантирует наличие всех обязательных полей по контракту IndexedMetadata.
+    
+    Args:
+        meta: Исходные метаданные
+        
+    Returns:
+        Нормализованные метаданные с правильными именами полей
+    """
+    m = dict(meta or {})
+    
+    # Переименовываем синонимы в требуемые поля
+    if "line_start" not in m and "start_line" in m:
+        m["line_start"] = int(m.get("start_line") or 0)
+    if "line_end" not in m and "end_line" in m:
+        m["line_end"] = int(m.get("end_line") or 0)
+    
+    # Обязательные поля по контракту сервера (IndexedMetadata)
+    m["file_path"] = m.get("file_path") or "unknown"
+    m["language"] = m.get("language") or "unknown"
+    m["repo"] = m.get("repo") or "default"
+    m["chunk_type"] = m.get("chunk_type") or "code"
+    
+    # Чистим легаси-ключи
+    m.pop("start_line", None)
+    m.pop("end_line", None)
+    
+    return m
+
+
 class RemoteVMVectorStore:
     """
     HTTP клиент для удалённого векторного хранилища на VM.
