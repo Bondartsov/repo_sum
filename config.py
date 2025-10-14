@@ -375,6 +375,20 @@ class RagConfig:
         tp.retry_index.base_delay = safe_float("RAG_RETRY_INDEX_BASE_DELAY", str(tp.retry_index.base_delay))
         tp.retry_index.max_delay = safe_float("RAG_RETRY_INDEX_MAX_DELAY", str(tp.retry_index.max_delay))
 
+        # ENV override: diagnostic control for index retries
+        # If RAG_INDEX_RETRIES is set, it has priority over defaults and JSON.
+        # Semantics: retries = N means max_attempts = N + 1 (first try + N retries).
+        try:
+            _idx_retries_env = os.getenv("RAG_INDEX_RETRIES")
+            if _idx_retries_env is not None:
+                _idx = int(_idx_retries_env)
+                if _idx < 0:
+                    _idx = 0
+                tp.retry_index.max_attempts = max(1, _idx + 1)
+                if _idx == 0:
+                    logger.info("diagnostic no-retry mode active (RAG_INDEX_RETRIES=0)")
+        except Exception as _e:
+            logger.warning(f"Invalid RAG_INDEX_RETRIES='{_idx_retries_env}': {type(_e).__name__}: {_e}")
         return cls(
             remote_service=remote_service,
             embeddings=EmbeddingConfig(**embeddings_data),

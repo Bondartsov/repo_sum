@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Any, AsyncGenerator
 from datetime import datetime, timezone
 import numpy as np
+from dataclasses import dataclass, field
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 from rich.console import Console
@@ -45,6 +46,17 @@ def _sha256_hex(text: str) -> str:
         text = str(text)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
  
+@dataclass
+class IndexBatchResult:
+    accepted_ids: List[str] = field(default_factory=list)
+    rejected: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    stats: Dict[str, Any] = field(default_factory=dict)
+
+class IndexingRejectedAll(Exception):
+    def __init__(self, rejected: Dict[str, Dict[str, Any]]):
+        super().__init__("All documents were rejected")
+        self.rejected = rejected
+
 class IndexerService:
     """
     Сервис индексации репозиториев в RAG систему.
@@ -671,21 +683,27 @@ class IndexerService:
                     supports_cb = False
                 
                 # Вызываем с колбэком (если поддерживается) или без него
-                if asyncio.iscoroutinefunction(index_fn):
-                    if supports_cb:
-                        batch_indexed = await index_fn(points, progress_cb=_progress_cb)
+                try:
+                    if asyncio.iscoroutinefunction(index_fn):
+                        if supports_cb:
+                            batch_indexed = await index_fn(points, progress_cb=_progress_cb)
+                        else:
+                            logger.info("ℹ️ index_documents не поддерживает progress_cb (async)")
+                            batch_indexed = await index_fn(points)
                     else:
-                        logger.info("ℹ️ index_documents не поддерживает progress_cb (async)")
-                        batch_indexed = await index_fn(points)
-                else:
-                    if supports_cb:
-                        batch_indexed = await asyncio.to_thread(index_fn, points, _progress_cb)
-                    else:
-                        logger.info("ℹ️ index_documents не поддерживает progress_cb (sync)")
-                        batch_indexed = await asyncio.to_thread(index_fn, points)
-                
-                logger.info(f"✅ batch_indexed = {batch_indexed}, type = {type(batch_indexed).__name__}")
-                self.stats['indexing_time'] += time.time() - index_start
+                        if supports_cb:
+                            batch_indexed = await asyncio.to_thread(index_fn, points, _progress_cb)
+                        else:
+                            logger.info("ℹ️ index_documents не поддерживает progress_cb (sync)")
+                            batch_indexed = await asyncio.to_thread(index_fn, points)
+                    logger.info(f"✅ batch_indexed = {batch_indexed}, type = {type(batch_indexed).__name__}")
+                except Exception as e:
+                    # При исчерпании ретраев /503 или другой ошибке — логируем и переходим к следующему батчу
+                    logger.error(f"❌ Ошибка индексации батча (будет пропущен): {type(e).__name__}: {e}", exc_info=False)
+                    batch_indexed = 0
+                finally:
+                    self.stats['indexing_time'] += time.time() - index_start
+
                 # Финальная строка о завершении батча (без содержания документов)
                 try:
                     if last_evt:
@@ -697,15 +715,22 @@ class IndexerService:
                         print(f"Index finished: 100.0% | elapsed={elapsed_batch:.1f}s | accepted={accepted} | rejected={rejected} | dropped={dropped} | total={total}      ", flush=True)
                 except Exception:
                     pass
-                
+
+                # Робастная нормализация результата index_documents -> int
+                try:
+                    batch_indexed = int(batch_indexed)
+                except Exception:
+                    logger.debug(f"index_documents returned non-integer value {type(batch_indexed).__name__}; coerced to 0")
+                    batch_indexed = 0
+
                 indexed_count += batch_indexed
-                
+
                 if progress:
                     progress.advance(task, len(batch))
-                
+
                 # Двигаемся к следующему batch
                 i += len(batch)
-                
+
                 # Краткая пауза между батчами для стабильности
                 await asyncio.sleep(0.1)
         
@@ -723,73 +748,83 @@ class IndexerService:
         documents: List[Dict[str, Any]],
         batch_size: int = 512,
         recreate_collection: bool = False
-    ) -> int:
+    ) -> IndexBatchResult:
         """Индексация произвольных документов (id, text, metadata) напрямую в хранилище.
 
-        Используется VM API эндпоинтом /index.
+        Используется VM API эндпоинтом /index. Возвращает детальный результат:
+        - accepted_ids: список принятых id
+        - rejected: {id: {reason, details}}
+        - stats: агрегаты по индексации
         """
         logger.info(f"📥 index_documents: получено {len(documents)} документов")
+
+        result = IndexBatchResult()
         if not documents:
             logger.warning("⚠️ Пустой список документов!")
-            return 0
+            return result
 
         await self.initialize_vector_store(recreate=recreate_collection)
 
         passage_task = getattr(self.config.rag.embeddings, 'task_passage', 'retrieval.passage')
-        total_indexed = 0
 
         for i in range(0, len(documents), batch_size):
             batch_num = i // batch_size + 1
             logger.info(f"📦 Батч {batch_num}: обработка документов {i} - {min(i+batch_size, len(documents))}")
-            
             batch_docs = documents[i:i + batch_size]
-            
-            # ✅ ИСПРАВЛЕНИЕ 1: Фильтруем пустые тексты
-            valid_docs = [(idx, doc) for idx, doc in enumerate(batch_docs) if doc.get('text', '').strip()]
-            
-            if not valid_docs:
-                logger.warning(f"❌ Батч {batch_num}: все тексты пустые, пропускаем")
-                continue
 
-            # 4.2 Идемпотентность: подготовка ключей + дедупликация внутри батча
+            # 1) Отбраковка пустых текстов (reason="empty_text")
+            candidates: List[Dict[str, Any]] = []
+            for doc in batch_docs:
+                doc_id = str(doc.get('id') or uuid.uuid4())
+                text = (doc.get('text') or '').strip()
+                if not text:
+                    result.rejected[doc_id] = {"reason": "empty_text", "details": None}
+                    continue
+                candidates.append(doc)
+
+            # 2) Идемпотентность + дедупликация (reason="duplicate")
             seen_keys: set = set()
             prepped: List[Dict[str, Any]] = []
             drop_inbatch = 0
 
-            for _, doc in valid_docs:
+            for doc in candidates:
                 text = doc.get('text', '')
                 server_content_sha256 = _sha256_hex(text)
 
-                # Источник версии эмбеддингов: point -> metadata -> config -> "unknown"
                 meta_src = dict(doc.get('metadata') or {})
-                ev = doc.get('embedding_version') or meta_src.get('embedding_version') \
-                     or getattr(getattr(self.config, 'rag', None), 'embeddings', None).__dict__.get('version') if hasattr(getattr(self.config, 'rag', None), 'embeddings') else None
-                if not ev:
-                    ev = "unknown"
+                ev = (
+                    doc.get('embedding_version')
+                    or meta_src.get('embedding_version')
+                    or (
+                        getattr(getattr(self.config, 'rag', None), 'embeddings', None).__dict__.get('version')
+                        if hasattr(getattr(self.config, 'rag', None), 'embeddings') else None
+                    )
+                ) or "unknown"
 
                 client_key = doc.get('document_idempotency_key')
                 document_idempotency_key = client_key if isinstance(client_key, str) and client_key \
                                            else f"{server_content_sha256}:{ev}"
 
-                # Дедупликация внутри батча
                 if document_idempotency_key in seen_keys:
                     drop_inbatch += 1
+                    result.rejected[str(doc.get('id') or uuid.uuid4())] = {"reason": "duplicate", "details": {"scope": "in_batch"}}
                     continue
                 seen_keys.add(document_idempotency_key)
 
                 prepped.append({
-                    'id': doc.get('id'),
+                    'id': str(doc.get('id') or uuid.uuid4()),
                     'text': text,
                     'metadata': meta_src,
                     'timestamp': doc.get('timestamp', datetime.now(timezone.utc).isoformat()),
                     'server_content_sha256': server_content_sha256,
                     'embedding_version': ev,
-                    'idempotency_key': document_idempotency_key
+                    'idempotency_key': document_idempotency_key,
+                    'content_sha256': doc.get('content_sha256')
                 })
 
-            # Проверка существования в коллекции (между батчами)
-            dropped_existing_count = 0
+            # 3) Дедупликация по существующим idempotency_key (reason="duplicate")
             docs_to_index: List[Dict[str, Any]] = []
+            dropped_existing_count = 0
             exists_fn = getattr(self.vector_store, 'exists_by_idempotency_key', None)
 
             for p in prepped:
@@ -801,15 +836,14 @@ class IndexerService:
                         else:
                             exists = await asyncio.to_thread(exists_fn, p['idempotency_key'])
                 except Exception:
-                    # fail-open: при ошибке считаем, что нет дубликата
-                    exists = False
+                    exists = False  # fail-open
 
                 if exists:
                     dropped_existing_count += 1
+                    result.rejected[p['id']] = {"reason": "duplicate", "details": {"scope": "existing"}}
                     continue
                 docs_to_index.append(p)
 
-            # Безопасные логи: только агрегаты
             logger.info(
                 f"Дедупликация батча {batch_num}: in_batch_dropped={drop_inbatch}, "
                 f"existing_dropped={dropped_existing_count}, to_index={len(docs_to_index)}"
@@ -818,39 +852,46 @@ class IndexerService:
             if not docs_to_index:
                 logger.info(f"Батч {batch_num}: после дедупликации нет новых документов, пропускаем генерацию эмбеддингов")
                 continue
-            
-            texts = [d['text'] for d in docs_to_index]
-            
-            # Диагностика текстов (safe: без контента)
-            if texts:
-                logger.info(f"📝 Извлечено {len(texts)} текстов. first_len={len(texts[0])}")
-            else:
-                logger.warning(f"⚠️ Батч {batch_num}: список текстов пуст!")
 
-            embeddings = await asyncio.to_thread(self.embedder.embed_texts, texts, task=passage_task)
-            logger.info(f"🔢 Эмбеддинги получены: shape={getattr(embeddings, 'shape', None)}, type={type(embeddings).__name__}")
+            # 4) Генерация эмбеддингов
+            texts = [d['text'] for d in docs_to_index]
+            try:
+                embeddings = await asyncio.to_thread(self.embedder.embed_texts, texts, task=passage_task)
+            except Exception as e:
+                # Поднимаем ошибку вверх — это бэкенд недоступен/ошибка эмбеддера
+                logger.error(f"Ошибка генерации эмбеддингов: {e}", exc_info=True)
+                raise
+
             try:
                 embeddings = np.asarray(embeddings)
                 if embeddings.ndim == 1 and len(texts) == 1:
                     embeddings = embeddings.reshape(1, -1)
-                logger.info(f"✅ Форма эмбеддингов после reshape: {embeddings.shape}")
             except Exception as e:
-                logger.error(f"❌ Ошибка приведения формы эмбеддингов: {e}", exc_info=True)
+                # Некорректная форма эмбеддингов — отбраковываем все в батче
+                for d in docs_to_index:
+                    result.rejected[d['id']] = {"reason": "invalid_vector", "details": {"issue": "reshape_failed", "error": str(e)}}
                 continue
 
-            if embeddings.ndim != 2 or embeddings.shape[0] != len(texts):
-                logger.error(
-                    f"❌ БАТЧ {batch_num} ОТБРОШЕН! Некорректная форма эмбеддингов: shape={embeddings.shape}, ожидалось: ({len(texts)}, ?)"
-                )
+            invalid_shape = embeddings.ndim != 2 or embeddings.shape[0] != len(texts)
+            has_nan = bool(np.isnan(embeddings).any()) if not invalid_shape else False
+            has_inf = bool(np.isinf(embeddings).any()) if not invalid_shape else False
+
+            if invalid_shape or has_nan or has_inf:
+                details = {}
+                if invalid_shape:
+                    details.update({"issue": "invalid_shape", "actual": getattr(embeddings, "shape", None), "expected_rows": len(texts)})
+                if has_nan or has_inf:
+                    details.update({"issue_numeric": "nan_inf_detected", "has_nan": has_nan, "has_inf": has_inf})
+                for d in docs_to_index:
+                    result.rejected[d['id']] = {"reason": "invalid_vector", "details": details}
                 continue
 
+            # 5) Подготовка точек для upsert
             points = []
             for j, doc in enumerate(docs_to_index):
-                point_id = str(doc.get('id') or uuid.uuid4())
+                point_id = doc['id']
                 metadata = dict(doc.get('metadata') or {})
-                from datetime import timezone
                 ts = doc.get('timestamp') or datetime.now(timezone.utc).isoformat()
-
                 vec = embeddings[j]
                 vec = vec.tolist() if hasattr(vec, 'tolist') else vec
 
@@ -862,87 +903,37 @@ class IndexerService:
                         'content': doc.get('text', ''),
                         'point_id': point_id,
                         'indexed_at': ts,
-                        # 4.2: сохраняем идемпотентность/версию/хеш
                         'idempotency_key': doc.get('idempotency_key'),
                         'content_sha256': doc.get('server_content_sha256'),
                         'embedding_version': doc.get('embedding_version'),
                     }
                 })
 
-            logger.info(f"💾 Отправка {len(points)} точек в vector_store.index_documents()")
+            # 6) Upsert в Vector Store — ошибки НЕ проглатываем
             try:
                 index_fn = getattr(self.vector_store, 'index_documents')
-                logger.info(f"🔍 Тип функции index_documents: async={asyncio.iscoroutinefunction(index_fn)}")
-                
-                index_start = time.time()
-                # Локальный колбэк прогресса (rate-limit ≤ 5 Гц) + форвардинг в UI handler
-                last_evt: Dict[str, Any] = {}
-                last_print: float = 0.0
-                def _progress_cb(evt: Dict[str, Any]):
-                    nonlocal last_evt, last_print
-                    try:
-                        last_evt = evt or {}
-                        now = time.time()
-                        if now - last_print < 0.2:
-                            return
-                        last_print = now
-                        percent = float(last_evt.get('percent', 0.0))
-                        eta_sec = float(last_evt.get('eta_sec', 0.0))
-                        accepted = int(last_evt.get('accepted', 0))
-                        rejected = int(last_evt.get('rejected', 0))
-                        dropped = int(last_evt.get('dropped', 0))
-                        total_evt = int(last_evt.get('total', 0) or 0)
-                        msg = f"Index progress: {percent:.1f}% | ETA {eta_sec:.1f}s | accepted={accepted} rejected={rejected} dropped={dropped} total={total_evt}"
-                        try:
-                            print(msg, end='\r', flush=True)
-                        except Exception:
-                            pass
-                        if getattr(self, 'index_progress_handler', None):
-                            try:
-                                self.index_progress_handler(last_evt)
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-                
-                supports_cb = False
-                try:
-                    sig = inspect.signature(index_fn)
-                    supports_cb = 'progress_cb' in sig.parameters
-                except Exception:
-                    supports_cb = False
-                
                 if asyncio.iscoroutinefunction(index_fn):
-                    if supports_cb:
-                        batch_indexed = await index_fn(points, progress_cb=_progress_cb)
-                    else:
-                        logger.info("ℹ️ index_documents не поддерживает progress_cb (async)")
-                        batch_indexed = await index_fn(points)
+                    await index_fn(points)
                 else:
-                    if supports_cb:
-                        batch_indexed = await asyncio.to_thread(index_fn, points, _progress_cb)
-                    else:
-                        logger.info("ℹ️ index_documents не поддерживает progress_cb (sync)")
-                        batch_indexed = await asyncio.to_thread(index_fn, points)
-                
-                logger.info(f"✅ Батч {batch_num}: проиндексировано {batch_indexed} точек (type={type(batch_indexed).__name__})")
-                total_indexed += batch_indexed
-                # Финальная строка о завершении (агрегаты)
-                try:
-                    if last_evt:
-                        acc = int(last_evt.get('accepted', 0))
-                        rej = int(last_evt.get('rejected', 0))
-                        drp = int(last_evt.get('dropped', 0))
-                        tot = int(last_evt.get('total', 0) or 0)
-                        print(f"Index finished: 100.0% | elapsed={time.time() - index_start:.1f}s | accepted={acc} | rejected={rej} | dropped={drp} | total={tot}      ", flush=True)
-                except Exception:
-                    pass
+                    await asyncio.to_thread(index_fn, points)
+                # Считаем, что все точки из points приняты (vector_store не даёт per-item статусы)
+                result.accepted_ids.extend([p['id'] for p in points])
             except Exception as e:
-                logger.error(f"❌ КРИТИЧЕСКАЯ ОШИБКА индексации батча {batch_num}: {e}", exc_info=True)
-                # НЕ пробрасываем ошибку, но фиксируем в логах
+                logger.error(f"Ошибка upsert в vector_store: {e}", exc_info=True)
+                # Эскалируем — пусть хендлер вернёт 503
+                raise
 
-        logger.info(f"🎯 ИТОГО проиндексировано: {total_indexed} из {len(documents)} документов")
-        return total_indexed
+        # Если все документы отбракованы на уровне сервиса
+        if not result.accepted_ids and result.rejected:
+            raise IndexingRejectedAll(result.rejected)
+
+        # Агрегируем статистику
+        result.stats = {
+            "accepted": len(result.accepted_ids),
+            "rejected": len(result.rejected),
+            "total": len(documents)
+        }
+        return result
 
     async def get_indexing_stats(self) -> Dict[str, Any]:
         """

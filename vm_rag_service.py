@@ -20,9 +20,10 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 import uuid
+import hashlib
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, constr, conlist
 import numpy as np
 import uvicorn
 
@@ -54,7 +55,8 @@ try:
     from rag.embedder import CPUEmbedder
     from rag.vector_store import QdrantVectorStore
     from rag.search_service import SearchService
-    from rag.indexer_service import IndexerService
+    from rag.indexer_service import IndexerService, IndexingRejectedAll, IndexBatchResult
+    from rag.exceptions import VectorStoreConnectionError
     from config import get_config
     
 except ImportError as e:
@@ -89,10 +91,32 @@ class SearchRequest(BaseModel):
     filters: Dict[str, Any] = Field(default_factory=dict, description="Фильтры по метаданным")
     task: str = Field("retrieval.query", description="Задача для query эмбеддинга")
 
+class RejectedReason(BaseModel):
+    id: constr(min_length=1)
+    reason: constr(min_length=1)
+    details: Optional[Dict[str, Any]] = None
+
+class IndexedMetadata(BaseModel):
+    file_path: constr(min_length=1)
+    line_start: int
+    line_end: int
+    language: constr(min_length=1)
+    repo: constr(min_length=1)
+    chunk_type: constr(min_length=1)
+
+class IndexedDocument(BaseModel):
+    id: constr(min_length=1)
+    text: constr(min_length=1, description="Текст документа (не пустой)")
+    metadata: IndexedMetadata
+    embedding_version: constr(min_length=1)
+    content_sha256: constr(regex=r'^[A-Fa-f0-9]{64}$')
+    # Опционально поддерживаем ключ идемпотентности от клиента
+    document_idempotency_key: Optional[str] = None
+
 class IndexRequest(BaseModel):
-    documents: List[Dict[str, Any]] = Field(..., description="Документы для индексации")
-    batch_size: int = Field(512, description="Размер батча для обработки")
-    recreate: bool = Field(False, description="Пересоздать коллекцию")
+    api_contract: constr(min_length=1) = Field(..., description="Версия контракта API, ожидается 'v1.0.0'")
+    batch_id: Optional[constr(min_length=1)] = Field(None, description="Опциональный UUID-подобный идентификатор батча")
+    documents: conlist(IndexedDocument, min_items=1, max_items=128) = Field(..., description="Список документов (1..128)")
 
 class EmbeddingResponse(BaseModel):
     embeddings: List[List[float]]
@@ -107,10 +131,20 @@ class SearchResponse(BaseModel):
     hybrid_used: bool
 
 class IndexResponse(BaseModel):
-    indexed_count: int
-    status: str
-    processing_time: float
-    collection_info: Dict[str, Any]
+    accepted: int
+    rejected: int
+    rejected_reasons: List[RejectedReason] = Field(default_factory=list)
+    elapsed_ms: int
+
+class ErrorObject(BaseModel):
+    type: constr(min_length=1)
+    message: constr(min_length=1)
+    details: List[RejectedReason] = Field(default_factory=list)
+    request_id: constr(min_length=1)
+    api_contract: constr(min_length=1)
+
+class IndexErrorResponse(BaseModel):
+    error: ErrorObject
 
 # Глобальные сервисы
 services = {}
@@ -528,6 +562,22 @@ async def search_documents(request: SearchRequest, http_request: Request):
     
     try:
         start_time = asyncio.get_event_loop().time()
+        # Валидация числовых параметров
+        if request.top_k is None or request.top_k <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "type": "validation_error",
+                        "message": "invalid top_k",
+                        "details": [
+                            {"field": "top_k", "issue": "must_be_positive"}
+                        ],
+                        "request_id": str(uuid.uuid4()),
+                        "api_contract": "v1.0.0"
+                    }
+                }
+            )
         
         # Векторный протокол (приоритет) - используем готовые векторы
         if request.dense_vector:
@@ -640,8 +690,7 @@ async def search_documents(request: SearchRequest, http_request: Request):
                 )
             
             # 5) Прямой поиск в vector_store с валидным вектором
-            raw_results = await asyncio.to_thread(
-                services['vector_store'].search,
+            raw_results = await services['vector_store'].search(
                 query_vector=dense_vector,
                 top_k=request.top_k,
                 filters=request.filters,
@@ -652,6 +701,11 @@ async def search_documents(request: SearchRequest, http_request: Request):
             # Конвертируем в SearchResult объекты
             from rag.search_service import SearchResult
             results = []
+            logger.debug(f"type(raw_results)={type(raw_results)}")
+            if hasattr(raw_results, "__aiter__"):
+                raw_results = [x async for x in raw_results]
+            elif asyncio.iscoroutine(raw_results):
+                raw_results = await raw_results
             for result in raw_results:
                 payload = result.get('payload', {})
                 search_result = SearchResult(
@@ -669,8 +723,57 @@ async def search_documents(request: SearchRequest, http_request: Request):
                 )
                 results.append(search_result)
         
-        # Текстовый протокол (legacy fallback)
-        elif request.query:
+        # Текстовый протокол (legacy fallback) и sparse-only ветка
+        elif request.sparse_vector is not None:
+            logger.info("🔵 Векторный протокол: sparse-only поиск")
+            # Минимальная валидация sparse_vector
+            if not isinstance(request.sparse_vector, dict) or not request.sparse_vector:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": {
+                            "type": "validation_error",
+                            "message": "invalid sparse_vector",
+                            "details": [
+                                {"field": "sparse_vector", "issue": "invalid_type_or_empty"}
+                            ],
+                            "request_id": str(uuid.uuid4()),
+                            "api_contract": "v1.0.0"
+                        }
+                    }
+                )
+            # Выполняем чисто sparse-поиск напрямую через vector_store
+            vs = services['vector_store']
+            search_filter = vs._build_search_filter(request.filters)
+            raw_results = await vs._search_sparse(
+                sparse_vector=request.sparse_vector,
+                top_k=request.top_k,
+                search_filter=search_filter
+            )
+            from rag.search_service import SearchResult
+            results = []
+            logger.debug(f"type(raw_results)={type(raw_results)}")
+            if hasattr(raw_results, "__aiter__"):
+                raw_results = [x async for x in raw_results]
+            elif asyncio.iscoroutine(raw_results):
+                raw_results = await raw_results
+            for result in raw_results:
+                payload = result.get('payload', {})
+                search_result = SearchResult(
+                    chunk_id=result['id'],
+                    file_path=payload.get('file_path', ''),
+                    file_name=payload.get('file_name', ''),
+                    chunk_name=payload.get('chunk_name', ''),
+                    chunk_type=payload.get('chunk_type', ''),
+                    language=payload.get('language', ''),
+                    start_line=payload.get('start_line', 0),
+                    end_line=payload.get('end_line', 0),
+                    score=result['score'],
+                    content=payload.get('content', ''),
+                    metadata=payload
+                )
+                results.append(search_result)
+        elif request.query is not None:
             logger.info("🟡 Текстовый протокол (legacy): генерируем эмбеддинги из текста")
             if not request.query.strip():
                 raise HTTPException(
@@ -696,6 +799,24 @@ async def search_documents(request: SearchRequest, http_request: Request):
                 task=request.task
             )
         else:
+            # Ветка без явного протокола
+            path = http_request.url.path
+            if path == "/v1/search_v2":
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": {
+                            "type": "validation_error",
+                            "message": "either dense_vector or sparse_vector is required",
+                            "details": [
+                                {"field": "dense_vector", "issue": "missing"},
+                                {"field": "sparse_vector", "issue": "missing"}
+                            ],
+                            "request_id": str(uuid.uuid4()),
+                            "api_contract": "v1.0.0"
+                        }
+                    }
+                )
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -734,9 +855,21 @@ async def search_documents(request: SearchRequest, http_request: Request):
 
 @app.post("/index", response_model=IndexResponse)
 @app.post("/v1/index", response_model=IndexResponse)
-async def index_documents(request: IndexRequest, background_tasks: BackgroundTasks, http_request: Request, embedding_version: Optional[str] = Header(None, alias="X-Embedding-Version")):
-    """Индексация документов с защитой от OOM"""
-    logger.info(f"🔵 НАЧАЛО endpoint /index: получено {len(request.documents) if hasattr(request, 'documents') else 0} документов")
+async def index_documents(
+    request: IndexRequest,
+    background_tasks: BackgroundTasks,
+    http_request: Request,
+    embedding_version_header: Optional[str] = Header(None, alias="X-Embedding-Version"),
+    api_contract_header: Optional[str] = Header(None, alias="X-API-Contract"),
+    batch_id_header: Optional[str] = Header(None, alias="X-Batch-Id"),
+):
+    """
+    Индексация документов в соответствии с контрактом:
+    - Успех: 200 и {accepted, rejected, rejected_reasons[], elapsed_ms}
+    - Полная отбраковка: 422 и IndexErrorResponse
+    - Ошибки бэкенда: 503
+    """
+    # Метаданные запроса
     try:
         http_request.state.documents_count = len(request.documents or [])
     except Exception:
@@ -744,127 +877,242 @@ async def index_documents(request: IndexRequest, background_tasks: BackgroundTas
 
     if 'indexer_service' not in services:
         logger.error("❌ IndexerService не инициализирован!")
-        raise HTTPException(status_code=503, detail="Indexer service не инициализирован")
-    
-    try:
-        logger.info("🔵 Шаг 1: Проверка памяти...")
-        # КРИТИЧНО: Проверяем память перед индексацией
-        memory_info = memory_check_middleware()
-        logger.info(f"🧠 Память перед индексацией: {memory_info.get('percent_used', 0):.1f}%")
-        
-        # Автоматически уменьшаем batch_size при высоком потреблении памяти
-        original_batch_size = request.batch_size
-        if memory_info.get('is_warning', False):
-            request.batch_size = max(1, original_batch_size // 4)  # ✅ ИСПРАВЛЕНО: max вместо min
-            logger.warning(f"⚠️ Уменьшен batch_size: {original_batch_size} -> {request.batch_size}")
-        
-        start_time = asyncio.get_event_loop().time()
-        
-        logger.info("🔵 Шаг 2: Диагностика входных данных...")
-        # 🔍 ДИАГНОСТИКА 1: Что получил VM endpoint
-        diag_logger.info(f"📥 VM: Получено документов: {len(request.documents)}")
-        if request.documents:
-            first_doc_raw = request.documents[0]
-            diag_logger.info(f"📥 VM: Тип документа = {type(first_doc_raw)}")
-            if isinstance(first_doc_raw, dict):
-                keys = list(first_doc_raw.keys())
-                has_text = 'text' in first_doc_raw
-                text_len = len((first_doc_raw.get('text') or ''))
-                diag_logger.info(f"📥 VM: Ключи документа = {keys}")
-                diag_logger.info(f"📥 VM: Поля: has_text={has_text}, text_len={text_len}")
-        
-        logger.info("🔵 Шаг 3: Подготовка points...")
-        # Подготавливаем документы для индексации
-        points = []
-        invalid_docs = []
-        for doc in request.documents:
-            # ✅ ИСПРАВЛЕНИЕ: Извлекаем текст из правильного места
-            # Сначала пробуем doc['text'], если нет - берём doc['payload']['content']
-            text = (doc.get('text', '') or doc.get('payload', {}).get('content', '')).strip()
-            if not text:
-                invalid_docs.append({
-                    "id": doc.get('id') or doc.get('metadata', {}).get('file_path', 'unknown'),
-                    "reason": "empty_text"
-                })
-            # Прокидываем embedding_version из заголовка (приоритет) или документа
-            meta = dict(doc.get('metadata', {}) or {})
-            ev = embedding_version or doc.get('embedding_version') or meta.get('embedding_version')
-            if ev:
-                meta['embedding_version'] = ev
-            point = {
-                'id': doc.get('id'),
-                'text': text,
-                'metadata': meta,
-                'timestamp': doc.get('timestamp', datetime.now(timezone.utc).isoformat()),
-                # Пробрасываем ключ идемпотентности от клиента (если есть)
-                'document_idempotency_key': doc.get('document_idempotency_key'),
-                # Дублируем для удобства извлечения на уровне сервиса индексации
-                'embedding_version': ev
+        return JSONResponse(status_code=503, content={
+            "error": {
+                "type": "backend_unavailable",
+                "message": "Indexer service не инициализирован",
+                "details": [],
+                "request_id": str(uuid.uuid4()),
+                "api_contract": "v1.0.0"
             }
-            points.append(point)
-        
-        logger.info(f"🔵 Шаг 4: Points подготовлены: {len(points)} точек")
-        # Валидация: отклоняем пустые тексты до индексации
-        if invalid_docs:
+        })
+
+    # Контракт API: заголовок имеет приоритет как источник истины
+    api_contract = (api_contract_header or request.api_contract or "").strip()
+    if api_contract != "v1.0.0":
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "type": "invalid_request",
+                    "message": "Unsupported or mismatched api_contract",
+                    "details": [{"field": "api_contract", "issue": "unsupported_or_mismatch", "expected": "v1.0.0", "actual": api_contract}],
+                    "request_id": str(uuid.uuid4()),
+                    "api_contract": api_contract or "unknown"
+                }
+            }
+        )
+
+    # Ограничение размера батча (количества документов в запросе)
+    docs_count = len(request.documents)
+    if docs_count < 1 or docs_count > 128:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "type": "invalid_request",
+                    "message": "batch size out of allowed range",
+                    "details": [{"issue": "batch_size_out_of_range", "min": 1, "max": 128, "actual": docs_count}],
+                    "request_id": str(uuid.uuid4()),
+                    "api_contract": api_contract
+                }
+            }
+        )
+
+    # Корреляция
+    batch_id = batch_id_header or request.batch_id
+    start_perf = asyncio.get_event_loop().time()
+
+    # Проверка памяти
+    memory_info = memory_check_middleware()
+
+    # Preflight-валидации (агрегация отказов)
+    preflight_rejected: Dict[str, Dict[str, Any]] = {}
+    normalized_docs: List[Dict[str, Any]] = []
+
+    enforce_sha = (os.getenv("RAG_ENFORCE_SHA256", "false").lower() in ("1", "true", "yes"))
+    eff_embedding_version = (embedding_version_header or "").strip() or None
+
+    for doc in request.documents:
+        doc_id = doc.id
+        text = (doc.text or "").strip()
+        if not text:
+            preflight_rejected[doc_id] = {"reason": "empty_text", "details": None}
+            continue
+
+        # Проверка SHA256 при включённой фиче
+        if enforce_sha:
+            computed = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            if (doc.content_sha256 or "").lower() != computed.lower():
+                preflight_rejected[doc_id] = {
+                    "reason": "sha256_mismatch",
+                    "details": {"expected": computed, "actual": doc.content_sha256}
+                }
+                continue
+
+        meta = doc.metadata.dict()
+        ev = eff_embedding_version or doc.embedding_version
+        meta['embedding_version'] = ev
+
+        normalized_docs.append({
+            "id": doc_id,
+            "text": text,
+            "metadata": meta,
+            "embedding_version": ev,
+            "document_idempotency_key": doc.document_idempotency_key,
+            "content_sha256": doc.content_sha256,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+
+    # Учёт preflight-дропов в метриках
+    if preflight_rejected:
+        reasons_count: Dict[str, int] = {}
+        for _, r in preflight_rejected.items():
+            reasons_count[r["reason"]] = reasons_count.get(r["reason"], 0) + 1
+        for reason, cnt in reasons_count.items():
             try:
-                dropped_documents_total.labels('empty_text').inc(len(invalid_docs))
+                dropped_documents_total.labels(reason).inc(cnt)
             except Exception:
                 pass
-            raise HTTPException(
+
+    # Если все документы отбраковались на preflight
+    if not normalized_docs and preflight_rejected:
+        elapsed_ms = int((asyncio.get_event_loop().time() - start_perf) * 1000)
+        # Лог агрегатов
+        logger.info(f"/index rejected all at preflight: accepted=0 rejected={len(preflight_rejected)} batch_id={batch_id} elapsed_ms={elapsed_ms}")
+        try:
+            http_request.state.results_count = 0
+        except Exception:
+            pass
+
+        details = [
+            {"id": did, "reason": info["reason"], "details": info.get("details")}
+            for did, info in preflight_rejected.items()
+        ]
+        return JSONResponse(
+            status_code=422,
+            content=IndexErrorResponse(
+                error=ErrorObject(
+                    type="validation_error",
+                    message="all documents rejected",
+                    details=[RejectedReason(**d) for d in details],
+                    request_id=str(uuid.uuid4()),
+                    api_contract=api_contract
+                )
+            ).dict()
+        )
+
+    # Вызов IndexerService
+    try:
+        batch_result: IndexBatchResult = await services['indexer_service'].index_documents(
+            documents=normalized_docs,
+            batch_size=min(128, 128),  # жёсткий лимит согласно контракту
+            recreate_collection=False
+        )
+        accepted_ids = set(batch_result.accepted_ids or [])
+        rejected_map = dict(preflight_rejected)
+        # Дополняем причинами отказов, пришедшими из сервиса
+        for did, info in (batch_result.rejected or {}).items():
+            reason = info.get("reason") or "unknown"
+            details = info.get("details")
+            rejected_map[did] = {"reason": reason, "details": details}
+
+        accepted = len(accepted_ids)
+        rejected = len(rejected_map)
+        elapsed_ms = int((asyncio.get_event_loop().time() - start_perf) * 1000)
+
+        # Логи и state для middleware
+        try:
+            http_request.state.results_count = accepted + rejected
+        except Exception:
+            pass
+        logger.info(f"/index completed: accepted={accepted} rejected={rejected} batch_id={batch_id} elapsed_ms={elapsed_ms}")
+
+        # Если все документы отвергнуты -> 422
+        if accepted == 0 and rejected > 0:
+            details = [
+                {"id": did, "reason": info["reason"], "details": info.get("details")}
+                for did, info in rejected_map.items()
+            ]
+            return JSONResponse(
                 status_code=422,
-                detail={
-                    "error": {
-                        "type": "validation_error",
-                        "message": "text must be non-empty",
-                        "details": invalid_docs,
-                        "request_id": str(uuid.uuid4()),
-                        "api_contract": "v1.0.0"
-                    }
-                }
+                content=IndexErrorResponse(
+                    error=ErrorObject(
+                        type="validation_error",
+                        message="all documents rejected",
+                        details=[RejectedReason(**d) for d in details],
+                        request_id=str(uuid.uuid4()),
+                        api_contract=api_contract
+                    )
+                ).dict()
             )
-        # 🔍 ДИАГНОСТИКА 2: Что передаём в IndexerService
-        if points:
-            first_point = points[0]
-            safe_meta_keys = list((first_point.get('metadata') or {}).keys())
-            text_len = len(first_point.get('text') or '')
-            diag_logger.info(f"📤 VM: Первый point после обработки - keys={list(first_point.keys())}, meta_keys={safe_meta_keys}, text_len={text_len}")
-        
-        logger.info("🔵 Шаг 5: Вызов IndexerService.index_documents()...")
-        # Выполняем индексацию
-        indexed_count = await services['indexer_service'].index_documents(
-            documents=points,
-            batch_size=request.batch_size,
-            recreate_collection=request.recreate
+
+        # Частичный или полный успех -> 200
+        rejected_reasons_list = [
+            RejectedReason(id=did, reason=info["reason"], details=info.get("details"))
+            for did, info in rejected_map.items()
+        ]
+        return IndexResponse(
+            accepted=accepted,
+            rejected=rejected,
+            rejected_reasons=rejected_reasons_list,
+            elapsed_ms=elapsed_ms
         )
-        
-        logger.info(f"🔵 Шаг 6: IndexerService завершён, indexed_count={indexed_count}")
-        
-        processing_time = asyncio.get_event_loop().time() - start_time
-        logger.info(f"🔵 Шаг 7: processing_time={processing_time:.3f}s")
-        
-        logger.info("🔵 Шаг 8: Получение collection_info...")
-        # Получаем информацию о коллекции
-        collection_info = {}
-        if 'vector_store' in services:
-            vs_health = await services['vector_store'].health_check()
-            collection_info = vs_health.get('collection_info', {})
-        
-        logger.info(f"🔵 Шаг 9: collection_info получен: {collection_info}")
-        
-        logger.info("🔵 Шаг 10: Создание IndexResponse...")
-        response = IndexResponse(
-            indexed_count=indexed_count,
-            status="success",
-            processing_time=processing_time,
-            collection_info=collection_info
+
+    except IndexingRejectedAll as e:
+        # Полная отбраковка на уровне сервиса
+        rejected_map = dict(preflight_rejected)
+        rejected_map.update(getattr(e, "rejected", {}) or {})
+        details = [
+            {"id": did, "reason": info.get("reason", "rejected"), "details": info.get("details")}
+            for did, info in rejected_map.items()
+        ]
+        elapsed_ms = int((asyncio.get_event_loop().time() - start_perf) * 1000)
+        logger.info(f"/index rejected all by service: accepted=0 rejected={len(rejected_map)} batch_id={batch_id} elapsed_ms={elapsed_ms}")
+        return JSONResponse(
+            status_code=422,
+            content=IndexErrorResponse(
+                error=ErrorObject(
+                    type="validation_error",
+                    message="all documents rejected",
+                    details=[RejectedReason(**d) for d in details],
+                    request_id=str(uuid.uuid4()),
+                    api_contract=api_contract
+                )
+            ).dict()
         )
-        
-        logger.info(f"🔵 Шаг 11: ВОЗВРАЩАЕМ response: indexed_count={indexed_count}, status=success")
-        return response
-        
+    except (VectorStoreConnectionError, asyncio.TimeoutError) as e:
+        # Бэкенд недоступен/таймаут
+        elapsed_ms = int((asyncio.get_event_loop().time() - start_perf) * 1000)
+        logger.error(f"/index backend unavailable: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "type": "backend_unavailable",
+                    "message": "vector store or dependencies unavailable",
+                    "details": [{"issue": "exception", "message": str(e)}],
+                    "request_id": str(uuid.uuid4()),
+                    "api_contract": api_contract
+                }
+            }
+        )
     except Exception as e:
-        logger.error(f"Ошибка индексации: {e}")
-        raise HTTPException(status_code=500, detail=f"Ошибка индексации: {str(e)}")
+        # Ошибки upsert/прочие
+        elapsed_ms = int((asyncio.get_event_loop().time() - start_perf) * 1000)
+        logger.error(f"/index upsert_failed: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "type": "upsert_failed",
+                    "message": "failed to index documents",
+                    "details": [{"issue": "exception", "message": str(e)}],
+                    "request_id": str(uuid.uuid4()),
+                    "api_contract": api_contract
+                }
+            }
+        )
 
 @app.post("/collection/recreate")
 async def recreate_collection():

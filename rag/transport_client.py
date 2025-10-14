@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import uuid
 import aiohttp
+import json
+import logging
 from typing import Any, Dict, Optional, Callable
 
 from .embedder_protocol import TransportClientProtocol
@@ -116,14 +118,54 @@ class AiohttpTransportClient(TransportClientProtocol):
             timeout_ctx = aiohttp.ClientTimeout(total=float(timeout)) if timeout is not None else None
 
         async with session.post(url, json=payload, timeout=timeout_ctx, headers=final_headers) as response:
-            if response.status == 200:
-                return await response.json()
+            status = response.status
+            content_type = response.headers.get("Content-Type", "")
+            # Прочитать тело один раз
+            raw_text = await response.text()
 
-            error_text = await response.text()
+            # Диагностика только для /index: статус + «сырое» тело (обрезка до 4KB, одна строка)
+            try:
+                if "index" in url:
+                    diag_logger = logging.getLogger("diagnostics")
+                    snippet = raw_text
+                    if isinstance(snippet, bytes):
+                        try:
+                            snippet = snippet.decode("utf-8", errors="replace")
+                        except Exception:
+                            snippet = str(snippet)
+                    if len(snippet) > 4096:
+                        snippet = snippet[:4096] + "... [truncated]"
+                    one_line = " ".join(snippet.splitlines())
+                    diag_logger.debug(f"HTTP status: {status}, raw body (<=4KB): {one_line}")
+            except Exception:
+                pass
+
+            if status == 200:
+                # Явный разбор JSON (без повторного чтения потока)
+                if "json" in content_type.lower():
+                    try:
+                        return json.loads(raw_text) if raw_text else {}
+                    except Exception as e:
+                        try:
+                            if "index" in url:
+                                logging.getLogger("diagnostics").debug(f"parsed: error {type(e).__name__}: {e}")
+                        except Exception:
+                            pass
+                        raise
+                else:
+                    # Неожиданный формат ответа для JSON API
+                    try:
+                        if "index" in url:
+                            logging.getLogger("diagnostics").debug(f"parsed: unexpected response schema (Content-Type='{content_type}')")
+                    except Exception:
+                        pass
+                    raise ValueError(f"Unexpected Content-Type for JSON: {content_type}; body={raw_text[:256]!r}")
+
+            # HTTP ошибка: включаем «сырое» тело в сообщение
             raise aiohttp.ClientResponseError(
                 request_info=response.request_info,
                 history=response.history,
-                status=response.status,
-                message=f"HTTP {response.status}: {error_text}",
+                status=status,
+                message=f"HTTP {status}: {raw_text}",
                 headers=response.headers,
             )

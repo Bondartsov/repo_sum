@@ -36,7 +36,13 @@ diag_handler = logging.FileHandler(log_dir / "diagnostics.log", encoding='utf-8'
 diag_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 diag_logger = logging.getLogger("diagnostics")
 diag_logger.addHandler(diag_handler)
+# Уровень по умолчанию INFO; включить DEBUG при RAG_DIAGNOSTICS_DEBUG=true
 diag_logger.setLevel(logging.INFO)
+try:
+    if os.getenv("RAG_DIAGNOSTICS_DEBUG", "false").strip().lower() == "true":
+        diag_logger.setLevel(logging.DEBUG)
+except Exception:
+    pass
 
 
 def _safe_message(message: str) -> str:
@@ -161,6 +167,25 @@ class RemoteVMVectorStore:
                 ValueError,
             )
         ))
+        
+        # Diagnostic retries override via env (RAG_INDEX_RETRIES)
+        try:
+            _rir_str = os.getenv("RAG_INDEX_RETRIES", "").strip()
+            rir_val = int(_rir_str) if _rir_str != "" else None
+        except Exception:
+            rir_val = None
+        # diagnostic_no_retry flag preserved for back-compat logs
+        self.diagnostic_no_retry = (rir_val == 0)
+        if rir_val is not None:
+            try:
+                # Semantics: max_attempts = RAG_INDEX_RETRIES + 1 (first attempt + N retries)
+                self.retry_policy_index.config.max_attempts = max(1, int(rir_val) + 1)
+                if rir_val == 0:
+                    diag_logger.info("diagnostic no-retry mode active (RAG_INDEX_RETRIES=0)")
+                else:
+                    diag_logger.info(f"diagnostic retries override: RAG_INDEX_RETRIES={rir_val} -> max_attempts={self.retry_policy_index.config.max_attempts}")
+            except Exception:
+                pass
 
         # Circuit Breaker (консервативные дефолты)
         self.circuit_breaker = CircuitBreaker(CircuitBreakerConfig(
@@ -421,12 +446,27 @@ class RemoteVMVectorStore:
             
             # HTTP запрос на индексацию с прогресс‑колбэком
             total_docs = len(payload["documents"])
-            accepted_count = await self._index_with_redelivery(
-                docs=payload["documents"],
-                recreate=False,
-                total_docs=total_docs,
-                progress_cb=progress_cb
-            )
+            result_info = await self._make_index_request_with_retry(payload)
+            accepted_count = int(result_info.get("accepted", 0))
+            rejected_count = int(result_info.get("rejected", 0))
+
+            # Single-shot progress update (flat flow; no recursion/redelivery)
+            if progress_cb is not None:
+                try:
+                    processed = min(total_docs, accepted_count + rejected_count)
+                    percent = 100.0 if total_docs == 0 else min(100.0, 100.0 * processed / max(1, total_docs))
+                    progress_cb({
+                        "phase": "index",
+                        "accepted": accepted_count,
+                        "rejected": rejected_count,
+                        "dropped": 0,
+                        "total": total_docs,
+                        "percent": percent,
+                        "eta_sec": 0.0,
+                        "depth": 0
+                    })
+                except Exception:
+                    pass
             
             # Обновляем статистику
             elapsed_time = time.time() - start_time
@@ -445,12 +485,14 @@ class RemoteVMVectorStore:
             _log(logger.error, f"Ошибка индексации документов через VM: {e}")
             raise
     
-    async def _make_index_request_with_retry(self, payload: Dict[str, Any]) -> int:
+    async def _make_index_request_with_retry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Выполняет запрос на индексацию с RetryPolicy + CircuitBreaker и бюджетом таймаута.
-        total_timeout_sec = max(fallback_index_timeout, index_base + batch_size * step)
+        Отправляет один батч документов на /index с плоской логикой:
+        - 200: парсит {accepted, rejected, rejected_reasons[], elapsed_ms}; завершает батч
+        - 422: парсит IndexErrorResponse; НЕ ретраит; завершает батч с accepted=0
+        - 503/сетевые: применяет RetryPolicy для /index; при исчерпании попыток — поднимает исключение
         """
-        # Размер батча для расчёта бюджета
+        # Размер батча для бюджетирования таймаута и логов
         documents = payload.get("documents") or []
         try:
             batch_size = len(documents)
@@ -471,31 +513,149 @@ class RemoteVMVectorStore:
         endpoint = self.index_endpoint
         batch_id = uuid.uuid4().hex
 
+        # Диагностика запроса (sanitized)
+        try:
+            doc0 = documents[0] if documents else {}
+            doc0_id = str(doc0.get("id"))
+            text_len = len(str(doc0.get("text", "")))
+            emb_ver = doc0.get("embedding_version") or (doc0.get("metadata") or {}).get("embedding_version") or self.embedding_version
+            doc0_keys = list(doc0.keys())
+        except Exception:
+            doc0_id, text_len, emb_ver, doc0_keys = ("?", 0, self.embedding_version, [])
+        try:
+            diag_logger.debug(f"POST /index url={endpoint} batch_id={batch_id} size={batch_size}")
+            sanitized_headers = {
+                "Content-Type": "application/json",
+                "X-API-Contract": self.api_contract,
+                "X-Embedding-Version": self.embedding_version,
+                "X-Batch-Id": batch_id,
+            }
+            diag_logger.debug(f"request headers (sanitized) {json.dumps(sanitized_headers, ensure_ascii=False)}")
+            diag_logger.debug(f"doc0: keys={doc0_keys}, id={doc0_id}, text_len={text_len}, embedding_version={emb_ver}")
+        except Exception:
+            pass
+
+        attempt_counter = {"n": 0}
+        max_attempts = int(getattr(self.retry_policy_index, "config", RetryConfig()).max_attempts)
+
+        non_retryable_reasons = {"empty_text", "sha256_mismatch", "invalid_vector", "duplicate"}
+
+        def _extract_reasons(items: Any) -> List[str]:
+            out: List[str] = []
+            if not isinstance(items, (list, tuple)):
+                return out
+            for it in items:
+                r = None
+                if isinstance(it, str):
+                    r = it
+                elif isinstance(it, dict):
+                    r = it.get("reason") or it.get("type") or it.get("error")
+                if r is None:
+                    r = "unknown"
+                out.append(str(r))
+            return out
+
         async def _single_attempt():
+            attempt_counter["n"] += 1
             # Безопасное логирование без контента
-            _log(logger.info, f"📤 Индексация: batch_size={batch_size}, timeout={total_timeout_sec:.1f}s, endpoint={endpoint}, batch_id={batch_id}")
-            return await self.transport_client.post_json(
-                endpoint,
-                payload=payload,
-                timeout=timeout_ctx,
-                headers={"X-Batch-Id": batch_id},
-            )
+            _log(logger.info, f"📤 Индексация: batch_size={batch_size}, timeout={total_timeout_sec:.1f}s, endpoint={endpoint}, batch_id={batch_id}, attempt={attempt_counter['n']}/{max_attempts}")
+            try:
+                result = await self.transport_client.post_json(
+                    endpoint,
+                    payload=payload,
+                    timeout=timeout_ctx,
+                    headers={"X-Batch-Id": batch_id},
+                )
+                # HTTP 200 JSON
+                accepted = int(result.get("accepted", 0) or result.get("indexed_count", 0) or 0)
+                rejected = int(result.get("rejected", 0) or 0)
+                elapsed_ms = int(result.get("elapsed_ms", 0) or 0)
+                reasons_raw = result.get("rejected_reasons") or result.get("rejected_details") or []
+                reasons = _extract_reasons(reasons_raw)
+
+                # Логи по контракту
+                _log(logger.info, f"VM : {accepted}/{batch_size} {elapsed_ms/1000.0:.3f}s")
+                try:
+                    diag_logger.debug(f"parsed: accepted={accepted}, rejected={rejected}, elapsed_ms={elapsed_ms}, rejected_reasons_count={len(reasons)}")
+                    # WARN про неизвестные причины
+                    for r in reasons:
+                        if r not in non_retryable_reasons:
+                            _log(logger.warning, f"index: unknown rejected reason '{r}' (no retry)")
+                            break
+                except Exception:
+                    pass
+
+                return {
+                    "status_code": 200,
+                    "accepted": accepted,
+                    "rejected": rejected,
+                    "reasons": reasons,
+                    "elapsed_ms": elapsed_ms,
+                    "batch_size": batch_size,
+                }
+
+            except aiohttp.ClientResponseError as cre:
+                status = int(getattr(cre, "status", 0) or 0)
+                msg = cre.message or ""
+                data: Dict[str, Any] = {}
+                try:
+                    start = msg.find("{")
+                    json_text = msg[start:].strip() if start != -1 else msg
+                    data = json.loads(json_text) if json_text else {}
+                except Exception:
+                    data = {}
+
+                if status == 422:
+                    error_obj = data.get("error", data)
+                    details = error_obj.get("details") or []
+                    details_count = len(details) if isinstance(details, list) else 0
+                    error_type = str(error_obj.get("type") or "validation_error")
+                    reasons = _extract_reasons(details)
+
+                    _log(logger.info, f"422 validation_error: rejected={details_count}")
+                    try:
+                        first_n = 5
+                        diag_logger.debug(f"rejected_reasons (first {first_n}): {reasons[:first_n]}")
+                        diag_logger.debug(f"parsed: validation_error rejected={details_count}, details_count={details_count}")
+                        # WARN про неизвестные причины
+                        for r in reasons:
+                            if r not in non_retryable_reasons:
+                                _log(logger.warning, f"index: unknown rejected reason '{r}' (no retry)")
+                                break
+                    except Exception:
+                        pass
+
+                    # Не ретраим 422 — возвращаем как финальный результат
+                    return {
+                        "status_code": 422,
+                        "accepted": 0,
+                        "rejected": details_count,
+                        "reasons": reasons,
+                        "error_type": error_type,
+                        "details_count": details_count,
+                        "batch_size": batch_size,
+                        "elapsed_ms": data.get("elapsed_ms"),
+                    }
+
+                if status == 503:
+                    _log(logger.info, f"transient error: HTTP 503, retrying attempt {attempt_counter['n']}/{max_attempts}")
+                    raise
+
+                # Прочие HTTP ошибки — эскалируем (пусть RetryPolicy/внешний код решает)
+                _log(logger.debug, f"HTTP error {status}: {msg[:256]}")
+                raise
+
+            except (asyncio.TimeoutError, aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError, ConnectionError, OSError) as e:
+                _log(logger.info, f"transient error: {type(e).__name__}: {e}, retrying attempt {attempt_counter['n']}/{max_attempts}")
+                raise
 
         async def _attempt_with_cb():
             return await self.circuit_breaker.call(_single_attempt)
 
-        # Запускаем через RetryPolicy
-        result = await self.retry_policy_index.execute_with_retry(_attempt_with_cb)
+        result_info = await self.retry_policy_index.execute_with_retry(_attempt_with_cb)
 
-        _log(logger.info, f"📊 JSON ответ VM (index): keys={list(result.keys())}")
-
-        if "indexed_count" in result:
-            indexed_count = result["indexed_count"]
-            _log(logger.info, f"✅ indexed_count={indexed_count}")
-            return indexed_count
-
-        _log(logger.error, f"❌ Неожиданный формат ответа индексации: keys={list(result.keys())}")
-        raise ValueError(f"Неожиданный формат ответа индексации: {result.keys()}")
+        # В этом месте result_info либо 200, либо 422 (на 503 — исключение)
+        return result_info
     
     async def _index_with_redelivery(
         self,
@@ -508,24 +668,14 @@ class RemoteVMVectorStore:
         _acc: Optional[Dict[str, Any]] = None
     ) -> int:
         """
-        Повторная доставка только отбракованных документов при ошибках батча.
-        docs — уже подготовленные элементы payload['documents'] (после preflight).
+        DEPRECATED: плоский режим без рекурсии/redelivery.
+        Оставлено только для обратной совместимости вызовов.
+        Выполняется одна отправка батча с управляемыми ретраями согласно RetryPolicy.
         """
-        # Нормализация входных данных
-        try:
-            total_in_attempt = len(docs)
-        except Exception:
-            docs = list(docs) if docs is not None else []
-            total_in_attempt = len(docs)
-
+        docs = list(docs or [])
+        total_in_attempt = len(docs)
         if total_in_attempt == 0:
             return 0
-
-        # Инициализация аккумулятора агрегаций
-        if _acc is None:
-            _acc = {"accepted": 0, "rejected": 0, "dropped": 0, "start": time.time()}
-
-        attempt_size = total_in_attempt  # Для диагностики/расчетов, не логируем содержимое
 
         payload = {
             "documents": docs,
@@ -533,163 +683,29 @@ class RemoteVMVectorStore:
             "recreate": False,
         }
 
-        try:
-            # Пытаемся индексировать весь поднабор
-            indexed_count = await self._make_index_request_with_retry(payload)
-            accepted = indexed_count
-            _acc["accepted"] += accepted
+        result = await self._make_index_request_with_retry(payload)
+        accepted = int(result.get("accepted", 0))
+        rejected = int(result.get("rejected", 0))
 
-            if progress_cb is not None:
-                elapsed = time.time() - _acc["start"]
-                processed = _acc["accepted"] + _acc["rejected"] + _acc["dropped"]
-                avg_per_doc = elapsed / max(1, _acc["accepted"])
-                total = total_docs or processed
-                remaining = max(0, total - processed)
-                eta_sec = remaining * avg_per_doc
-                percent = min(100.0, 100.0 * processed / max(1, total))
-                try:
-                    progress_cb({
-                        "phase": "index",
-                        "accepted": _acc["accepted"],
-                        "rejected": _acc["rejected"],
-                        "dropped": _acc["dropped"],
-                        "total": total,
-                        "percent": percent,
-                        "eta_sec": eta_sec,
-                        "depth": depth
-                    })
-                except Exception:
-                    # Никогда не прерываем индексацию из-за ошибок пользовательского колбэка
-                    pass
-
-            return accepted
-
-        except aiohttp.ClientResponseError as cre:
-            # Обработка 422 Validation Error с деталями по документам
-            if getattr(cre, "status", None) == 422:
-                rejected_ids: set[str] = set()
-                details_count = 0
-                parsed_ok = False
-                try:
-                    # Сообщение транспортного клиента: "HTTP 422: {json}"
-                    msg = cre.message or ""
-                    start = msg.find("{")
-                    json_text = msg[start:].strip() if start != -1 else msg
-                    data = json.loads(json_text) if json_text else {}
-                    error_obj = data.get("error", data)
-                    details = error_obj.get("details") or []
-                    details_count = len(details)
-                    for item in details:
-                        try:
-                            if isinstance(item, dict) and "id" in item:
-                                rejected_ids.add(str(item.get("id")))
-                        except Exception:
-                            continue
-                    parsed_ok = True
-                except Exception:
-                    parsed_ok = False
-
-                if parsed_ok:
-                    filtered_docs = [d for d in docs if str(d.get("id")) not in rejected_ids]
-                    rejected_ids_count = len(rejected_ids)
-
-                    # Агрегатная статистика/логирование (без контента)
-                    self.stats["error_count"] = self.stats.get("error_count", 0) + 1
-                    try:
-                        diag_logger.warning(
-                            f"422 validation: attempted={attempt_size}, rejected_ids={rejected_ids_count}, remaining={len(filtered_docs)}, depth={depth}"
-                        )
-                    except Exception:
-                        pass
-
-                    _acc["rejected"] += rejected_ids_count
-
-                    if progress_cb is not None:
-                        elapsed = time.time() - _acc["start"]
-                        processed = _acc["accepted"] + _acc["rejected"] + _acc["dropped"]
-                        avg_per_doc = elapsed / max(1, _acc["accepted"])
-                        total = total_docs or processed
-                        remaining = max(0, total - processed)
-                        eta_sec = remaining * avg_per_doc
-                        percent = min(100.0, 100.0 * processed / max(1, total))
-                        try:
-                            progress_cb({
-                                "phase": "index",
-                                "accepted": _acc["accepted"],
-                                "rejected": _acc["rejected"],
-                                "dropped": _acc["dropped"],
-                                "total": total,
-                                "percent": percent,
-                                "eta_sec": eta_sec,
-                                "depth": depth
-                            })
-                        except Exception:
-                            pass
-
-                    if filtered_docs:
-                        return await self._index_with_redelivery(filtered_docs, recreate, depth + 1, max_depth, total_docs, progress_cb, _acc)
-                    else:
-                        return 0
-                else:
-                    # Не удалось распарсить JSON-детали — безопасный fallback на бисекцию
-                    self.stats["error_count"] = self.stats.get("error_count", 0) + 1
-                    try:
-                        diag_logger.warning(
-                            f"422 parse_failed: attempted={attempt_size}, depth={depth}; fallback=bisect"
-                        )
-                    except Exception:
-                        pass
-                    # Переходим к общей ветке (ниже) — бисекция
-
-            # Прочие HTTP ошибки обрабатываем как "прочие исключения" (ниже)
-
-        except Exception:
-            # Переходим к общей ветке — бисекция/дроп
-            pass
-
-        # Общая обработка для любых ошибок (таймаут/сеть/прочее или 422 без деталей)
-        if depth >= max_depth or len(docs) <= 1:
-            # Дропаeм один документ (или небольшой хвост) — логи только агрегаты
+        if progress_cb is not None:
             try:
-                diag_logger.error(
-                    f"index drop: attempted={attempt_size}, depth={depth}, max_depth={max_depth}"
-                )
+                processed = min(total_in_attempt, accepted + rejected)
+                total = total_docs or total_in_attempt
+                percent = 100.0 if total == 0 else min(100.0, 100.0 * processed / max(1, total))
+                progress_cb({
+                    "phase": "index",
+                    "accepted": accepted,
+                    "rejected": rejected,
+                    "dropped": 0,
+                    "total": total,
+                    "percent": percent,
+                    "eta_sec": 0.0,
+                    "depth": 0
+                })
             except Exception:
                 pass
 
-            _acc["dropped"] += len(docs)
-
-            if progress_cb is not None:
-                elapsed = time.time() - _acc["start"]
-                processed = _acc["accepted"] + _acc["rejected"] + _acc["dropped"]
-                avg_per_doc = elapsed / max(1, _acc["accepted"])
-                total = total_docs or processed
-                remaining = max(0, total - processed)
-                eta_sec = remaining * avg_per_doc
-                percent = min(100.0, 100.0 * processed / max(1, total))
-                try:
-                    progress_cb({
-                        "phase": "index",
-                        "accepted": _acc["accepted"],
-                        "rejected": _acc["rejected"],
-                        "dropped": _acc["dropped"],
-                        "total": total,
-                        "percent": percent,
-                        "eta_sec": eta_sec,
-                        "depth": depth
-                    })
-                except Exception:
-                    pass
-
-            return 0
-
-        # Бисекция набора: индексируем подсписки независимо
-        mid = max(1, len(docs) // 2)
-        left = docs[:mid]
-        right = docs[mid:]
-        left_count = await self._index_with_redelivery(left, recreate, depth + 1, max_depth, total_docs, progress_cb, _acc)
-        right_count = await self._index_with_redelivery(right, recreate, depth + 1, max_depth, total_docs, progress_cb, _acc)
-        return left_count + right_count
+        return accepted
 
     async def _async_search(
         self,
