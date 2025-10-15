@@ -458,13 +458,26 @@ class RemoteVMVectorStore:
                 embedding_version = self.embedding_version
                 document_idempotency_key = f"{content_sha256}:{embedding_version}"
 
-                # Подмена id на детерминированный UUIDv5 и сохранение оригинального id в metadata
-                meta = point.get("metadata") or {}
-                if not isinstance(meta, dict):
-                    try:
-                        meta = dict(meta)
-                    except Exception:
-                        meta = {}
+                # ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: извлекаем метаданные из правильного источника
+                # Сначала пытаемся извлечь из payload.metadata (primary), затем из point.metadata (fallback)
+                raw_meta = {}
+                try:
+                    payload_meta = point.get("payload", {}).get("metadata", {})
+                    if payload_meta:
+                        raw_meta.update(payload_meta)
+                except Exception:
+                    pass
+                
+                try:
+                    point_meta = point.get("metadata")
+                    if point_meta:
+                        raw_meta.update(point_meta)
+                except Exception:
+                    pass
+                
+                # Нормализуем метаданные используя существующую helper функцию
+                meta = _normalize_metadata(raw_meta)
+                
                 orig_id = str(point.get("id") or point.get("payload", {}).get("id") or f"doc_{i}")
                 new_id = _make_stable_point_id(meta, embedding_version, content_sha256, orig_id)
                 meta["original_id"] = orig_id
