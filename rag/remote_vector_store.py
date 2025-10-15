@@ -98,6 +98,11 @@ def _normalize_metadata(meta: Dict[str, Any]) -> Dict[str, Any]:
     if "line_end" not in m and "end_line" in m:
         m["line_end"] = int(m.get("end_line") or 0)
     
+    # ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем наличие обязательных полей
+    # Даже если нет синонимов, создаём поля с дефолтным значением 0
+    m.setdefault("line_start", 0)
+    m.setdefault("line_end", 0)
+    
     # Обязательные поля по контракту сервера (IndexedMetadata)
     m["file_path"] = m.get("file_path") or "unknown"
     m["language"] = m.get("language") or "unknown"
