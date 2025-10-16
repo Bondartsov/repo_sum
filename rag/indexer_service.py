@@ -445,12 +445,12 @@ class IndexerService:
                     'language': file_info.language,
                     'chunk_name': chunk.name,
                     'chunk_type': chunk.chunk_type,
-                    'start_line': chunk.start_line,
-                    'end_line': chunk.end_line,
+                    'line_start': chunk.start_line,
+                    'line_end': chunk.end_line,
                     'tokens_estimate': chunk.tokens_estimate,
                     'file_size': file_info.size,
                     'indexed_at': datetime.now(timezone.utc).isoformat(),
-                    'repository': repo_path.name
+                    'repo': repo_path.name
                 }
                 
                 result_chunks.append((chunk, metadata))

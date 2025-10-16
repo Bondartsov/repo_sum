@@ -17,8 +17,9 @@ import hashlib
 
 @pytest.fixture
 def client():
-    """FastAPI TestClient для тестирования endpoint"""
-    return TestClient(app)
+    """FastAPI TestClient для тестирования API с lifespan events"""
+    with TestClient(app) as client:  # ← Исправление
+        yield client
 
 
 def generate_sha256(text: str) -> str:
