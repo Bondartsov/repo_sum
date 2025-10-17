@@ -90,6 +90,13 @@ def _normalize_metadata(meta: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Нормализованные метаданные с правильными именами полей
     """
+    # 🔍 ДИАГНОСТИКА: Логируем сырые метаданные
+    diag_logger.info(f"🔍 NORMALIZE_META INPUT: keys={list((meta or {}).keys())}")
+    for key in ["file_path", "line_start", "line_end", "start_line", "end_line", "language", "repo", "chunk_type"]:
+        if key in (meta or {}):
+            val = meta[key]
+            diag_logger.info(f"  {key}={repr(val)} (type={type(val).__name__})")
+    
     m = dict(meta or {})
     
     # Переименовываем синонимы в требуемые поля
@@ -119,6 +126,13 @@ def _normalize_metadata(meta: Dict[str, Any]) -> Dict[str, Any]:
     # Чистим легаси-ключи
     m.pop("start_line", None)
     m.pop("end_line", None)
+    
+    # 🔍 ДИАГНОСТИКА: Логируем нормализованные метаданные
+    diag_logger.info(f"🔍 NORMALIZE_META OUTPUT: keys={list(m.keys())}")
+    for key in ["file_path", "line_start", "line_end", "language", "repo", "chunk_type"]:
+        if key in m:
+            val = m[key]
+            diag_logger.info(f"  {key}={repr(val)} (type={type(val).__name__})")
     
     return m
 
@@ -487,8 +501,23 @@ class RemoteVMVectorStore:
                 except Exception:
                     pass
                 
+                # 🔍 ДИАГНОСТИКА: Логируем raw_meta перед нормализацией (только для первого документа)
+                if i == 0:
+                    diag_logger.info(f"🔍 RAW_META (doc 0): keys={list(raw_meta.keys())}")
+                    for key in ["file_path", "line_start", "line_end", "start_line", "end_line", "language", "repo", "chunk_type"]:
+                        if key in raw_meta:
+                            val = raw_meta[key]
+                            diag_logger.info(f"  {key}={repr(val)} (type={type(val).__name__})")
+                
                 # Нормализуем метаданные используя существующую helper функцию
                 meta = _normalize_metadata(raw_meta)
+                
+                # 🔍 ДИАГНОСТИКА: Логируем финальные metadata (только для первого документа)
+                if i == 0:
+                    diag_logger.info(f"🔍 FINAL_META (doc 0) после normalize:")
+                    for key in ["file_path", "line_start", "line_end", "language", "repo", "chunk_type"]:
+                        val = meta.get(key)
+                        diag_logger.info(f"  {key}={repr(val)} (type={type(val).__name__})")
                 
                 orig_id = str(point.get("id") or point.get("payload", {}).get("id") or f"doc_{i}")
                 new_id = _make_stable_point_id(meta, embedding_version, content_sha256, orig_id)
@@ -533,6 +562,13 @@ class RemoteVMVectorStore:
             if payload["documents"]:
                 first_doc = payload["documents"][0]
                 diag_logger.info(f"📤 КЛИЕНТ: Ключи первого document после подготовки = {list(first_doc.keys())}")
+                # Логируем все поля метаданных первого документа
+                if "metadata" in first_doc:
+                    doc_meta = first_doc["metadata"]
+                    diag_logger.info(f"📤 КЛИЕНТ: metadata первого документа:")
+                    for key in ["file_path", "line_start", "line_end", "language", "repo", "chunk_type"]:
+                        val = doc_meta.get(key)
+                        diag_logger.info(f"  {key}={repr(val)} (type={type(val).__name__})")
             
             # HTTP запрос на индексацию с прогресс‑колбэком
             total_docs = len(payload["documents"])
