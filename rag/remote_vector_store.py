@@ -889,26 +889,20 @@ class RemoteVMVectorStore:
             # Конвертируем numpy array в list для JSON сериализации
             dense_vector_list = query_vector.tolist() if hasattr(query_vector, 'tolist') else list(query_vector)
             
+            # Формируем payload согласно контракту /v1/search_v2: всегда указываем protocol, без use_hybrid
+            is_sparse_nonempty = isinstance(sparse_vector, dict) and len(sparse_vector) > 0
+            protocol = "hybrid" if (use_hybrid and is_sparse_nonempty) else "dense"
             payload = {
-                "dense_vector": dense_vector_list,  # ✅ Передаём dense вектор
-                "sparse_vector": sparse_vector,     # ✅ Передаём sparse вектор (опционально)
+                "protocol": protocol,
+                "dense_vector": dense_vector_list,
                 "top_k": top_k,
-                "use_hybrid": use_hybrid and sparse_vector is not None,
-                "filters": filters or {},
+                "filters": (filters or {}),
             }
+            if protocol == "hybrid":
+                payload["sparse_vector"] = sparse_vector
 
-            # Вычисляем явный протокол для /v1/search_v2
-            dense_present = bool(dense_vector_list)
-            sparse_present = (sparse_vector is not None)
-            if (use_hybrid and sparse_present):
-                protocol = "hybrid"
-            elif (sparse_present and not dense_present):
-                protocol = "sparse"
-            else:
-                protocol = "dense"
-            payload["protocol"] = protocol
-            
-            _log(logger.debug, f"Отправка векторного поиска: dense_vector={len(dense_vector_list)}d, sparse={sparse_vector is not None}, protocol={protocol}")
+            # Отладочный лог выбора протокола
+            _log(logger.debug, f"Поиск (protocol={protocol}, sparse={protocol == 'hybrid'})")
             
             # HTTP запрос на поиск
             results = await self._make_search_request_with_retry(payload)
@@ -956,6 +950,10 @@ class RemoteVMVectorStore:
                 "filters": filters or {},
                 "task": "retrieval.query"
             }
+            # Для унификации клиент может указывать protocol="dense" на /v1/search,
+            # но только если гибрид не запрошен; сервер на legacy-маршруте это поле игнорирует.
+            if not use_hybrid:
+                payload["protocol"] = "dense"
             
             results = await self._make_search_request_with_retry(payload)
             
@@ -976,7 +974,14 @@ class RemoteVMVectorStore:
     async def _make_search_request_with_retry(self, payload: Dict[str, Any]) -> List[Dict]:
         """
         Выполняет запрос на поиск через RetryPolicy + CircuitBreaker с пер-эндпойнтовым таймаутом.
-        total_timeout_sec = min(self.search_timeout, timeout_profiles.search_total_p95_sec)
+
+        Клиентский контракт:
+        - Для векторного маршрута /v1/search_v2 клиент всегда передаёт поле "protocol" ("dense"|"hybrid").
+        - Для legacy текстового маршрута /v1/search используется payload с полем "query"; "protocol" может присутствовать и будет проигнорирован.
+
+        Маршрутизация эндпойнта:
+        - Если в payload есть "query" — используем self.text_search_endpoint (legacy /v1/search).
+        - Иначе — self.search_endpoint (векторный /v1/search_v2).
         """
         tp = getattr(self, "timeout_profiles", None)
         if tp is not None and getattr(self, "search_timeout", None) is not None:
@@ -990,11 +995,11 @@ class RemoteVMVectorStore:
         connect_timeout_sec = min(1.0, max(0.05, total_timeout_sec * 0.2))
         sock_read_timeout_sec = total_timeout_sec
         timeout_ctx = ClientTimeout(total=total_timeout_sec, connect=connect_timeout_sec, sock_read=sock_read_timeout_sec)
-        # Оба эндпойнта указывают на /v1/search_v2 — используем единый
-        endpoint = self.text_search_endpoint
+        # Выбор эндпойнта: legacy текстовый /v1/search при наличии query; иначе — векторный /v1/search_v2
+        endpoint = self.text_search_endpoint if ("query" in (payload or {})) else self.search_endpoint
 
         async def _single_attempt():
-            _log(logger.debug, f"🔎 Поиск: timeout={total_timeout_sec:.1f}s, endpoint={endpoint}")
+            _log(logger.debug, f"🔎 Поиск: protocol={payload.get('protocol')}, timeout={total_timeout_sec:.1f}s, endpoint={endpoint}")
             return await self.transport_client.post_json(
                 endpoint,
                 payload=payload,
