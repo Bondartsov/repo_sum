@@ -155,6 +155,8 @@ class SearchRequest(BaseModel):
     use_hybrid: bool = Field(True, description="Использовать гибридный поиск")
     filters: Dict[str, Any] = Field(default_factory=dict, description="Фильтры по метаданным")
     task: str = Field("retrieval.query", description="Задача для query эмбеддинга")
+    # Протокол маршрута /v1/search_v2: 'dense' | 'sparse' | 'hybrid'
+    protocol: Optional[str] = Field(None, description="Явный протокол поиска: 'dense' | 'sparse' | 'hybrid' (только /v1/search_v2)")
 
 class RejectedReason(BaseModel):
     id: ConStr(min_length=1)
@@ -665,6 +667,37 @@ async def search_documents(request: SearchRequest, http_request: Request):
     
     try:
         start_time = asyncio.get_event_loop().time()
+        # Определяем протокол для /v1/search_v2 и вычисляем effective_use_hybrid
+        path = http_request.url.path
+        use_v2 = (path == "/v1/search_v2")
+        protocol = (request.protocol or "").strip().lower() if use_v2 else ""
+        allowed_protocols = {"dense", "sparse", "hybrid"}
+        if use_v2 and protocol not in allowed_protocols:
+            # Авто-выбор по входным данным
+            if request.use_hybrid and (request.sparse_vector is not None or request.query is not None):
+                protocol = "hybrid"
+            elif request.sparse_vector is not None and not request.dense_vector and (request.query is None):
+                protocol = "sparse"
+            else:
+                protocol = "dense"
+        effective_use_hybrid = bool(request.use_hybrid)
+        if use_v2:
+            if protocol == "dense":
+                effective_use_hybrid = False
+            elif protocol == "hybrid":
+                effective_use_hybrid = True
+            elif protocol == "sparse":
+                effective_use_hybrid = False
+
+        # Нормализация sparse-вектора (преобразуем str-ключи в int и значения в float)
+        normalized_sparse = None
+        if request.sparse_vector is not None:
+            try:
+                normalized_sparse = {int(k): float(v) for k, v in request.sparse_vector.items()}
+            except Exception:
+                # В случае неудачи оставим как есть — дальше будет валидация
+                normalized_sparse = request.sparse_vector
+
         # Валидация числовых параметров
         if request.top_k is None or request.top_k <= 0:
             raise HTTPException(
@@ -683,7 +716,7 @@ async def search_documents(request: SearchRequest, http_request: Request):
             )
         
         # Векторный протокол (приоритет) - используем готовые векторы
-        if request.dense_vector:
+        if request.dense_vector and not (use_v2 and protocol == 'sparse'):
             logger.info("🔵 Векторный протокол: используем готовые векторы")
             
             # Серверная валидация dense-вектора (Фаза 4.3)
@@ -797,8 +830,8 @@ async def search_documents(request: SearchRequest, http_request: Request):
                 query_vector=dense_vector,
                 top_k=request.top_k,
                 filters=request.filters,
-                use_hybrid=request.use_hybrid,
-                sparse_vector=request.sparse_vector
+                use_hybrid=effective_use_hybrid,
+                sparse_vector=normalized_sparse
             )
             
             # Конвертируем в SearchResult объекты
@@ -849,7 +882,7 @@ async def search_documents(request: SearchRequest, http_request: Request):
             vs = services['vector_store']
             search_filter = vs._build_search_filter(request.filters)
             raw_results = await vs._search_sparse(
-                sparse_vector=request.sparse_vector,
+                sparse_vector=normalized_sparse,
                 top_k=request.top_k,
                 search_filter=search_filter
             )
@@ -898,7 +931,7 @@ async def search_documents(request: SearchRequest, http_request: Request):
                 query=request.query,
                 top_k=request.top_k,
                 filters=request.filters,
-                use_hybrid=request.use_hybrid,
+                use_hybrid=effective_use_hybrid,
                 task=request.task
             )
         else:
@@ -949,7 +982,7 @@ async def search_documents(request: SearchRequest, http_request: Request):
             results=results_dicts,
             query_time=query_time,
             total_found=len(results),
-            hybrid_used=request.use_hybrid
+            hybrid_used=effective_use_hybrid
         )
         
     except Exception as e:

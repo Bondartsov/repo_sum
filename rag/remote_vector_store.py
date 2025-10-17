@@ -162,9 +162,11 @@ class RemoteVMVectorStore:
         host = env_host or self.remote_config.host
         port = int(env_port) if env_port is not None else self.remote_config.port
         base_url = f"http://{host}:{port}"
-        self.search_endpoint = os.getenv("RAG_SEARCH_ENDPOINT", base_url + self.remote_config.search_endpoint)
+        # Переключаемся на /v1/search_v2 по умолчанию (ENV может переопределить)
+        default_search_v2 = f"{base_url}/v1/search_v2"
+        self.search_endpoint = os.getenv("RAG_SEARCH_ENDPOINT", default_search_v2)
         self.index_endpoint = os.getenv("RAG_INDEX_ENDPOINT", base_url + self.remote_config.index_endpoint)
-        self.text_search_endpoint = os.getenv("RAG_TEXT_SEARCH_ENDPOINT", base_url + "/v1/search")
+        self.text_search_endpoint = os.getenv("RAG_TEXT_SEARCH_ENDPOINT", default_search_v2)
         self.health_endpoint = os.getenv("RAG_HEALTH_ENDPOINT", f"http://{host}:{port}{self.remote_config.health_endpoint}")
         self.service_host = host
         self.service_port = port
@@ -493,14 +495,40 @@ class RemoteVMVectorStore:
                         raw_meta.update(payload_meta)
                 except Exception:
                     pass
-                
+
                 try:
                     point_meta = point.get("metadata")
                     if point_meta:
                         raw_meta.update(point_meta)
                 except Exception:
                     pass
-                
+
+                # ➕ Fallback: подтягиваем полезные поля из верхнего уровня payload (если их ещё нет)
+                try:
+                    top_payload = point.get("payload") or {}
+                    if isinstance(top_payload, dict):
+                        keys_to_copy = [
+                            "file_path", "file_name", "language", "chunk_name", "chunk_type",
+                            "line_start", "line_end", "repo", "indexed_at", "tokens_estimate", "file_size",
+                            "start_line", "end_line"
+                        ]
+                        # исключаем шумовые ключи
+                        exclude_keys = {
+                            "content", "point_id", "id", "vector", "idempotency_key", "metadata",
+                            "document_idempotency_key", "embedding_version", "content_sha256", "timestamp"
+                        }
+                        for k in keys_to_copy:
+                            if k in top_payload and k not in exclude_keys:
+                                if k not in raw_meta:
+                                    raw_meta[k] = top_payload[k]
+                        # если пришли синонимы start_line/end_line, а целевых ещё нет — скопируем
+                        if "line_start" not in raw_meta and "start_line" in top_payload:
+                            raw_meta["line_start"] = top_payload.get("start_line")
+                        if "line_end" not in raw_meta and "end_line" in top_payload:
+                            raw_meta["line_end"] = top_payload.get("end_line")
+                except Exception:
+                    pass
+
                 # 🔍 ДИАГНОСТИКА: Логируем raw_meta перед нормализацией (только для первого документа)
                 if i == 0:
                     diag_logger.info(f"🔍 RAW_META (doc 0): keys={list(raw_meta.keys())}")
@@ -868,8 +896,19 @@ class RemoteVMVectorStore:
                 "use_hybrid": use_hybrid and sparse_vector is not None,
                 "filters": filters or {},
             }
+
+            # Вычисляем явный протокол для /v1/search_v2
+            dense_present = bool(dense_vector_list)
+            sparse_present = (sparse_vector is not None)
+            if (use_hybrid and sparse_present):
+                protocol = "hybrid"
+            elif (sparse_present and not dense_present):
+                protocol = "sparse"
+            else:
+                protocol = "dense"
+            payload["protocol"] = protocol
             
-            _log(logger.debug, f"Отправка векторного поиска: dense_vector={len(dense_vector_list)}d, sparse={sparse_vector is not None}")
+            _log(logger.debug, f"Отправка векторного поиска: dense_vector={len(dense_vector_list)}d, sparse={sparse_vector is not None}, protocol={protocol}")
             
             # HTTP запрос на поиск
             results = await self._make_search_request_with_retry(payload)
@@ -951,7 +990,8 @@ class RemoteVMVectorStore:
         connect_timeout_sec = min(1.0, max(0.05, total_timeout_sec * 0.2))
         sock_read_timeout_sec = total_timeout_sec
         timeout_ctx = ClientTimeout(total=total_timeout_sec, connect=connect_timeout_sec, sock_read=sock_read_timeout_sec)
-        endpoint = self.text_search_endpoint if 'query' in payload else self.search_endpoint
+        # Оба эндпойнта указывают на /v1/search_v2 — используем единый
+        endpoint = self.text_search_endpoint
 
         async def _single_attempt():
             _log(logger.debug, f"🔎 Поиск: timeout={total_timeout_sec:.1f}s, endpoint={endpoint}")
