@@ -672,15 +672,18 @@ except Exception as e:
             port = os.getenv('RAG_SERVICE_PORT', '8000')
 
         overrides = {
-            'RAG_SERVICE_HOST': '0.0.0.0',
+            'RAG_SERVICE_HOST': '127.0.0.1',
             'RAG_SERVICE_PORT': port,
-            'RAG_EMBEDDINGS_ENDPOINT': f'http://{self.vm_host}:{port}/embeddings',
-            'RAG_SEARCH_ENDPOINT': f'http://{self.vm_host}:{port}/search',
-            'RAG_INDEX_ENDPOINT': f'http://{self.vm_host}:{port}/index',
+            'RAG_EMBEDDINGS_ENDPOINT': f'http://127.0.0.1:{port}/v1/embeddings',
+            'RAG_SEARCH_ENDPOINT': f'http://127.0.0.1:{port}/v1/search_v2',
+            'RAG_TEXT_SEARCH_ENDPOINT': f'http://127.0.0.1:{port}/v1/search',
+            'RAG_INDEX_ENDPOINT': f'http://127.0.0.1:{port}/v1/index',
+            'RAG_API_CONTRACT': 'v1.0.0',
+            'RAG_TIMEOUT_SECONDS': os.getenv('RAG_TIMEOUT_SECONDS', '3600'),
             'QDRANT_HOST': 'localhost',
             'QDRANT_PORT': os.getenv('QDRANT_PORT', '6333'),
             'QDRANT_PREFER_GRPC': 'false',
-            'EMBEDDING_PROVIDER': 'remote-vm',
+            'EMBEDDING_PROVIDER': 'fastembed',
             'VECTOR_STORE_PROVIDER': 'local',
         }
 
