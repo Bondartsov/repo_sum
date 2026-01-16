@@ -137,8 +137,8 @@ async def diagnose_vm_connection(
                 
         except Exception as e:
             error_msg = f"Ошибка проверки порта: {e}"
-            diagnostics['errors'].append(error_msg)
-            diagnostics['recommendations'].append(
+            diagnostics["errors"].append(error_msg)
+            diagnostics["recommendations"].append(
                 f"❌ Не удалось проверить порт {port}: {e}"
             )
             logger.error(error_msg)

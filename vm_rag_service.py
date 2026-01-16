@@ -22,8 +22,8 @@ from pathlib import Path
 import uuid
 import hashlib
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header
-from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel, Field, conlist, conint, confloat
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, conint
 from pydantic import conlist as _pyd_conlist
 import pydantic as _p
 import numpy as np
@@ -412,7 +412,7 @@ try:
     _json_handler = logging.StreamHandler()
     # Явно указываем поля в формате JSON-логов и переименовываем стандартные
     _json_formatter = jsonlogger.JsonFormatter(
-        fmt="%(asctime)s %(levelname)s %(message)s %(endpoint)s %(trace_id)s %(batch_id)s %(elapsed_ms)s %(counts)s",
+        fmt="%(asctime)s %(levelname)s %(name)s %(funcName)s %(lineno)d %(message)s %(endpoint)s %(trace_id)s %(batch_id)s %(elapsed_ms)s %(counts)s",
         rename_fields={"asctime": "timestamp", "levelname": "level", "name": "logger"}
     )
     _json_handler.setFormatter(_json_formatter)
@@ -1075,7 +1075,7 @@ async def index_documents(
     start_perf = asyncio.get_event_loop().time()
 
     # Проверка памяти
-    memory_info = memory_check_middleware()
+    memory_check_middleware()
 
     # Preflight-валидации (агрегация отказов)
     preflight_rejected: Dict[str, Dict[str, Any]] = {}

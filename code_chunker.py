@@ -65,9 +65,9 @@ class CodeChunker:
             functions=[el.name for el in elements],
             comments=[],
             total_lines=len(lines),
-            code_lines=len([l for l in lines if l.strip()]),
+            code_lines=len([line for line in lines if line.strip()]),
             comment_lines=0,
-            blank_lines=len([l for l in lines if not l.strip()])
+            blank_lines=len([line for line in lines if not line.strip()])
         )
         return self.chunk_parsed_file(parsed_file, code)
     

@@ -156,7 +156,7 @@ class NetworkUtils:
                                 time_match = re.search(r'time=(\d+)ms', line)
                                 if time_match:
                                     times.append(int(time_match.group(1)))
-                            except:
+                            except Exception:
                                 pass
                     
                     result["packets_received"] = received_count
@@ -177,7 +177,7 @@ class NetworkUtils:
                                 result["min_response_time_ms"] = float(times[0])
                                 result["avg_response_time_ms"] = float(times[1])
                                 result["max_response_time_ms"] = float(times[2])
-                            except:
+                            except Exception:
                                 pass
                 
                 # Вычисляем процент потерь
@@ -567,7 +567,7 @@ def quick_vm_check(vm_host: str = "10.61.11.54", vm_port: int = 8000) -> Dict[st
         import requests
         http_response = requests.get(f"http://{vm_host}:{vm_port}/health", timeout=10)
         result["checks"]["http_accessible"] = http_response.status_code == 200
-    except:
+    except Exception:
         result["checks"]["http_accessible"] = False
     
     # Общий статус

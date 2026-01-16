@@ -334,32 +334,48 @@ class RagConfig:
         rs = tp_src.get("retry_search", {}) or {}
         if isinstance(rs, dict):
             if "max_attempts" in rs:
-                try: tp.retry_search.max_attempts = int(rs["max_attempts"])
-                except Exception: logger.warning("Invalid retry_search.max_attempts in settings.json")
+                try:
+                    tp.retry_search.max_attempts = int(rs["max_attempts"])
+                except Exception:
+                    logger.warning("Invalid retry_search.max_attempts in settings.json")
             if "base_delay" in rs:
-                try: tp.retry_search.base_delay = float(rs["base_delay"])
-                except Exception: logger.warning("Invalid retry_search.base_delay in settings.json")
+                try:
+                    tp.retry_search.base_delay = float(rs["base_delay"])
+                except Exception:
+                    logger.warning("Invalid retry_search.base_delay in settings.json")
             if "max_delay" in rs:
-                try: tp.retry_search.max_delay = float(rs["max_delay"])
-                except Exception: logger.warning("Invalid retry_search.max_delay in settings.json")
+                try:
+                    tp.retry_search.max_delay = float(rs["max_delay"])
+                except Exception:
+                    logger.warning("Invalid retry_search.max_delay in settings.json")
             if "exponential" in rs:
-                try: tp.retry_search.exponential = bool(rs["exponential"])
-                except Exception: logger.warning("Invalid retry_search.exponential in settings.json")
+                try:
+                    tp.retry_search.exponential = bool(rs["exponential"])
+                except Exception:
+                    logger.warning("Invalid retry_search.exponential in settings.json")
 
         ri = tp_src.get("retry_index", {}) or {}
         if isinstance(ri, dict):
             if "max_attempts" in ri:
-                try: tp.retry_index.max_attempts = int(ri["max_attempts"])
-                except Exception: logger.warning("Invalid retry_index.max_attempts in settings.json")
+                try:
+                    tp.retry_index.max_attempts = int(ri["max_attempts"])
+                except Exception:
+                    logger.warning("Invalid retry_index.max_attempts in settings.json")
             if "base_delay" in ri:
-                try: tp.retry_index.base_delay = float(ri["base_delay"])
-                except Exception: logger.warning("Invalid retry_index.base_delay in settings.json")
+                try:
+                    tp.retry_index.base_delay = float(ri["base_delay"])
+                except Exception:
+                    logger.warning("Invalid retry_index.base_delay in settings.json")
             if "max_delay" in ri:
-                try: tp.retry_index.max_delay = float(ri["max_delay"])
-                except Exception: logger.warning("Invalid retry_index.max_delay in settings.json")
+                try:
+                    tp.retry_index.max_delay = float(ri["max_delay"])
+                except Exception:
+                    logger.warning("Invalid retry_index.max_delay in settings.json")
             if "exponential" in ri:
-                try: tp.retry_index.exponential = bool(ri["exponential"])
-                except Exception: logger.warning("Invalid retry_index.exponential in settings.json")
+                try:
+                    tp.retry_index.exponential = bool(ri["exponential"])
+                except Exception:
+                    logger.warning("Invalid retry_index.exponential in settings.json")
 
         # ENV overrides (при наличии)
         tp.health_total_sec = safe_float("RAG_TIMEOUT_HEALTH", str(tp.health_total_sec))

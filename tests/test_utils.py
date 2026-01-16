@@ -1,6 +1,6 @@
 # tests/test_utils.py
 # Тесты для модуля utils.py
-from utils import *
+from utils import ensure_directory_exists
 
 # Пример теста для функции ensure_directory_exists
 

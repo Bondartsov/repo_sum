@@ -395,7 +395,7 @@ class TestWebUIVMRAG:
             # Тестируем backend функциональность без UI
             # Мокаем RAG компоненты и OpenAI
             with patch('web_ui.init_rag_components') as mock_init_rag:
-                with patch('web_ui.run_async') as mock_run_async:
+                with patch('web_ui.run_async'):
                     with patch('web_ui.get_current_api_key', return_value="test_api_key"):
                         with patch('web_ui.get_analyzer') as mock_get_analyzer:
                             mock_analyzer = Mock()
@@ -514,7 +514,7 @@ class TestWebUIVMRAG:
                 assert emb_result["embedding_dim"] == 1024, "Размерность должна быть 1024"
                 
                 # Симулируем поиск с этими embeddings
-                search_result = await mock_vm_rag_service.mock_search(query, top_k)
+                await mock_vm_rag_service.mock_search(query, top_k)
                 search_time = time.perf_counter() - search_start
                 search_times.append(search_time)
                 

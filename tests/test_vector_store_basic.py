@@ -51,7 +51,7 @@ def test_config_creation():
     # Проверяем базовые параметры
     assert config.host == "localhost"
     assert config.port == 6333
-    assert config.prefer_grpc == True
+    assert config.prefer_grpc
     assert config.collection_name == "test_collection"
     assert config.vector_size == 1024
     assert config.distance == "cosine"

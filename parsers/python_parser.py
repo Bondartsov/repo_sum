@@ -70,7 +70,7 @@ class PythonParser(BaseParser):
         try:
             tree = ast.parse(source_code)
             return self._extract_imports_from_ast(tree)
-        except:
+        except Exception:
             return []
     
     def extract_classes(self, source_code: str) -> List[ParsedElement]:
@@ -78,7 +78,7 @@ class PythonParser(BaseParser):
         try:
             tree = ast.parse(source_code)
             return self._extract_classes_from_ast(tree, source_code)
-        except:
+        except Exception:
             return []
     
     def extract_functions(self, source_code: str) -> List[ParsedElement]:
@@ -86,7 +86,7 @@ class PythonParser(BaseParser):
         try:
             tree = ast.parse(source_code)
             return self._extract_functions_from_ast(tree, source_code)
-        except:
+        except Exception:
             return []
     
     def _extract_imports_from_ast(self, tree: ast.AST) -> List[str]:

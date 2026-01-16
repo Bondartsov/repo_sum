@@ -77,7 +77,7 @@ class VMConnectivityTester:
         finally:
             try:
                 sock.close()
-            except:
+            except Exception:
                 pass
                 
         return result
@@ -125,7 +125,7 @@ class VMConnectivityTester:
                                 time_match = re.search(r'(\d+)ms', line)
                                 if time_match:
                                     result["avg_response_time_ms"] = int(time_match.group(1))
-                            except:
+                            except Exception:
                                 pass
                 else:
                     # Парсинг Linux ping вывода  
@@ -135,7 +135,7 @@ class VMConnectivityTester:
                             try:
                                 parts = line.split('/')
                                 result["avg_response_time_ms"] = float(parts[4])
-                            except:
+                            except Exception:
                                 pass
                                 
                 result["packet_loss"] = "0%" if result["success"] else "unknown"
@@ -421,7 +421,7 @@ class TestVMConnectivity:
         try:
             result = vm_tester.test_basic_tcp_connection()
             return result["success"]
-        except:
+        except Exception:
             return False
     
     def test_vm_dns_resolution(self, vm_tester):

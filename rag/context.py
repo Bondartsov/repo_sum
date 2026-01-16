@@ -126,7 +126,7 @@ def get_context_info() -> dict:
         result = sock.connect_ex(('localhost', 6333))
         sock.close()
         qdrant_available = (result == 0)
-    except:
+    except Exception:
         pass
     
     # Проверяем VM директории
@@ -134,7 +134,7 @@ def get_context_info() -> dict:
     try:
         vm_directories = ['/etc/qdrant', '/var/lib/qdrant', '/opt/rag-service']
         vm_dirs_exist = any(os.path.exists(path) for path in vm_directories)
-    except:
+    except Exception:
         pass
     
     return {
@@ -158,7 +158,7 @@ def _get_detection_method() -> str:
         vm_markers = ['vm', 'rag-server', 'ubuntu', 'qdrant-server']
         if any(marker in hostname for marker in vm_markers):
             return 'hostname'
-    except:
+    except Exception:
         pass
     
     try:
@@ -168,14 +168,14 @@ def _get_detection_method() -> str:
         sock.close()
         if result == 0:
             return 'qdrant_port_check'
-    except:
+    except Exception:
         pass
     
     try:
         vm_dirs = ['/etc/qdrant', '/var/lib/qdrant', '/opt/rag-service']
         if any(os.path.exists(path) for path in vm_dirs):
             return 'vm_directories'
-    except:
+    except Exception:
         pass
     
     return 'default_fallback'

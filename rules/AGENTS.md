@@ -30,7 +30,7 @@
 1. Изучить **[Development Roadmap.md](Development Roadmap.md)** - главный документ проекта
 2. Ознакомиться со всей системой **[rules/](rules/)** (5 ключевых файлов)
 3. Изучить техническую архитектуру в **[Technical Architecture.md](Technical Architecture.md)**
-4. Проверить технический долго и актуальные задачи в **[Technical Debt.md](Technical Debt.md)**
+4. Проверить технический долг и актуальные задачи в **[Technical Debt.md](Technical Debt.md)**
 
 ### 2.2 Языковые требования
 - **ВСЕГДА** писать на русском языке (код, комментарии, документацию)

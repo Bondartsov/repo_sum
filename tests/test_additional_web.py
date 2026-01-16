@@ -46,7 +46,7 @@ def occupied_port(port):
                 try:
                     client, addr = server_socket.accept()
                     client.close()
-                except:
+                except Exception:
                     break
         except Exception as e:
             print(f"Ошибка в простом сервере: {e}")

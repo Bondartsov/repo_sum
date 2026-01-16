@@ -1,4 +1,3 @@
-import pytest
 from vm_rag_service import SearchRequest
 
 def test_vm_search_request_accepts_protocol_and_sparse():

@@ -239,7 +239,7 @@ class UnifiedLauncher:
         table.add_column("Информация")
         
         try:
-            with Live(table, refresh_per_second=1, console=console) as live:
+            with Live(table, refresh_per_second=1, console=console):
                 while self.web_process and self.web_process.poll() is None:
                     # Обновляем таблицу статуса
                     table.rows.clear()

@@ -542,7 +542,7 @@ class RemoteVMVectorStore:
                 
                 # 🔍 ДИАГНОСТИКА: Логируем финальные metadata (только для первого документа)
                 if i == 0:
-                    diag_logger.info(f"🔍 FINAL_META (doc 0) после normalize:")
+                    diag_logger.info("🔍 FINAL_META (doc 0) после normalize:")
                     for key in ["file_path", "line_start", "line_end", "language", "repo", "chunk_type"]:
                         val = meta.get(key)
                         diag_logger.info(f"  {key}={repr(val)} (type={type(val).__name__})")
@@ -593,7 +593,7 @@ class RemoteVMVectorStore:
                 # Логируем все поля метаданных первого документа
                 if "metadata" in first_doc:
                     doc_meta = first_doc["metadata"]
-                    diag_logger.info(f"📤 КЛИЕНТ: metadata первого документа:")
+                    diag_logger.info("📤 КЛИЕНТ: metadata первого документа:")
                     for key in ["file_path", "line_start", "line_end", "language", "repo", "chunk_type"]:
                         val = doc_meta.get(key)
                         diag_logger.info(f"  {key}={repr(val)} (type={type(val).__name__})")

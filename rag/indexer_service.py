@@ -12,7 +12,6 @@ import time
 import uuid
 import hashlib
 import psutil
-import sys
 import inspect
 from pathlib import Path
 from typing import List, Dict, Tuple, Any, AsyncGenerator
@@ -182,7 +181,7 @@ class IndexerService:
                     if status and status.lower() not in {'connected', 'healthy', 'ok'}:
                         raise VectorStoreConnectionError(f'VM vector store health check failed: {status}')
                 except Exception as exc:
-                    raise VectorStoreConnectionError(f'VM vector store health check failed: {exc}') from exc
+                    raise VectorStoreConnectionError(f"VM vector store health check failed: {exc}") from exc
             
             # 2. Сканирование файлов
             self.console.print("[bold blue]📁 Сканирование файлов...[/bold blue]")

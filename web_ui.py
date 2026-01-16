@@ -478,7 +478,7 @@ def main():
         # Дополнительные настройки
         st.subheader("🛠️ Параметры анализа")
         
-        model_choice = st.selectbox(
+        st.selectbox(
             "Модель GPT",
             ["gpt-4.1-nano", "gpt-4o", "gpt-3.5-turbo"],
             index=0,
@@ -502,7 +502,7 @@ def main():
                     st.info(f"🚀 **Jina v3 Architecture**: {model_name} ({vector_size}d векторы, dual task)")
                 else:
                     st.info(f"📊 **Embedding Model**: {model_name} ({vector_size}d векторы)")
-            except:
+            except Exception:
                 st.info("📊 **RAG Model**: Активна")
             
             if st.button("📊 Статистика RAG"):
@@ -546,7 +546,7 @@ def main():
                                 with tech_col3:
                                     st.metric("Trust Remote Code", "✅" if config.rag.embeddings.trust_remote_code else "❌")
                                     st.metric("L2 Normalize", "✅" if config.rag.embeddings.get('normalize_embeddings', True) else "❌")
-                        except:
+                        except Exception:
                             pass  # Ignore config errors in sidebar
                 except Exception as e:
                     st.error(f"Ошибка получения статистики: {e}")

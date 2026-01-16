@@ -9,10 +9,7 @@ exclude = [
 # На следующих фазах вернём строгие правила и точечно поправим код.
 ignore = [
     "E402",  # Module level import not at top of file
-    "E722",  # Do not use bare except
     "E731",  # Do not assign a lambda expression
-    "F401",  # Imported but unused
-    "F841",  # Local variable assigned to but never used
 ]
 
 [lint.per-file-ignores]

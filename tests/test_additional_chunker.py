@@ -73,9 +73,9 @@ class TestChunkingSystem:
             functions=[el.name for el in elements],
             comments=[],
             total_lines=len(lines),
-            code_lines=len([l for l in lines if l.strip()]),
+            code_lines=len([line for line in lines if line.strip()]),
             comment_lines=0,
-            blank_lines=len([l for l in lines if not l.strip()])
+            blank_lines=len([line for line in lines if not line.strip()])
         )
 
     def test_t012_no_duplicates_on_overlap(self):
@@ -230,7 +230,7 @@ def function_five():
             def patched_group_functions(parsed_file, source_code):
                 # Вызываем оригинальный метод, но с измененной логикой
                 function_chunks = []
-                max_functions_per_chunk = 1  # Принудительно по одной функции на чанк
+                # max_functions_per_chunk = 1  # Принудительно по одной функции на чанк
                 
                 functions = [elem for elem in parsed_file.elements if elem.type == 'function']
                 if not functions:
@@ -444,7 +444,7 @@ def final_small_function():
             
             # Собираем код из всех чанков
             reconstructed_lines = []
-            covered_lines = set()
+            # covered_lines = set()
             
             for chunk in sorted_chunks:
                 chunk_lines = chunk.content.splitlines()

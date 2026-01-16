@@ -14,7 +14,6 @@ Usage:
 """
 
 import sys
-import json
 import hashlib
 from typing import List, Dict, Any, Tuple
 from pathlib import Path
@@ -211,7 +210,7 @@ def validate_documents(documents: List[Dict[str, Any]], verbose: bool = True) ->
     
     # Итоговая статистика
     print(f"\n{'='*80}")
-    print(f"📊 РЕЗУЛЬТАТЫ ВАЛИДАЦИИ:")
+    print("📊 РЕЗУЛЬТАТЫ ВАЛИДАЦИИ:")
     print(f"{'='*80}")
     print(f"  Всего документов: {total}")
     print(f"  ✅ Валидных:      {valid} ({100*valid/max(1,total):.1f}%)")
@@ -220,9 +219,9 @@ def validate_documents(documents: List[Dict[str, Any]], verbose: bool = True) ->
     
     if invalid > 0:
         print(f"\n⚠️  ВНИМАНИЕ: {invalid} документов будут отклонены сервером с 422 ошибкой!")
-        print(f"   Исправьте ошибки перед отправкой на индексацию.\n")
+        print("   Исправьте ошибки перед отправкой на индексацию.\n")
     else:
-        print(f"\n✅ Все документы валидны! Можно отправлять на индексацию.\n")
+        print("\n✅ Все документы валидны! Можно отправлять на индексацию.\n")
     
     return {
         'total': total,

@@ -34,7 +34,7 @@ def main():
     # Тест инстанцирования менеджера
     try:
         from openai_integration import OpenAIManager
-        manager = OpenAIManager()
+        OpenAIManager()
         print("OpenAIManager: instantiated successfully")
     except Exception as e:
         print(f"OpenAIManager Error: {e}")

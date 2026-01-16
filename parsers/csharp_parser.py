@@ -88,7 +88,7 @@ class CSharpParser(BaseParser):
         function_pattern = r'(?:public|private|protected|internal|static|virtual|override|async|sealed|extern|unsafe|new|partial|abstract|\s)+([\w<>\[\]]+)\s+(\w+)\s*\([^)]*\)\s*\{'
         matches = re.finditer(function_pattern, source_code, re.MULTILINE)
         for match in matches:
-            return_type = match.group(1)
+            match.group(1)
             func_name = match.group(2)
             line_num = self._get_line_number(source_code, match)
             docstring = self._find_preceding_comment(source_code, match.start())

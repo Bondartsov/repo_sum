@@ -15,6 +15,7 @@
 
 import os
 import sys
+import shlex
 import time
 import logging
 from pathlib import Path
@@ -88,7 +89,7 @@ class VMSetupManager:
             self.console.print(f"[blue]🔗 Подключение к VM {self.vm_host}...[/blue]")
             
             self.ssh_client = paramiko.SSHClient()
-            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.ssh_client.load_system_host_keys()
             
             self.ssh_client.connect(
                 hostname=self.vm_host,
@@ -261,7 +262,7 @@ class VMSetupManager:
                             try:
                                 year, month, day = iso_date.split('-')
                                 commit_date = f"{day}.{month}.{year}"
-                            except:
+                            except Exception:
                                 commit_date = "N/A"
                         else:
                             commit_date = "N/A"
@@ -389,21 +390,21 @@ class VMSetupManager:
                     try:
                         year, month, day = iso_date.split('-')
                         old_date = f"{day}.{month}.{year}"
-                    except:
+                    except Exception:
                         old_date = iso_date
 
             commands = [
                 f"cd {self.vm_repo_dir}",
                 "git fetch --all --prune",
-                f"git checkout {self.repo_branch}",  # Переключаемся на нужную ветку
-                f"git reset --hard origin/{self.repo_branch}",
+                f"git checkout {shlex.quote(self.repo_branch)}",  # Переключаемся на нужную ветку
+                f"git reset --hard origin/{shlex.quote(self.repo_branch)}",
                 "git clean -fd"
             ]
         else:
             action = "clone"
             commands = [
                 f"cd {self.vm_work_dir}",
-                f"git clone --branch {self.repo_branch} --single-branch {self.repo_url} repo_sum",
+                f"git clone --branch {shlex.quote(self.repo_branch)} --single-branch {self.repo_url} repo_sum",
                 f"cd {self.vm_repo_dir}"
             ]
 
@@ -427,7 +428,7 @@ class VMSetupManager:
                 try:
                     year, month, day = iso_date.split('-')
                     new_date = f"{day}.{month}.{year}"
-                except:
+                except Exception:
                     new_date = iso_date
             else:
                 branch = self.repo_branch
@@ -500,9 +501,9 @@ class VMSetupManager:
         # Используем pip install с флагами -q (quiet) и перенаправлением вывода для полного отключения шума
         commands.extend([
             "source venv/bin/activate",
-            "pip install -q --disable-pip-version-check --upgrade pip setuptools wheel > /dev/null 2>&1",
-            "pip install -q --disable-pip-version-check -r requirements.txt > /dev/null 2>&1",
-            "pip install -q --disable-pip-version-check sentence-transformers>=3.0 transformers>=4.35.0 > /dev/null 2>&1",
+            "pip install --disable-pip-version-check --upgrade pip setuptools wheel",
+            "pip install --disable-pip-version-check -r requirements.txt",
+            "pip install --disable-pip-version-check sentence-transformers>=3.0 transformers>=4.35.0",
             "echo 'INSTALL_COMPLETE'"  # Маркер успешной установки
         ])
 
@@ -517,8 +518,12 @@ class VMSetupManager:
             logger.info(f"Python environment {state}")
             return True
 
-        self.console.print(f"[red]❌ Ошибка установки Python окружения: {error}[/red]")
-        logger.error(f"Venv error: {error}")
+        self.console.print("[red]❌ Ошибка установки Python окружения.[/red]")
+        if error.strip():
+            self.console.print(Panel(error.strip(), title="STDERR", border_style="red"))
+        if output.strip():
+            self.console.print(Panel(output.strip(), title="STDOUT", border_style="yellow"))
+        logger.error(f"Venv error: {error}\\nOutput: {output}")
         return False
 
     def test_jina_v3(self) -> bool:
@@ -1124,7 +1129,6 @@ except Exception as e:
             if success:
                 self.console.print(f"[green]✅ {test_name} прошел[/green]")
             else:
-                all_passed = False
                 self.console.print(f"[yellow]⚠️ {test_name} не прошел, но это не критично[/yellow]")
 
         return True  # Всегда возвращаем True для упрощенной проверки
@@ -1218,7 +1222,7 @@ except Exception as e:
             if self.ssh_client:
                 try:
                     self.ssh_client.close()
-                except:
+                except Exception:
                     pass
 
     def update_code_on_vm(self) -> bool:

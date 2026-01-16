@@ -70,7 +70,7 @@ def test_openai_manager_network_error(monkeypatch, tmp_path):
     files = list(scanner.scan_repository(str(tmp_path)))
     file_info = files[0]
     parser = ParserRegistry().get_parser(file_info.path)
-    parsed = parser.parse_file(file_info)
+    parser.parse_file(file_info)
     chunker = CodeChunker()
     chunks = chunker.chunk_code(file_info, code)
 

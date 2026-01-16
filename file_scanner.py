@@ -116,7 +116,7 @@ class FileScanner:
         Более консервативный фильтр, чтобы не исключать пользовательский код по случайным совпадениям.
         """
         path_parts = [p.lower() for p in file_path.parts]
-        path_str = str(file_path).lower()
+        str(file_path).lower()
 
         # 1) Явные директории стороннего кода
         vendor_dirs = {
