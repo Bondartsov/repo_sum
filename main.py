@@ -692,7 +692,8 @@ def status(detailed):
         # Vector Store
         vs_health = health['components'].get('vector_store', {})
         vs_status = vs_health.get('status', 'unknown')
-        vs_status_color = "green" if vs_status == 'connected' else "red"
+        # P0-3: Fix incorrect red color for 'ok' status
+        vs_status_color = "green" if vs_status in ('connected', 'ok', 'healthy') else "red"
         
         vs_details = ""
         if vs_health.get('collection_info'):

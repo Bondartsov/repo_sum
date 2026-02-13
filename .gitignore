@@ -180,6 +180,8 @@ SUMMARY_REPORT_*/
 web_output/
 documentation.zip
 debug_generate_docs.txt
+db/
+telemetry-id
 
 # Temporary files
 tmp/
