@@ -57,6 +57,51 @@ class OpenAIConfig:
     retry_attempts: int = field(default_factory=lambda: safe_int("OPENAI_RETRY_ATTEMPTS", "3"))
     retry_delay: float = field(default_factory=lambda: safe_float("OPENAI_RETRY_DELAY", "1.0"))
 
+
+@dataclass
+class LLMConfig:
+    """Конфигурация LLM пр.0")овайдеров с поддержкой множественных провайдеров и fallback"""
+    provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "openai").lower())
+    fallback_providers: str = field(default_factory=lambda: os.getenv("LLM_FALLBACK_PROVIDERS", "google,anthropic,glm"))
+    
+    openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4.1-nano"))
+    google_model: str = field(default_factory=lambda: os.getenv("GOOGLE_MODEL", "gemini-2.0-flash"))
+    anthropic_model: str = field(default_factory=lambda: os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"))
+    glm_model: str = field(default_factory=lambda: os.getenv("GLM_MODEL", "glm-4"))
+    
+    openai_api_key: Optional[str] = field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
+    google_api_key: Optional[str] = field(default_factory=lambda: os.getenv("GEMINI_API_KEY"))
+    anthropic_api_key: Optional[str] = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
+    glm_api_key: Optional[str] = field(default_factory=lambda: os.getenv("GLM_API_KEY"))
+    
+    temperature: float = field(default_factory=lambda: safe_float("LLM_TEMPERATURE", "0.1"))
+    max_tokens: int = field(default_factory=lambda: safe_int("LLM_MAX_TOKENS", "2048"))
+    
+    @property
+    def fallback_list(self) -> List[str]:
+        """Возвращает список fallback провайдеров"""
+        return [p.strip().lower() for p in self.fallback_providers.split(",") if p.strip()]
+    
+    def get_provider_api_key(self, provider: str) -> Optional[str]:
+        """Получает API ключ для указанного провайдера"""
+        key_map = {
+            "openai": self.openai_api_key,
+            "google": self.google_api_key,
+            "anthropic": self.anthropic_api_key,
+            "glm": self.glm_api_key,
+        }
+        return key_map.get(provider.lower())
+    
+    def get_provider_model(self, provider: str) -> str:
+        """Получает модель для указанного провайдера"""
+        model_map = {
+            "openai": self.openai_model,
+            "google": self.google_model,
+            "anthropic": self.anthropic_model,
+            "glm": self.glm_model,
+        }
+        return model_map.get(provider.lower(), "gpt-4.1-nano")
+
     @property
     def api_key(self) -> Optional[str]:
         """Получает API ключ из переменных окружения"""
@@ -240,13 +285,14 @@ class RagConfig:
 @dataclass
 class Config:
     """Основной класс конфигурации"""
-    openai: OpenAIConfig
-    token_management: TokenManagementConfig
-    analysis: AnalysisConfig
-    file_scanner: FileScannerConfig
-    output: OutputConfig
-    prompts: PromptsConfig
+    token_management: TokenManagementConfig = field(default_factory=TokenManagementConfig)
+    analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
+    file_scanner: FileScannerConfig = field(default_factory=FileScannerConfig)
+    output: OutputConfig = field(default_factory=OutputConfig)
+    prompts: PromptsConfig = field(default_factory=PromptsConfig)
     rag: RagConfig = field(default_factory=RagConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    openai: OpenAIConfig = field(default_factory=OpenAIConfig)
 
     @classmethod
     def load_from_file(cls, config_path: str = "settings.json") -> "Config":
@@ -261,6 +307,7 @@ class Config:
         
         return cls(
             openai=OpenAIConfig(**data.get("openai", {})),
+            llm=LLMConfig(**data.get("llm", {})) if "llm" in data else LLMConfig(),
             token_management=TokenManagementConfig(**data.get("token_management", {})),
             analysis=AnalysisConfig(**data.get("analysis", {})),
             file_scanner=FileScannerConfig(**data.get("file_scanner", {})),

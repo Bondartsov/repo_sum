@@ -1,6 +1,6 @@
 """
-Интеграция с OpenAI — минимальный аудит кода.
-Изменения: поддержка полного текста отчёта, токенный лимит ↑ до 2048.
+Интеграция с LLM провайдерами — поддержка OpenAI, Google, Anthropic, GLM.
+Минимальный аудит кода с автоматическим fallback.
 """
 
 from __future__ import annotations
@@ -13,11 +13,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import openai
 import tiktoken
-from openai import OpenAI
 
 from config import get_config
+from llm_providers import (
+    LLMProviderFactory,
+    LLMProviderError,
+    get_llm_factory,
+)
 from utils import (
     CodeChunk,
     GPTAnalysisRequest,
@@ -106,7 +109,7 @@ class GPTCache:
 
 
 class OpenAIManager:
-    """Взаимодействие с OpenAI"""
+    """Взаимодействие с LLM провайдерами с поддержкой fallback"""
 
     def analyze_chunk(self, request: GPTAnalysisRequest):
         """
@@ -116,17 +119,34 @@ class OpenAIManager:
 
     def __init__(self) -> None:
         self.config = get_config()
-        if not self.config.openai.api_key:
-            raise ValueError("OPENAI_API_KEY не задан")
-        self.client = OpenAI(api_key=self.config.openai.api_key)
-        self.model = self.config.openai.model
-        self.temperature = self.config.openai.temperature
+        
+        # Проверяем доступность хотя бы одного провайдера
+        self.llm_factory = get_llm_factory()
+        
         try:
-            self.encoder = tiktoken.encoding_for_model(self.model)
+            self.primary_provider = self.llm_factory.get_primary_provider()
+            self.model = self.config.llm.get_provider_model(self.config.llm.provider)
+            self.temperature = self.config.llm.temperature
+        except LLMProviderError as e:
+            raise ValueError(f"Нет доступных LLM провайдеров: {e}")
+        
+        # Токенизатор для подсчёта токенов (используем cl100k_base как базовый)
+        try:
+            self.encoder = tiktoken.encoding_for_model("gpt-4")
         except Exception:
             self.encoder = tiktoken.get_encoding("cl100k_base")
 
         self.cache = GPTCache()
+
+    @property
+    def llm(self):
+        """Обратная совместимость - доступ к llm через config.llm"""
+        return self.config.llm
+    
+    @property
+    def openai(self):
+        """Обратная совместимость - доступ к openai через config.openai"""
+        return self.config.openai
 
     def count_tokens(self, text: str) -> int:
         """Подсчёт токенов в тексте"""
@@ -141,7 +161,7 @@ class OpenAIManager:
         return self.encoder.decode(truncated_tokens)
 
     async def analyze_code(self, request: GPTAnalysisRequest) -> GPTAnalysisResult:
-        """Основной метод анализа кода через GPT"""
+        """Основной метод анализа кода через LLM с автоматическим fallback"""
         try:
             # Проверяем кэш
             cache_key = self.cache.get_cache_key(request)
@@ -160,8 +180,8 @@ class OpenAIManager:
             # Формируем промпт
             prompt = self._build_analysis_prompt(request, combined_code)
             
-            # Вызываем API
-            response = await self._call_openai_api(prompt)
+            # Вызываем LLM с fallback
+            response = await self._call_llm_api(prompt)
             
             # Парсим ответ
             result = self._parse_gpt_response(response, request.chunks)
@@ -219,37 +239,18 @@ class OpenAIManager:
             code_content=code
         )
 
-    async def _call_openai_api(self, prompt: str) -> str:
-        # Ретраи на случай временных ошибок сети/квот
-        attempts = max(1, int(self.config.openai.retry_attempts))
-        delay = max(0.0, float(self.config.openai.retry_delay))
-        last_exc: Optional[Exception] = None
-
-        for attempt in range(1, attempts + 1):
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "Ты эксперт по анализу кода. Предоставляй краткие и точные описания.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=self.temperature,
-                )
-                return response.choices[0].message.content
-            except Exception as exc:
-                last_exc = exc
-                logger.warning(
-                    "Ошибка вызова OpenAI (попытка %s/%s): %s", attempt, attempts, exc
-                )
-                if attempt < attempts:
-                    await asyncio.sleep(delay)
-
-        # Если все попытки исчерпаны — пробрасываем ошибку выше
-        assert last_exc is not None
-        raise last_exc
+    async def _call_llm_api(self, prompt: str, system_prompt: str = None) -> str:
+        """Вызов LLM с автоматическим fallback через фабрику провайдеров"""
+        system = system_prompt or "Ты эксперт по анализу кода. Предоставляй краткие и точные описания."
+        
+        try:
+            # Используем фабрику с fallback логикой
+            response = await self.llm_factory.generate_with_fallback(prompt, system)
+            logger.info(f"LLM запрос выполнен через провайдер: {response.provider}")
+            return response.content
+        except LLMProviderError as e:
+            logger.error(f"Все LLM провайдеры недоступны: {e}")
+            raise OpenAIError(f"Все LLM провайдеры недоступны: {e}")
 
     def _parse_gpt_response(self, text: str, chunks: List[CodeChunk]) -> GPTAnalysisResult:
         """
@@ -283,20 +284,28 @@ class OpenAIManager:
             - requests_today: количество запросов за сегодня (синоним total_requests)
             - average_per_request: среднее число токенов на запрос (синоним average_tokens_per_request)
             - total_requests, total_tokens, average_tokens_per_request: сохранены для обратной совместимости
+            - provider: текущий активный провайдер
         """
-        # TODO: заменить заглушку реальными счётчиками при наличии телеметрии
         total_requests = 0
         total_tokens = 0
         average_tokens_per_request = 0
+        
+        # Получаем информацию о провайдерах
+        provider_info = "unknown"
+        try:
+            primary = self.llm_factory.get_primary_provider()
+            provider_info = primary.provider_name if primary else "unknown"
+        except Exception:
+            pass
         
         return {
             "used_today": total_tokens,
             "requests_today": total_requests,
             "average_per_request": average_tokens_per_request,
-            # Обратная совместимость
             "total_requests": total_requests,
             "total_tokens": total_tokens,
             "average_tokens_per_request": average_tokens_per_request,
+            "provider": provider_info,
         }
 
     def clear_cache(self) -> int:
